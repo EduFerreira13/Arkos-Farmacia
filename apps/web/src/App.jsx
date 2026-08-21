@@ -3,6 +3,9 @@ import { Layout } from "./componentes/Layout.jsx";
 import { RotaProtegida } from "./componentes/RotaProtegida.jsx";
 import { EmConstrucao } from "./paginas/EmConstrucao.jsx";
 import { Login } from "./paginas/Login.jsx";
+import { Produtos } from "./paginas/Produtos.jsx";
+import { EntradaLote } from "./paginas/EntradaLote.jsx";
+import { Alertas } from "./paginas/Alertas.jsx";
 
 export default function App() {
   return (
@@ -19,9 +22,9 @@ export default function App() {
         <Route index element={<EmConstrucao titulo="Dashboard" />} />
         <Route path="/pdv" element={<EmConstrucao titulo="PDV" />} />
         <Route path="/vendas" element={<EmConstrucao titulo="Vendas do dia" />} />
-        <Route path="/produtos" element={<EmConstrucao titulo="Produtos" />} />
-        <Route path="/entrada-lote" element={<EmConstrucao titulo="Entrada de lote" />} />
-        <Route path="/alertas" element={<EmConstrucao titulo="Alertas" />} />
+        <Route path="/produtos" element={<Produtos />} />
+        <Route path="/entrada-lote" element={<EntradaLote />} />
+        <Route path="/alertas" element={<Alertas />} />
         <Route path="/caixa" element={<EmConstrucao titulo="Caixa" />} />
         <Route path="/contas" element={<EmConstrucao titulo="Contas" />} />
       </Route>
