@@ -2,11 +2,12 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./componentes/Layout.jsx";
 import { RotaProtegida } from "./componentes/RotaProtegida.jsx";
 import { EmConstrucao } from "./paginas/EmConstrucao.jsx";
+import { Login } from "./paginas/Login.jsx";
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/login" element={<EmConstrucao titulo="Login" />} />
+      <Route path="/login" element={<Login />} />
 
       <Route
         element={
