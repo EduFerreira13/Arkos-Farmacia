@@ -1,0 +1,21 @@
+{
+  "name": "@arkos/auth-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Login, usuários e permissões (RBAC) do Arkos",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@arkos/auth-middleware": "0.1.0",
+    "@arkos/shared-types": "0.1.0",
+    "@fastify/cors": "^10.0.1",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^17.2.3",
+    "fastify": "^5.2.0",
+    "pg": "^8.13.1"
+  }
+}
