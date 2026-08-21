@@ -19,11 +19,17 @@ import { ERROS, PERFIS } from "@arkos/shared-types";
 
 /**
  * Gera o token do login. Só o auth-service usa; os demais apenas verificam.
+ *
+ * `extras` carrega a simulação de perfil: quando o administrador assume outro
+ * perfil para conferir o que aquele perfil vê, o token vai com `perfil` e
+ * `permissoes` do perfil simulado, mas guarda em `perfil_real` quem de fato
+ * está operando — nenhuma ação deixa de ser rastreável ao usuário verdadeiro.
+ *
  * @param {UsuarioAutenticado} usuario
- * @param {{ secret: string, expiresIn?: string }} opcoes
+ * @param {{ secret: string, expiresIn?: string, extras?: Record<string, unknown> }} opcoes
  * @returns {string}
  */
-export function assinarToken(usuario, { secret, expiresIn = "8h" }) {
+export function assinarToken(usuario, { secret, expiresIn = "8h", extras = {} }) {
   return jwt.sign(
     {
       sub: usuario.id,
@@ -31,6 +37,7 @@ export function assinarToken(usuario, { secret, expiresIn = "8h" }) {
       email: usuario.email,
       perfil: usuario.perfil,
       permissoes: usuario.permissoes ?? {},
+      ...extras,
     },
     secret,
     { expiresIn }
@@ -50,6 +57,9 @@ export function verificarToken(token, secret) {
     email: payload.email,
     perfil: payload.perfil,
     permissoes: payload.permissoes ?? {},
+    // Presentes só em token de simulação de perfil.
+    simulando: payload.simulando === true,
+    perfil_real: payload.perfil_real ?? null,
   };
 }
 
