@@ -1,0 +1,18 @@
+{
+  "name": "@arkos/auth-middleware",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Validação local de JWT e checagem de perfil/permissão, reutilizada por todos os serviços",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "dependencies": {
+    "@arkos/shared-types": "0.1.0",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "files": [
+    "src"
+  ]
+}
