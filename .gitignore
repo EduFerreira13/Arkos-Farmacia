@@ -1,0 +1,28 @@
+# Ambiente
+.env
+.env.local
+
+# Dependências
+node_modules/
+**/node_modules/
+
+# Build
+dist/
+build/
+.vite/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testes/coverage
+coverage/

@@ -1,0 +1,17 @@
+# O PostgreSQL do Arkos é remoto (servidor próprio) — ver DATABASE_URL no .env.
+# Este compose sobe apenas o Redis, usado para cache do dashboard.
+
+version: "3.8"
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: arkos-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - arkos-redis-data:/data
+    restart: unless-stopped
+
+volumes:
+  arkos-redis-data:
