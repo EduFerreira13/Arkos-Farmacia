@@ -50,21 +50,62 @@ arkos/
 
 ## Rodando localmente
 
-> Preencher conforme o setup for definido (`docker-compose`, variáveis de ambiente, etc.)
+O PostgreSQL é remoto (a `DATABASE_URL` já vem no `.env`). O Redis do
+`docker-compose.yml` é opcional: nada no MVP depende dele.
 
 ```bash
-# Instalar dependências de todos os workspaces
+# 1. Dependências de todos os workspaces
 npm install
 
-# Subir banco + redis
-docker compose up -d
+# 2. Estrutura do banco (recria os 5 schemas do Arkos) e usuários de acesso
+npm run migrate
+npm run seed
 
-# Rodar um serviço específico
-npm run dev --workspace=services/estoque-service
+# 3. Backend — sobe os 5 serviços juntos (portas 3001 a 3005)
+npm run dev:services
 
-# Rodar o frontend
-npm run dev --workspace=apps/web
+# 4. Frontend em outro terminal (http://localhost:5173)
+npm run dev:web
 ```
+
+`npm run dev` sobe backend e frontend de uma vez. Para um serviço só:
+`npm run dev:estoque` (ou `dev:auth`, `dev:vendas`, `dev:financeiro`, `dev:fiscal`).
+
+### Usuários criados pelo seed (desenvolvimento)
+
+| Email | Perfil | Senha |
+|---|---|---|
+| `caixa@arkos.com` | Operador de caixa | `arkos123` |
+| `farmaceutico@arkos.com` | Farmacêutico responsável | `arkos123` |
+| `gerente@arkos.com` | Gerente | `arkos123` |
+| `admin@arkos.com` | Administrador | `arkos123` |
+
+### Conferindo o fluxo completo
+
+Com os serviços rodando:
+
+```bash
+npm run test:fluxo
+```
+
+Executa o roteiro da Fase 7 contra as APIs reais: login, abertura de caixa,
+cadastro de produto, entrada de lote, bloqueio de controlado sem receita, venda
+concluída com receita, baixa FEFO, nota fiscal simulada, lançamento automático no
+caixa e fechamento com divergência.
+
+### Portas
+
+| Serviço | Porta |
+|---|---|
+| auth-service | 3001 |
+| estoque-service | 3002 |
+| vendas-service | 3003 |
+| financeiro-service | 3004 |
+| fiscal-service | 3005 |
+| frontend (Vite) | 5173 |
+
+O frontend fala com os serviços por `/api/<serviço>/...` e o proxy do Vite
+resolve a porta — não há CORS no desenvolvimento.
 
 ## Sincronizando a documentação do banco
 
@@ -78,4 +119,8 @@ Isso varre o banco, atualiza `database/schema/` e já commita a mudança automat
 
 ## Status
 
-MVP em desenvolvimento — ver [Issues](../../issues) para o que está em andamento.
+MVP funcional de ponta a ponta: login com os 4 perfis, cadastro de produto e
+entrada de lote, venda no PDV (incluindo bloqueio de controlado sem receita),
+fechamento de caixa e dashboard com indicadores reais do banco. O que ficou fora
+está em [`docs/PENDENCIAS.md`](./docs/PENDENCIAS.md) e na seção "Fora do escopo
+do MVP" de [`docs/REGRAS-NEGOCIO.md`](./docs/REGRAS-NEGOCIO.md).

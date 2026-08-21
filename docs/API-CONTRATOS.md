@@ -40,8 +40,16 @@
 | PATCH | `/produtos/:id` | Atualiza produto (preço gera histórico — §8 das regras de negócio) |
 | POST | `/lotes` | Entrada de novo lote |
 | POST | `/movimentacoes` | Registra movimentação (entrada/saída/ajuste/perda/devolução) |
-| GET | `/alertas/estoque-baixo` | Usa `estoque.vw_estoque_baixo` |
-| GET | `/alertas/vencimento` | Usa `estoque.vw_produtos_a_vencer` |
+| GET | `/alertas/estoque-baixo` | Usa `estoque.vw_estoque_baixo` (lote vencido não conta como disponível) |
+| GET | `/alertas/vencimento` | Usa `estoque.vw_produtos_a_vencer` — `?dias=30\|60\|90` |
+| GET | `/produtos/codigo-barras/:codigo` | Atalho do PDV para leitura de EAN |
+| GET | `/movimentacoes` | Auditoria — `?produto_id=&limite=` |
+| GET/POST | `/categorias` | Cadastro auxiliar exigido pelo formulário de produto |
+| GET/POST | `/fornecedores` | Cadastro auxiliar exigido pelo formulário de produto |
+
+Permissão por movimentação: `saida` e `devolucao` pedem `vender` (são as duas
+pontas da venda, e o estorno automático da finalização usa o token do operador);
+`entrada`, `ajuste` e `perda` pedem `ajustar_estoque` (§6).
 
 **Regra crítica**: `POST /movimentacoes` do tipo `saida` deve escolher automaticamente o lote pela regra **FEFO** (menor `data_validade` com `quantidade > 0`) — não deixar o chamador escolher o lote manualmente, exceto em ajuste/perda.
 
@@ -64,6 +72,15 @@
 | POST | `/vendas/:id/finalizar` | Fecha a venda: valida receita se necessário, chama `estoque-service` (saída FEFO) e `financeiro-service` (lançamento no caixa) |
 | POST | `/vendas/:id/cancelar` | Cancela — exige perfil gerente/admin e motivo |
 | GET | `/vendas/:id` | Detalhe completo |
+| DELETE | `/vendas/:id/itens/:itemId` | Remove item do carrinho e recalcula o total |
+| POST | `/vendas/:id/desconto` | Aplica desconto, limitado ao percentual do perfil (§3) |
+| GET | `/vendas` | Vendas do dia (status, itens, formas de pagamento) |
+| GET | `/vendas/resumo/hoje` | Total, ticket médio, quebra por forma de pagamento e variação vs. ontem |
+
+`POST /vendas/:id/finalizar` também recusa (422) venda sem item, venda com
+pagamentos abaixo do total (`pagamento_insuficiente`) e item acima do estoque
+disponível. Cancelamento de venda **já finalizada** não está no MVP (estorno de
+estoque e caixa) — ver `docs/PENDENCIAS.md`.
 
 **Regra crítica (§3)**: `POST /vendas/:id/finalizar` **bloqueia** (HTTP 422) se houver item com `tipo_controle` diferente de `livre` e nenhuma receita vinculada. Essa validação é feita no `vendas-service`, consultando o `estoque-service` para saber o `tipo_controle` de cada item.
 
@@ -88,7 +105,12 @@
 | POST | `/contas-pagar` | Cria conta a pagar |
 | GET | `/contas-receber` | Lista, filtro por status |
 | POST | `/contas-receber` | Cria conta a receber |
-| GET | `/fluxo-caixa/hoje` | Usa `vendas.vw_vendas_hoje` (chamada interna ao vendas-service) |
+| PATCH | `/contas-pagar/:id/pagar` | Quita a conta (status `pago`, `pago_em`) |
+| PATCH | `/contas-receber/:id/receber` | Baixa o recebimento (status `recebido`) |
+| GET | `/fluxo-caixa/hoje` | Junta o caixa aberto do operador com o resumo do dia buscado no vendas-service |
+
+Sem caixa aberto, `POST /caixa/movimentacoes` recusa com 422 `caixa_fechado` —
+por consequência, a venda não finaliza antes de o operador abrir o caixa (§5).
 
 ---
 
@@ -99,6 +121,10 @@
 | POST | `/notas-fiscais` | Emite NFC-e — **mockado no MVP**, sempre retorna `status: "simulado"` |
 | GET | `/notas-fiscais/:venda_id` | Consulta nota de uma venda |
 | POST | `/controlados-sngpc` | Registra envio ao SNGPC — **mockado**, `enviado_anvisa` sempre `false` |
+| GET | `/controlados-sngpc` | Lista registros — `?venda_id=` |
+
+`POST /notas-fiscais` é idempotente: a mesma venda devolve sempre a mesma nota,
+com chave de acesso simulada de 44 dígitos derivada do ID da venda.
 
 ---
 
@@ -112,4 +138,8 @@
 6. `vendas-service` chama `fiscal-service` (`POST /notas-fiscais`) para emitir a nota (mockada).
 7. `vendas-service` marca a venda como `finalizada` e retorna 200 ao front.
 
-Se qualquer chamada de 4 a 6 falhar, a venda **não** deve ser marcada como finalizada — retornar erro 500 e deixar em `aberta` para nova tentativa (evitar inconsistência entre serviços).
+Se qualquer chamada de 4 a 6 falhar, a venda **não** é marcada como finalizada:
+o `vendas-service` estorna o que já tinha efeito (devolução dos lotes baixados e
+saída do valor lançado no caixa), devolve o erro do serviço que falhou e deixa a
+venda em `aberta` para nova tentativa. Falha no próprio estorno vira log de erro
+com o ID da venda, para conferência manual.
