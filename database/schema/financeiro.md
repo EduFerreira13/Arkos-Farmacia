@@ -48,4 +48,6 @@
 | valor | numeric | NO | - |
 | origem | character varying | NO | - |
 | criado_em | timestamp with time zone | NO | now() |
+| descricao | character varying | YES | - |
+| venda_id | uuid | YES | - |
 
