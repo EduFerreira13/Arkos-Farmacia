@@ -81,6 +81,13 @@ export const financeiro = {
       token,
       corpo: { tipo: "entrada", valor, origem, descricao, venda_id: vendaId },
     }),
+
+  estornarNoCaixa: ({ valor, descricao, vendaId }, token) =>
+    chamarServico("financeiro", "/caixa/movimentacoes", {
+      metodo: "POST",
+      token,
+      corpo: { tipo: "saida", valor, origem: "venda", descricao, venda_id: vendaId },
+    }),
 };
 
 export const fiscal = {
@@ -89,5 +96,12 @@ export const fiscal = {
       metodo: "POST",
       token,
       corpo: { venda_id: vendaId },
+    }),
+
+  registrarControlado: ({ vendaId, produtoId, receitaId }, token) =>
+    chamarServico("fiscal", "/controlados-sngpc", {
+      metodo: "POST",
+      token,
+      corpo: { venda_id: vendaId, produto_id: produtoId, receita_id: receitaId },
     }),
 };

@@ -6,7 +6,7 @@ import {
 } from "@arkos/shared-types";
 import { criarAutenticacao, descontoMaximoPct } from "@arkos/auth-middleware";
 import { env } from "./env.js";
-import { ErroServico, estoque, financeiro } from "./servicos.js";
+import { ErroServico, estoque, financeiro, fiscal } from "./servicos.js";
 import {
   atualizarLoteDoItem,
   buscarVenda,
@@ -320,7 +320,26 @@ export async function registrarRotas(app) {
       throw erro;
     }
 
-    // 3) Venda finalizada. A nota fiscal entra na Fase 5 (fiscal-service).
+    // 3) Nota fiscal (mockada no MVP) e registro dos controlados no SNGPC.
+    let nota = null;
+    try {
+      const emissao = await fiscal.emitirNota({ vendaId: venda.id }, token);
+      nota = emissao.nota;
+
+      for (const item of controlados) {
+        await fiscal.registrarControlado(
+          { vendaId: venda.id, produtoId: item.produto_id, receitaId: completa.receita.id },
+          token
+        );
+      }
+    } catch (erro) {
+      await estornarBaixas(baixas, token, venda.id, requisicao.log);
+      await estornarCaixa(completa.valor_total, venda.id, token, requisicao.log);
+      if (erro instanceof ErroServico) return responderErroServico(resposta, erro);
+      throw erro;
+    }
+
+    // 4) Só agora a venda vira finalizada.
     const finalizada = await marcarFinalizada(venda.id);
     if (!finalizada) {
       return bloqueado(
@@ -332,6 +351,7 @@ export async function registrarRotas(app) {
 
     return {
       venda: await buscarVendaCompleta(venda.id),
+      nota_fiscal: nota,
       baixa_estoque: baixas.map(({ item, lotes }) => ({
         item_id: item.id,
         produto_nome: item.produto_nome,
@@ -374,6 +394,21 @@ export async function registrarRotas(app) {
       return { venda: cancelada };
     }
   );
+}
+
+/** Estorna o lançamento de caixa quando a finalização falha depois dele. */
+async function estornarCaixa(valor, vendaId, token, log) {
+  try {
+    await financeiro.estornarNoCaixa(
+      { valor, descricao: `Estorno da venda ${vendaId.slice(0, 8)}`, vendaId },
+      token
+    );
+  } catch (erro) {
+    log?.error(
+      { vendaId, erro: erro.message },
+      "falha ao estornar lancamento de caixa — conferir manualmente"
+    );
+  }
 }
 
 /**
