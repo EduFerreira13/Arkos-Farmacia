@@ -6,6 +6,8 @@ import { Login } from "./paginas/Login.jsx";
 import { Produtos } from "./paginas/Produtos.jsx";
 import { EntradaLote } from "./paginas/EntradaLote.jsx";
 import { Alertas } from "./paginas/Alertas.jsx";
+import { PDV } from "./paginas/PDV.jsx";
+import { Vendas } from "./paginas/Vendas.jsx";
 
 export default function App() {
   return (
@@ -20,8 +22,8 @@ export default function App() {
         }
       >
         <Route index element={<EmConstrucao titulo="Dashboard" />} />
-        <Route path="/pdv" element={<EmConstrucao titulo="PDV" />} />
-        <Route path="/vendas" element={<EmConstrucao titulo="Vendas do dia" />} />
+        <Route path="/pdv" element={<PDV />} />
+        <Route path="/vendas" element={<Vendas />} />
         <Route path="/produtos" element={<Produtos />} />
         <Route path="/entrada-lote" element={<EntradaLote />} />
         <Route path="/alertas" element={<Alertas />} />

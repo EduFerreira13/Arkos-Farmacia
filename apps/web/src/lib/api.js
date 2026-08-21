@@ -76,6 +76,7 @@ const metodosDe = (servico) => ({
   get: (caminho) => chamar(servico, caminho),
   post: (caminho, corpo, extras) => chamar(servico, caminho, { metodo: "POST", corpo, ...extras }),
   patch: (caminho, corpo) => chamar(servico, caminho, { metodo: "PATCH", corpo }),
+  del: (caminho) => chamar(servico, caminho, { metodo: "DELETE" }),
 });
 
 export const api = {
