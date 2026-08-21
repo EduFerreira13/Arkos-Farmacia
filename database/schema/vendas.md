@@ -9,9 +9,11 @@
 | id | uuid | NO | gen_random_uuid() |
 | venda_id | uuid | NO | - |
 | produto_id | uuid | NO | - |
-| lote_id | uuid | NO | - |
+| lote_id | uuid | YES | - |
 | quantidade | integer | NO | - |
 | preco_unitario | numeric | NO | - |
+| produto_nome | character varying | YES | - |
+| tipo_controle | character varying | YES | - |
 
 ## pagamentos
 
