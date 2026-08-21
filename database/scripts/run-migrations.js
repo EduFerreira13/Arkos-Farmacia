@@ -11,6 +11,8 @@ const fs = require("fs");
 const path = require("path");
 const { Client } = require("pg"); // npm install pg
 
+require("dotenv").config({ path: path.join(__dirname, "..", "..", ".env") });
+
 const MIGRATIONS_DIR = path.join(__dirname, "..", "migrations");
 
 async function main() {

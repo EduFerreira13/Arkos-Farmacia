@@ -15,6 +15,8 @@ const path = require("path");
 const { execSync } = require("child_process");
 const { Client } = require("pg");
 
+require("dotenv").config({ path: path.join(__dirname, "..", "..", ".env") });
+
 const SCHEMA_DIR = path.join(__dirname, "..", "schema");
 const SERVICE_SCHEMAS = ["auth", "estoque", "vendas", "financeiro", "fiscal"];
 
