@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Paleta oficial — docs/REGRAS-VISUAIS.md §2 */
+:root {
+  --cor-fundo: #f5f7fa;
+  --cor-card: #ffffff;
+  --cor-borda: #e2e6ec;
+  --cor-texto: #1a2332;
+  --cor-texto-secundario: #5b6572;
+  --cor-sucesso: #1f9d55;
+  --cor-alerta: #e0a426;
+  --cor-erro: #d6473c;
+  --cor-info: #2c6fbf;
+}
+
+.dark {
+  --cor-fundo: #0f1620;
+  --cor-card: #1a2332;
+  --cor-borda: #2a3446;
+  --cor-texto: #edeff2;
+  --cor-texto-secundario: #9aa4b2;
+  --cor-sucesso: #3ecf6e;
+  --cor-alerta: #f2bc4e;
+  --cor-erro: #f16a5f;
+  --cor-info: #4e8fe0;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-fundo text-texto font-sans text-corpo antialiased;
+  }
+
+  /* Layout pensado para telas grandes (§7) */
+  #root {
+    min-width: 1024px;
+  }
+
+  h1 {
+    @apply text-h1;
+  }
+  h2 {
+    @apply text-h2;
+  }
+  h3 {
+    @apply text-h3;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--cor-borda);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer utilities {
+  /* Foco visível e consistente em todos os controles */
+  .foco-arkos {
+    @apply outline-none ring-2 ring-medio ring-offset-2;
+    --tw-ring-offset-color: var(--cor-fundo);
+  }
+}
