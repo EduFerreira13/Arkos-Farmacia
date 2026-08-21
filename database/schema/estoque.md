@@ -19,6 +19,18 @@
 | telefone | character varying | YES | - |
 | email | character varying | YES | - |
 
+## historico_precos
+
+| Coluna | Tipo | Nulo? | Default |
+|---|---|---|---|
+| id | uuid | NO | gen_random_uuid() |
+| produto_id | uuid | NO | - |
+| campo | character varying | NO | - |
+| valor_anterior | numeric | NO | - |
+| valor_novo | numeric | NO | - |
+| usuario_id | uuid | NO | - |
+| criado_em | timestamp with time zone | NO | now() |
+
 ## lotes
 
 | Coluna | Tipo | Nulo? | Default |
@@ -58,6 +70,12 @@
 | preco_venda | numeric | NO | 0 |
 | estoque_minimo | integer | NO | 0 |
 | criado_em | timestamp with time zone | NO | now() |
+| fabricante | character varying | YES | - |
+| classe_terapeutica | character varying | YES | - |
+| unidade_venda | character varying | NO | 'unidade'::character varying |
+| ncm | character varying | YES | - |
+| cfop | character varying | YES | - |
+| venda_sob_encomenda | boolean | NO | false |
 
 ## vw_estoque_baixo
 
