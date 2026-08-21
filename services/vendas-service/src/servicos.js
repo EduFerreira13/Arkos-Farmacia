@@ -75,11 +75,11 @@ export const estoque = {
 };
 
 export const financeiro = {
-  lancarNoCaixa: ({ valor, origem, descricao }, token) =>
+  lancarNoCaixa: ({ valor, origem, descricao, vendaId }, token) =>
     chamarServico("financeiro", "/caixa/movimentacoes", {
       metodo: "POST",
       token,
-      corpo: { tipo: "entrada", valor, origem, descricao },
+      corpo: { tipo: "entrada", valor, origem, descricao, venda_id: vendaId },
     }),
 };
 

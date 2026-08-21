@@ -309,7 +309,8 @@ export async function registrarRotas(app) {
         {
           valor: completa.valor_total,
           origem: "venda",
-          descricao: `Venda ${venda.id}`,
+          descricao: `Venda ${venda.id.slice(0, 8)}`,
+          vendaId: venda.id,
         },
         token
       );
