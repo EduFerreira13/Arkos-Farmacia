@@ -309,7 +309,7 @@ export function Caixa() {
                 <Card>
                   <CardCabecalho
                     titulo="Vendas de hoje"
-                    descricao="Soma automática do PDV por forma de pagamento."
+                    descricao="Soma automática do ponto de venda por forma de pagamento."
                   />
                   <CardCorpo>
                     <dl className="space-y-2 text-corpo">

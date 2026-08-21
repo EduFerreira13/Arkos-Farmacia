@@ -59,7 +59,14 @@ function DetalheProduto({ produtoId, aoFechar }) {
               ["Preço de venda", formatarMoeda(dados.produto.preco_venda)],
               ["Estoque mínimo", formatarNumero(dados.produto.estoque_minimo)],
               ["Classe terapêutica", dados.produto.classe_terapeutica || "—"],
-              ["NCM / CFOP", `${dados.produto.ncm || "—"} / ${dados.produto.cfop || "—"}`],
+              [
+                "NCM (Nomenclatura Comum do Mercosul)",
+                dados.produto.ncm || "—",
+              ],
+              [
+                "CFOP (Código Fiscal de Operações e Prestações)",
+                dados.produto.cfop || "—",
+              ],
             ].map(([rotulo, valor]) => (
               <div key={rotulo}>
                 <p className="text-rotulo text-secundario">{rotulo}</p>

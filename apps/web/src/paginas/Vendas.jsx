@@ -162,7 +162,7 @@ export function Vendas() {
               <EstadoVazio
                 icone={Receipt}
                 titulo="Nenhuma venda hoje"
-                descricao="As vendas registradas no PDV aparecem aqui."
+                descricao="As vendas registradas no ponto de venda aparecem aqui."
               />
             }
           />

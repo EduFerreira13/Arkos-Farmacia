@@ -126,6 +126,7 @@ export function FormularioProduto({ aoFechar, aoSalvar }) {
             />
             <CampoTexto
               rotulo="Código de barras (EAN)"
+              ajuda="EAN é o padrão internacional de código de barras"
               required
               value={campos.codigo_barras}
               onChange={atualizar("codigo_barras")}
@@ -188,8 +189,18 @@ export function FormularioProduto({ aoFechar, aoSalvar }) {
               value={campos.estoque_minimo}
               onChange={atualizar("estoque_minimo")}
             />
-            <CampoTexto rotulo="NCM" value={campos.ncm} onChange={atualizar("ncm")} />
-            <CampoTexto rotulo="CFOP" value={campos.cfop} onChange={atualizar("cfop")} />
+            <CampoTexto
+              rotulo="NCM"
+              ajuda="Nomenclatura Comum do Mercosul"
+              value={campos.ncm}
+              onChange={atualizar("ncm")}
+            />
+            <CampoTexto
+              rotulo="CFOP"
+              ajuda="Código Fiscal de Operações e Prestações"
+              value={campos.cfop}
+              onChange={atualizar("cfop")}
+            />
           </div>
 
           <label className="flex items-center gap-2 text-corpo text-texto">
@@ -199,12 +210,13 @@ export function FormularioProduto({ aoFechar, aoSalvar }) {
               onChange={atualizar("venda_sob_encomenda")}
               className="h-4 w-4 rounded border-borda text-primario focus-visible:foco-arkos"
             />
-            Permitir venda sob encomenda (libera o PDV mesmo sem estoque)
+            Permitir venda sob encomenda (libera o ponto de venda mesmo sem estoque)
           </label>
 
           {controlado ? (
             <Aviso tom="alerta" titulo="Produto controlado">
-              A venda deste item no PDV só será concluída com os dados da receita registrados.
+              A venda deste item no ponto de venda só é concluída com os dados da receita
+              registrados.
             </Aviso>
           ) : null}
 

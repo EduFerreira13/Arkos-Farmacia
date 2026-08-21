@@ -32,7 +32,7 @@ const SECOES = [
   {
     titulo: "Vendas",
     itens: [
-      { para: "/pdv", rotulo: "PDV", icone: ShoppingCart, permissao: "vender" },
+      { para: "/pdv", rotulo: "Ponto de venda", icone: ShoppingCart, permissao: "vender" },
       { para: "/vendas", rotulo: "Vendas do dia", icone: Receipt },
     ],
   },

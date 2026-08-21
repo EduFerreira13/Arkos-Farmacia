@@ -51,7 +51,8 @@ function CupomVenda({ resultado, aoFechar }) {
     >
       <div className="space-y-4">
         <Aviso tom="sucesso" titulo="Venda finalizada">
-          Estoque baixado por FEFO e valor lançado no caixa do dia.
+          Baixa de estoque por FEFO (primeiro a vencer, primeiro a sair) e valor lançado no
+          caixa do dia.
         </Aviso>
 
         <Tabela
@@ -107,8 +108,9 @@ function CupomVenda({ resultado, aoFechar }) {
 
         {venda.receita ? (
           <div className="rounded-card bg-borda/40 px-4 py-3 text-rotulo text-secundario">
-            Receita: {venda.receita.paciente_nome} — Dr(a). {venda.receita.medico_nome}, CRM{" "}
-            {venda.receita.medico_crm}, emitida em {formatarData(venda.receita.data_emissao)}
+            Receita: {venda.receita.paciente_nome} — Dr(a). {venda.receita.medico_nome},
+            registro no Conselho Regional de Medicina {venda.receita.medico_crm}, emitida em{" "}
+            {formatarData(venda.receita.data_emissao)}
           </div>
         ) : null}
       </div>
@@ -241,7 +243,7 @@ export function PDV() {
   return (
     <>
       <TituloPagina
-        titulo="PDV"
+        titulo="PDV — ponto de venda"
         descricao={
           venda
             ? `Venda ${venda.id.slice(0, 8)} em andamento`
@@ -327,7 +329,7 @@ export function PDV() {
                     }
                   />
                   <CampoTexto
-                    rotulo="CRM"
+                    rotulo="CRM (Conselho Regional de Medicina)"
                     required
                     value={receita.medico_crm}
                     onChange={(evento) =>
