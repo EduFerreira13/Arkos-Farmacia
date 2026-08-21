@@ -61,10 +61,13 @@ npm install
 npm run migrate
 npm run seed
 
-# 3. Backend — sobe os 5 serviços juntos (portas 3001 a 3005)
+# 3. Opcional: dados fictícios para navegar com o sistema já populado
+npm run seed:demo
+
+# 4. Backend — sobe os 5 serviços juntos (portas 3001 a 3005)
 npm run dev:services
 
-# 4. Frontend em outro terminal (http://localhost:5173)
+# 5. Frontend em outro terminal (http://localhost:5173)
 npm run dev:web
 ```
 
@@ -79,6 +82,22 @@ npm run dev:web
 | `farmaceutico@arkos.com` | Farmacêutico responsável | `arkos123` |
 | `gerente@arkos.com` | Gerente | `arkos123` |
 | `admin@arkos.com` | Administrador | `arkos123` |
+
+### Dados de demonstração
+
+`npm run seed:demo` **limpa as tabelas de negócio** (produtos, lotes, vendas,
+caixa, contas, fiscal — os usuários são preservados) e cria um cenário coerente:
+18 produtos entre medicamentos livres, tarja vermelha e tarja preta, perfumaria e
+correlatos; 4 fornecedores; 24 lotes com validades variadas (incluindo um lote
+vencido e quatro vencendo em menos de 30 dias); histórico de entrada, perda,
+ajuste de inventário e devolução; 15 vendas distribuídas entre hoje, ontem e
+anteontem (com receita nos controlados, pagamento misto, uma venda aberta e uma
+cancelada); notas fiscais simuladas; caixa de ontem fechado com divergência de
+R$ 2,50; dois caixas abertos hoje; e contas a pagar/receber com itens vencidos.
+
+O saldo de cada lote fecha com a soma das movimentações, e nenhuma venda
+finalizada de controlado existe sem receita — os mesmos invariantes que as APIs
+exigem.
 
 ### Conferindo o fluxo completo
 

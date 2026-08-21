@@ -12,6 +12,7 @@
     "sync:schema": "node database/scripts/sync-schema.js",
     "migrate": "node database/scripts/run-migrations.js",
     "seed": "node database/scripts/seed.js",
+    "seed:demo": "node database/scripts/seed-demo.js",
     "dev:auth": "npm run dev --workspace=services/auth-service",
     "dev:estoque": "npm run dev --workspace=services/estoque-service",
     "dev:vendas": "npm run dev --workspace=services/vendas-service",
