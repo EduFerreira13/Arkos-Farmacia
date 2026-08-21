@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { env } from "./env.js";
 import { consultar } from "./db.js";
+import { registrarRotas } from "./rotas.js";
 
 export function construirApp() {
   const app = Fastify({
@@ -19,6 +20,9 @@ export function construirApp() {
     }
     return { servico: env.NOME_SERVICO, status: "ok", banco };
   });
+
+  // Prefixo /auth conforme docs/API-CONTRATOS.md.
+  app.register(registrarRotas, { prefix: "/auth" });
 
   return app;
 }
