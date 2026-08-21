@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Package, Plus, Search } from "lucide-react";
+import { Package, Plus } from "lucide-react";
 import { TIPO_CONTROLE, TIPO_CONTROLE_LABEL, TIPO_CONTROLE_LISTA } from "@arkos/shared-types";
 import { api } from "../lib/api.js";
 import { usarBusca } from "../lib/usarBusca.js";
@@ -178,20 +178,13 @@ export function Produtos() {
 
       <Card>
         <div className="flex items-end gap-3 border-b border-borda px-5 py-4">
-          <div className="relative w-80">
-            <Search
-              size={16}
-              aria-hidden="true"
-              className="pointer-events-none absolute left-3 top-[34px] text-secundario"
-            />
-            <CampoTexto
-              rotulo="Buscar por nome ou princípio ativo"
-              value={busca}
-              onChange={aoBuscar}
-              placeholder="Ex: dipirona"
-              className="[&_input]:pl-9"
-            />
-          </div>
+          <CampoTexto
+            rotulo="Buscar por nome ou princípio ativo"
+            className="w-80"
+            value={busca}
+            onChange={aoBuscar}
+            placeholder="Ex: dipirona"
+          />
           <CampoSelect
             rotulo="Tipo de controle"
             className="w-56"
