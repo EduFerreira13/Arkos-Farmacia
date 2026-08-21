@@ -14,6 +14,9 @@ export const env = {
   JWT_SECRET: process.env.JWT_SECRET,
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN ?? "8h",
   NODE_ENV: process.env.NODE_ENV ?? "development",
+
+  // Comunicação entre serviços é sempre HTTP (docs/ARQUITETURA.md).
+  VENDAS_URL: `http://localhost:${process.env.VENDAS_SERVICE_PORT ?? 3003}`,
 };
 
 export function validarEnv() {
