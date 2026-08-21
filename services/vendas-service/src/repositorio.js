@@ -195,12 +195,22 @@ export async function listarVendasDoDia() {
 
 /**
  * Resumo do dia para o dashboard e para o fluxo de caixa do financeiro:
- * total, ticket médio e quebra por forma de pagamento.
+ * total, ticket médio, quebra por forma de pagamento e variação contra ontem
+ * (o card de indicador mostra a variação percentual — REGRAS-VISUAIS §4).
  */
 export async function resumoDoDia() {
   const { rows: totais } = await consultar(
     `SELECT total_vendas::int AS total_vendas, valor_total_dia, ticket_medio
        FROM vendas.vw_vendas_hoje`
+  );
+
+  const { rows: ontem } = await consultar(
+    `SELECT COUNT(*)::int AS total_vendas,
+            COALESCE(SUM(valor_total), 0) AS valor_total_dia,
+            COALESCE(AVG(valor_total), 0) AS ticket_medio
+       FROM vendas.vendas
+      WHERE status = 'finalizada'
+        AND criado_em::date = current_date - 1`
   );
 
   const { rows: porForma } = await consultar(
@@ -212,10 +222,27 @@ export async function resumoDoDia() {
       ORDER BY p.forma_pagamento`
   );
 
+  const variacao = (hoje, anterior) => {
+    if (!anterior) return null;
+    return Number((((hoje - anterior) / anterior) * 100).toFixed(1));
+  };
+
+  const valorHoje = totais[0]?.valor_total_dia ?? 0;
+  const ticketHoje = totais[0]?.ticket_medio ?? 0;
+
   return {
     total_vendas: totais[0]?.total_vendas ?? 0,
-    valor_total_dia: totais[0]?.valor_total_dia ?? 0,
-    ticket_medio: totais[0]?.ticket_medio ?? 0,
+    valor_total_dia: valorHoje,
+    ticket_medio: ticketHoje,
     por_forma_pagamento: porForma,
+    ontem: {
+      total_vendas: ontem[0].total_vendas,
+      valor_total_dia: ontem[0].valor_total_dia,
+      ticket_medio: ontem[0].ticket_medio,
+    },
+    variacao_pct: {
+      valor_total_dia: variacao(valorHoje, ontem[0].valor_total_dia),
+      ticket_medio: variacao(ticketHoje, ontem[0].ticket_medio),
+    },
   };
 }
