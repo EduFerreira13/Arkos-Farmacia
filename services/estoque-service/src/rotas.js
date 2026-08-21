@@ -214,9 +214,10 @@ export async function registrarRotas(app) {
   });
 
   /**
-   * Saída usa FEFO e é permitida a quem pode vender (o vendas-service repassa
-   * o token do operador ao dar baixa). Entrada, ajuste, perda e devolução são
-   * operações de estoque e exigem permissão de ajuste (§6).
+   * Saída (FEFO) e devolução são as duas pontas de uma venda, então bastam a
+   * permissão de vender — o vendas-service repassa o token do operador ao dar
+   * baixa e ao estornar uma finalização que falhou no meio. Ajuste e perda
+   * mexem no saldo sem venda por trás e exigem ajustar_estoque (§6).
    */
   app.post("/movimentacoes", async (requisicao, resposta) => {
     const { produto_id, lote_id, tipo, quantidade, motivo } = requisicao.body ?? {};
@@ -226,8 +227,11 @@ export async function registrarRotas(app) {
     }
     if (!produto_id) return invalido(resposta, "Informe produto_id.");
 
-    const permissaoNecessaria =
-      tipo === TIPO_MOVIMENTACAO.SAIDA ? "vender" : "ajustar_estoque";
+    const permissaoNecessaria = [TIPO_MOVIMENTACAO.SAIDA, TIPO_MOVIMENTACAO.DEVOLUCAO].includes(
+      tipo
+    )
+      ? "vender"
+      : "ajustar_estoque";
     if (!temPermissao(requisicao.usuario, permissaoNecessaria)) {
       return resposta.code(403).send({
         erro: ERROS.SEM_PERMISSAO,
