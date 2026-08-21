@@ -1,0 +1,14 @@
+{
+  "name": "@arkos/shared-types",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tipos e contratos de API compartilhados entre frontend e serviços do Arkos",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src"
+  ]
+}
