@@ -10,7 +10,16 @@
   ],
   "scripts": {
     "sync:schema": "node database/scripts/sync-schema.js",
-    "migrate": "node database/scripts/run-migrations.js"
+    "migrate": "node database/scripts/run-migrations.js",
+    "seed": "node database/scripts/seed.js",
+    "dev:auth": "npm run dev --workspace=services/auth-service",
+    "dev:estoque": "npm run dev --workspace=services/estoque-service",
+    "dev:vendas": "npm run dev --workspace=services/vendas-service",
+    "dev:financeiro": "npm run dev --workspace=services/financeiro-service",
+    "dev:fiscal": "npm run dev --workspace=services/fiscal-service",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev:services": "concurrently -n auth,estoque,vendas,financeiro,fiscal -c blue,green,magenta,yellow,cyan \"npm:dev:auth\" \"npm:dev:estoque\" \"npm:dev:vendas\" \"npm:dev:financeiro\" \"npm:dev:fiscal\"",
+    "dev": "concurrently -n servicos,web -c blue,magenta \"npm:dev:services\" \"npm:dev:web\""
   },
   "engines": {
     "node": ">=20"
@@ -18,5 +27,8 @@
   "dependencies": {
     "dotenv": "^17.4.2",
     "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
   }
 }
