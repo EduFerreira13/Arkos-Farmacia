@@ -1,48 +1,34 @@
 import { Link } from "react-router-dom";
-import {
-  AlertTriangle,
-  CalendarClock,
-  Megaphone,
-  Receipt,
-  ShoppingCart,
-  Wallet,
-} from "lucide-react";
+import { AlertTriangle, CalendarClock, Megaphone, Receipt, ShoppingCart, Wallet } from "lucide-react";
+import { FORMA_PAGAMENTO_LABEL } from "@arkos/shared-types";
 import { api } from "../lib/api.js";
 import { usarBusca } from "../lib/usarBusca.js";
 import { formatarMoeda, formatarNumero } from "../lib/formato.js";
 import { usarAutenticacao } from "../lib/autenticacao.jsx";
 import { CardIndicador } from "../componentes/CardIndicador.jsx";
-import { Tabela } from "../componentes/Tabela.jsx";
-import {
-  Aviso,
-  Card,
-  CardCabecalho,
-  CardCorpo,
-  Carregando,
-  EstadoVazio,
-} from "../componentes/Superficies.jsx";
+import { Aviso, Card, CardCabecalho, CardCorpo, Carregando } from "../componentes/Superficies.jsx";
 
 /** Comunicados internos do sistema — conteúdo fixo no MVP. */
 const COMUNICADOS = [
   {
     id: "controlados",
-    titulo: "Venda de controlado exige receita registrada",
+    titulo: "Controlado só sai com receita registrada",
     texto:
-      "O PDV não conclui venda com item de tarja vermelha ou preta sem número de receita, CRM e nome do paciente. O bloqueio é do sistema, não depende de conferência manual.",
+      "Tarja vermelha ou preta exige receita com nome do médico, registro no Conselho Regional de Medicina e paciente. O ponto de venda não finaliza sem isso.",
   },
   {
     id: "fefo",
-    titulo: "Saída de estoque agora é FEFO",
+    titulo: "Baixa de estoque por FEFO",
     texto:
-      "A baixa sempre consome primeiro o lote que vence antes, atravessando lotes quando a quantidade exige. Lote vencido fica fora da conta de disponível.",
-  },
-  {
-    id: "caixa",
-    titulo: "Fechamento de caixa com conferência",
-    texto:
-      "Ao fechar o turno o sistema calcula o valor esperado (abertura mais entradas menos saídas) e registra a divergência contra o valor contado na gaveta.",
+      "FEFO significa primeiro a vencer, primeiro a sair: a venda consome sempre o lote de validade mais curta, e lote vencido fica fora do saldo disponível.",
   },
 ];
+
+const dataDeHoje = new Date().toLocaleDateString("pt-BR", {
+  weekday: "long",
+  day: "2-digit",
+  month: "long",
+});
 
 export function Dashboard() {
   const { usuario } = usarAutenticacao();
@@ -60,17 +46,19 @@ export function Dashboard() {
 
   return (
     <>
-      {/* Boas-vindas com o gradiente da marca (REGRAS-VISUAIS §2) */}
-      <section className="mb-6 rounded-card bg-marca px-6 py-5 text-white">
-        <p className="text-rotulo uppercase tracking-wide text-white/75">Arkos</p>
-        <h1 className="mt-1 text-h1">Bom trabalho, {usuario?.nome?.split(" ")[0]}</h1>
-        <p className="mt-1 text-corpo-espacoso text-white/85">
-          Indicadores do dia com dados direto do banco — vendas, validade, estoque e ticket médio.
-        </p>
+      {/* Faixa de boas-vindas com o gradiente da marca (REGRAS-VISUAIS §2) */}
+      <section className="mb-4 flex items-center justify-between gap-6 rounded-card bg-marca px-6 py-4 text-white">
+        <div>
+          <h1 className="text-h2">Bom trabalho, {usuario?.nome?.split(" ")[0]}</h1>
+          <p className="mt-0.5 text-rotulo text-white/80">
+            Indicadores do dia com dados reais do banco
+          </p>
+        </div>
+        <p className="text-rotulo capitalize text-white/80">{dataDeHoje}</p>
       </section>
 
       {falha ? (
-        <Aviso tom="erro" className="mb-6">
+        <Aviso tom="erro" className="mb-4">
           {falha.message}
         </Aviso>
       ) : null}
@@ -83,14 +71,14 @@ export function Dashboard() {
             <CardIndicador
               rotulo="Vendas do dia"
               valor={formatarMoeda(resumo?.valor_total_dia)}
-              detalhe={`${formatarNumero(resumo?.total_vendas ?? 0)} cupons finalizados`}
+              detalhe={`${formatarNumero(resumo?.total_vendas ?? 0)} cupons`}
               icone={ShoppingCart}
               variacao={resumo?.variacao_pct?.valor_total_dia ?? null}
             />
             <CardIndicador
               rotulo="Produtos a vencer"
               valor={formatarNumero(lotesAVencer.length)}
-              detalhe="lotes vencendo em até 30 dias"
+              detalhe="lotes em até 30 dias"
               icone={CalendarClock}
               tom={lotesAVencer.length ? "alerta" : "sucesso"}
             />
@@ -104,95 +92,59 @@ export function Dashboard() {
             <CardIndicador
               rotulo="Ticket médio"
               valor={formatarMoeda(resumo?.ticket_medio)}
-              detalhe="por cupom finalizado hoje"
+              detalhe="por cupom de hoje"
               icone={Receipt}
               variacao={resumo?.variacao_pct?.ticket_medio ?? null}
             />
           </div>
 
-          <div className="mt-6 grid grid-cols-[1.4fr_1fr] gap-6">
+          <div className="mt-4 grid grid-cols-[1.5fr_1fr] gap-4">
             <Card>
-              <CardCabecalho
-                titulo="Comunicados e atualizações"
-                descricao="Novidades e avisos internos do sistema."
-                icone={Megaphone}
-              />
+              <CardCabecalho titulo="Comunicados do sistema" icone={Megaphone} />
               <CardCorpo className="space-y-3">
                 {COMUNICADOS.map((comunicado) => (
-                  <article
-                    key={comunicado.id}
-                    className="rounded-card bg-fundo px-4 py-3"
-                  >
-                    <h3 className="text-h3 text-texto">{comunicado.titulo}</h3>
-                    <p className="mt-1 text-corpo text-secundario">{comunicado.texto}</p>
+                  <article key={comunicado.id}>
+                    <h3 className="text-corpo font-semibold text-texto">{comunicado.titulo}</h3>
+                    <p className="mt-0.5 text-rotulo leading-5 text-secundario">
+                      {comunicado.texto}
+                    </p>
                   </article>
                 ))}
               </CardCorpo>
             </Card>
 
-            <div className="space-y-6">
-              <Card>
-                <CardCabecalho
-                  titulo="Vendas por forma de pagamento"
-                  descricao="Base do fluxo de caixa do dia."
-                  icone={Wallet}
-                />
+            <Card>
+              <CardCabecalho
+                titulo="Recebido hoje"
+                icone={Wallet}
+                acoes={
+                  <Link
+                    to="/caixa"
+                    className="rounded-botao px-2 py-1 text-rotulo text-primario hover:bg-borda/60"
+                  >
+                    Ver caixa
+                  </Link>
+                }
+              />
+              <CardCorpo>
                 {resumo?.por_forma_pagamento?.length ? (
-                  <CardCorpo>
-                    <dl className="space-y-2 text-corpo">
-                      {resumo.por_forma_pagamento.map((linha) => (
-                        <div key={linha.forma_pagamento} className="flex justify-between">
-                          <dt className="text-secundario">{linha.forma_pagamento}</dt>
-                          <dd className="text-texto">{formatarMoeda(linha.valor)}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </CardCorpo>
+                  <dl className="space-y-1.5 text-corpo">
+                    {resumo.por_forma_pagamento.map((linha) => (
+                      <div key={linha.forma_pagamento} className="flex justify-between">
+                        <dt className="text-secundario">
+                          {FORMA_PAGAMENTO_LABEL[linha.forma_pagamento] ?? linha.forma_pagamento}
+                        </dt>
+                        <dd className="text-texto">{formatarMoeda(linha.valor)}</dd>
+                      </div>
+                    ))}
+                  </dl>
                 ) : (
-                  <EstadoVazio
-                    icone={Wallet}
-                    titulo="Nenhuma venda finalizada hoje"
-                    descricao="Os valores aparecem aqui conforme o PDV registra as vendas."
-                  />
+                  <p className="text-corpo text-secundario">
+                    Nenhuma venda finalizada hoje ainda.
+                  </p>
                 )}
-              </Card>
-
-              <Card>
-                <CardCabecalho
-                  titulo="Precisa de atenção"
-                  descricao="Lotes mais próximos do vencimento."
-                  icone={CalendarClock}
-                  acoes={
-                    <Link
-                      to="/alertas"
-                      className="rounded-botao px-2 py-1 text-rotulo text-primario hover:bg-borda/60"
-                    >
-                      Ver alertas
-                    </Link>
-                  }
-                />
-                <Tabela
-                  colunas={[
-                    { chave: "nome", titulo: "Produto" },
-                    {
-                      chave: "dias_para_vencer",
-                      titulo: "Vence em",
-                      alinhamento: "direita",
-                      renderizar: (linha) => `${formatarNumero(linha.dias_para_vencer)} dias`,
-                    },
-                  ]}
-                  linhas={lotesAVencer.slice(0, 5)}
-                  chave={(linha) => linha.lote_id}
-                  vazio={
-                    <EstadoVazio
-                      icone={CalendarClock}
-                      titulo="Nada vencendo em 30 dias"
-                      descricao="O estoque está com validade folgada."
-                    />
-                  }
-                />
-              </Card>
-            </div>
+              </CardCorpo>
+            </Card>
           </div>
         </>
       )}
