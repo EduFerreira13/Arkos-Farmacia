@@ -1,0 +1,33 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import dotenv from "dotenv";
+
+const aqui = path.dirname(fileURLToPath(import.meta.url));
+
+// O .env fica na raiz do monorepo — um único lugar para as credenciais de dev.
+dotenv.config({ path: path.join(aqui, "..", "..", "..", ".env"), quiet: true });
+
+export const env = {
+  NOME_SERVICO: "compras-service",
+  DATABASE_URL: process.env.DATABASE_URL,
+  PORT: Number(process.env.COMPRAS_SERVICE_PORT ?? 3006),
+  JWT_SECRET: process.env.JWT_SECRET,
+  JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN ?? "8h",
+  NODE_ENV: process.env.NODE_ENV ?? "development",
+  TZ_NEGOCIO: process.env.TZ_NEGOCIO ?? "America/Sao_Paulo",
+
+  // Comunicação entre serviços é sempre HTTP (docs/ARQUITETURA.md).
+  ESTOQUE_URL: `http://localhost:${process.env.ESTOQUE_SERVICE_PORT ?? 3002}`,
+  FINANCEIRO_URL: `http://localhost:${process.env.FINANCEIRO_SERVICE_PORT ?? 3004}`,
+};
+
+export function validarEnv() {
+  const faltando = [];
+  if (!env.DATABASE_URL) faltando.push("DATABASE_URL");
+  if (!env.JWT_SECRET) faltando.push("JWT_SECRET");
+  if (faltando.length) {
+    throw new Error(
+      `Variáveis de ambiente ausentes (${faltando.join(", ")}). Confira o .env da raiz.`
+    );
+  }
+}

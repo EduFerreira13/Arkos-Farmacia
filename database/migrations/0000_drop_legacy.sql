@@ -6,6 +6,7 @@ DROP SCHEMA IF EXISTS estoque CASCADE;
 DROP SCHEMA IF EXISTS vendas CASCADE;
 DROP SCHEMA IF EXISTS financeiro CASCADE;
 DROP SCHEMA IF EXISTS fiscal CASCADE;
+DROP SCHEMA IF EXISTS compras CASCADE;
 
 -- Atenção: se a versão antiga tiver deixado tabelas soltas no schema "public"
 -- (não previstas nesta modelagem), o Claude Code deve rodar:
