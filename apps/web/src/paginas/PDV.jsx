@@ -7,6 +7,7 @@ import {
   ShieldAlert,
   ShoppingCart,
   Trash2,
+  UserPlus,
   X,
 } from "lucide-react";
 import {
@@ -107,6 +108,13 @@ function CupomVenda({ resultado, aoFechar }) {
           ) : null}
         </div>
 
+        {venda.cliente_nome ? (
+          <p className="text-rotulo text-secundario">
+            Cliente: {venda.cliente_nome}
+            {venda.cliente_convenio ? ` (convênio ${venda.cliente_convenio})` : ""}
+          </p>
+        ) : null}
+
         {venda.receita ? (
           <div className="rounded-card bg-borda/40 px-4 py-3 text-rotulo text-secundario">
             Receita: {venda.receita.paciente_nome} — Dr(a). {venda.receita.medico_nome},
@@ -133,8 +141,10 @@ export function PDV() {
   const [formaPagamento, definirFormaPagamento] = useState(FORMA_PAGAMENTO.DINHEIRO);
   const [valorPagamento, definirValorPagamento] = useState("");
   const [resultado, definirResultado] = useState(null);
+  const [buscaCliente, definirBuscaCliente] = useState("");
 
   const produtos = usarBusca(() => api.estoque.get("/produtos"), []);
+  const clientes = usarBusca(() => api.vendas.get("/clientes"), []);
 
   const encontrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -202,6 +212,24 @@ export function PDV() {
           ? { desconto_pct: Number(desconto || 0) }
           : { desconto: Number(desconto || 0) };
       const resposta = await api.vendas.post(`/${venda.id}/desconto`, corpo);
+      definirVenda(resposta.venda);
+    });
+  }
+
+  /**
+   * Identificar o cliente é o que alimenta o relacionamento: sem isso a venda
+   * entra como balcão e não conta no histórico de recompra de ninguém.
+   */
+  async function vincularCliente(clienteId) {
+    await executar(async () => {
+      let atual = venda;
+      if (!atual) {
+        const criada = await api.vendas.post("", {});
+        atual = criada.venda;
+      }
+      const resposta = await api.vendas.post(`/${atual.id}/cliente`, {
+        cliente_id: clienteId || null,
+      });
       definirVenda(resposta.venda);
     });
   }
@@ -382,6 +410,50 @@ export function PDV() {
         </div>
 
         <div className="space-y-6">
+          <Card>
+            <CardCabecalho
+              titulo="Cliente"
+              descricao="Identificar quem está comprando alimenta o histórico de recompra."
+              icone={UserPlus}
+            />
+            <CardCorpo className="space-y-2">
+              {venda?.cliente_id ? (
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-corpo font-medium text-texto">{venda.cliente_nome}</p>
+                    <p className="text-rotulo text-secundario">
+                      {venda.cliente_convenio
+                        ? `Convênio ${venda.cliente_convenio}`
+                        : "Cliente particular"}
+                      {venda.cliente_telefone ? ` — ${venda.cliente_telefone}` : ""}
+                    </p>
+                  </div>
+                  <BotaoIcone
+                    icone={X}
+                    rotulo="Tirar cliente da venda"
+                    onClick={() => vincularCliente(null)}
+                  />
+                </div>
+              ) : (
+                <CampoSelect
+                  rotulo="Buscar cliente cadastrado"
+                  value=""
+                  onChange={(evento) => vincularCliente(evento.target.value)}
+                  disabled={ocupado || clientes.carregando}
+                  opcoes={[
+                    { valor: "", rotulo: "Venda de balcão (sem identificar)" },
+                    ...(clientes.dados?.clientes ?? []).map((cliente) => ({
+                      valor: cliente.id,
+                      rotulo: cliente.convenio
+                        ? `${cliente.nome} — ${cliente.convenio}`
+                        : cliente.nome,
+                    })),
+                  ]}
+                />
+              )}
+            </CardCorpo>
+          </Card>
+
           <Card>
             <CardCabecalho titulo="Carrinho" icone={ShoppingCart} />
             {itens.length ? (

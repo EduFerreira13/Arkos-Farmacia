@@ -53,6 +53,7 @@ const paginas = {
   PDV: (await import("../src/paginas/PDV.jsx")).PDV,
   Vendas: (await import("../src/paginas/Vendas.jsx")).Vendas,
   HistoricoVendas: (await import("../src/paginas/HistoricoVendas.jsx")).HistoricoVendas,
+  Relacionamento: (await import("../src/paginas/Relacionamento.jsx")).Relacionamento,
   Compras: (await import("../src/paginas/Compras.jsx")).Compras,
   SugestaoCompra: (await import("../src/paginas/SugestaoCompra.jsx")).SugestaoCompra,
   FinanceiroVisaoGeral: (await import("../src/paginas/FinanceiroVisaoGeral.jsx"))
@@ -242,6 +243,126 @@ const RESPOSTAS = [
     },
   ],
   [/\/api\/vendas\/resumo\/hoje/, RESUMO_VENDAS],
+  [
+    /\/api\/vendas\/crm\/resumo/,
+    {
+      clientes: 36,
+      com_compra: 32,
+      situacoes: { novo: 1, ativo: 22, recompra_atrasada: 4, em_risco: 0, inativo: 9 },
+      recompra_prevista_7_dias: 4,
+      ticket_medio: 56.33,
+      valor_medio_por_cliente: 473.04,
+      faturamento_de_clientes_identificados: 15137.28,
+      contatos: { total: 8, hoje: 0, convertidos: 2 },
+    },
+  ],
+  [
+    /\/api\/vendas\/crm\/clientes\/[^/?]+$/,
+    {
+      cliente: {
+        id: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+        nome: "Marta Ribeiro Alves",
+        cpf: "312.456.789-01",
+        telefone: "(11) 98877-1200",
+        convenio: "Unimed",
+        aceita_contato: true,
+        total_compras: 4,
+        valor_total: 210.4,
+        ticket_medio: 52.6,
+        primeira_compra: "2026-05-24T12:00:00.000Z",
+        ultima_compra: "2026-08-12T12:00:00.000Z",
+        dias_sem_comprar: 9,
+        intervalo_medio_dias: 30,
+        dias_para_recompra: 21,
+        atraso_recompra_dias: 0,
+        uso_continuo: {
+          produto_id: PRODUTO.id,
+          produto_nome: PRODUTO.nome,
+          tipo_controle: "livre",
+          unidades: 4,
+          vezes: 4,
+        },
+        preferidos: [
+          {
+            produto_id: PRODUTO.id,
+            produto_nome: PRODUTO.nome,
+            tipo_controle: "livre",
+            unidades: 4,
+            vezes: 4,
+          },
+        ],
+        ultimo_contato_em: null,
+        total_contatos: 0,
+        situacao: "ativo",
+        motivo: "Em dia com a recompra",
+        oferta: "Nada urgente",
+        mensagem: "Ola! Quando precisar da reposicao, me chama que eu ja separo.",
+        prioridade: 10,
+      },
+      vendas: [
+        {
+          id: VENDA.id,
+          criado_em: "2026-08-12T12:00:00.000Z",
+          valor_total: 52.6,
+          desconto: 0,
+          itens: "Dipirona x1",
+          formas_pagamento: "pix",
+        },
+      ],
+      contatos: [],
+    },
+  ],
+  [
+    /\/api\/vendas\/crm\/clientes/,
+    {
+      clientes: [
+        {
+          id: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+          nome: "Marta Ribeiro Alves",
+          telefone: "(11) 98877-1200",
+          convenio: "Unimed",
+          aceita_contato: true,
+          total_compras: 4,
+          valor_total: 210.4,
+          ticket_medio: 52.6,
+          ultima_compra: "2026-08-12T12:00:00.000Z",
+          dias_sem_comprar: 9,
+          intervalo_medio_dias: 30,
+          dias_para_recompra: 21,
+          atraso_recompra_dias: 0,
+          uso_continuo: null,
+          preferidos: [],
+          total_contatos: 0,
+          situacao: "recompra_atrasada",
+          motivo: "Recompra de uso continuo atrasada 9 dias",
+          oferta: "Reservar Dipirona com 5% de desconto",
+          mensagem: "Ola! Posso separar sua caixa?",
+          prioridade: 109,
+        },
+      ],
+      sem_contato: 1,
+    },
+  ],
+  [
+    /\/api\/vendas\/crm\/contatos/,
+    {
+      contatos: [
+        {
+          id: "20202020-2020-2020-2020-202020202020",
+          cliente_id: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+          cliente_nome: "Marta Ribeiro Alves",
+          telefone: "(11) 98877-1200",
+          canal: "telefone",
+          motivo: "Recompra atrasada",
+          oferta: "5% de desconto",
+          observacao: null,
+          resultado: "interessado",
+          usuario_id: USUARIO.id,
+          criado_em: "2026-08-20T14:00:00.000Z",
+        },
+      ],
+    },
+  ],
   [
     /\/api\/vendas\/analise/,
     {
@@ -657,12 +778,20 @@ const TELAS = [
   ["/financeiro", "O que entra contra o que sai"],
   ["/relatorios", "Vendas por período e por produto"],
   ["/fiscal/controlados", "Sistema Nacional de Gerenciamento"],
+  ["/relacionamento", "Quem ligar hoje"],
   ["/cadastros/clientes", "Base para venda a prazo"],
   ["/cadastros/usuarios", "Quem entra no sistema"],
   ["/contas", "A pagar por fornecedores"],
 ];
 
-const COMUNS = ["/caixa", "/pdv", "/produtos", "/vendas/historico", "/cadastros/clientes"];
+const COMUNS = [
+  "/caixa",
+  "/pdv",
+  "/produtos",
+  "/vendas/historico",
+  "/relacionamento",
+  "/cadastros/clientes",
+];
 const ESPERADO = {
   administrador: TELAS.map(([caminho]) => caminho),
   gerente: [

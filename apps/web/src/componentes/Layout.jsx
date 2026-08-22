@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
@@ -7,6 +7,7 @@ import {
   BarChart3,
   ChevronsLeft,
   ChevronsRight,
+  CircleHelp,
   ClipboardList,
   Eye,
   FileText,
@@ -22,6 +23,7 @@ import {
   ShoppingCart,
   Stethoscope,
   Sun,
+  HeartHandshake,
   Truck,
   Users,
   Wallet,
@@ -29,6 +31,7 @@ import {
 import { PERFIL_LABEL, PERFIS, PERFIS_LISTA } from "@arkos/shared-types";
 import { Logo, Simbolo } from "./Logo.jsx";
 import { Botao, BotaoIcone } from "./Botao.jsx";
+import { Tour, chaveDoTour } from "./Tour.jsx";
 import { usarPreferencias } from "../lib/preferencias.jsx";
 import { temPermissao, usarAutenticacao } from "../lib/autenticacao.jsx";
 
@@ -48,6 +51,12 @@ export const SECOES = [
       { para: "/pdv", rotulo: "Ponto de venda", icone: ShoppingCart, permissao: "vender" },
       { para: "/vendas", rotulo: "Vendas do dia", icone: Receipt, permissao: "vender" },
       { para: "/vendas/historico", rotulo: "Histórico de vendas", icone: History, permissao: "vender" },
+      {
+        para: "/relacionamento",
+        rotulo: "Relacionamento",
+        icone: HeartHandshake,
+        permissao: "vender",
+      },
     ],
   },
   {
@@ -144,6 +153,7 @@ function ItemMenu({ item, recolhida }) {
     <NavLink
       to={item.para}
       end={item.fim}
+      data-tour={`menu-${item.para}`}
       title={recolhida ? item.rotulo : undefined}
       className={({ isActive }) =>
         [
@@ -240,7 +250,7 @@ function SeletorDeVisao({ usuario, perfilReal, simulando, aoSimular, ocupado }) 
   );
 }
 
-function Topbar({ usuario, perfilReal, simulando, aoSair, aoSimular, ocupado }) {
+function Topbar({ usuario, perfilReal, simulando, aoSair, aoSimular, aoVerTour, ocupado }) {
   const { tema, alternarTema } = usarPreferencias();
   const [busca, definirBusca] = useState("");
   const navegar = useNavigate();
@@ -284,11 +294,14 @@ function Topbar({ usuario, perfilReal, simulando, aoSair, aoSimular, ocupado }) 
         <div className="mx-2 h-8 w-px bg-borda" aria-hidden="true" />
 
         <BotaoIcone icone={Bell} rotulo="Notificações" />
-        <BotaoIcone
-          icone={tema === "claro" ? Moon : Sun}
-          rotulo={tema === "claro" ? "Ativar modo escuro" : "Ativar modo claro"}
-          onClick={alternarTema}
-        />
+        <span data-tour="tema" className="flex items-center gap-1">
+          <BotaoIcone
+            icone={tema === "claro" ? Moon : Sun}
+            rotulo={tema === "claro" ? "Ativar modo escuro" : "Ativar modo claro"}
+            onClick={alternarTema}
+          />
+          <BotaoIcone icone={CircleHelp} rotulo="Rever o tour do sistema" onClick={aoVerTour} />
+        </span>
 
         <div className="mx-2 h-8 w-px bg-borda" aria-hidden="true" />
 
@@ -310,8 +323,24 @@ export function Layout() {
   const [recolhida, definirRecolhida] = useState(false);
   const [ocupado, definirOcupado] = useState(false);
   const [erro, definirErro] = useState(null);
+  const [tourAberto, definirTourAberto] = useState(false);
   const { usuario, sair, simular, encerrarSimulacao, simulando, perfilReal } = usarAutenticacao();
   const navegar = useNavigate();
+
+  /**
+   * Primeiro acesso de cada usuário abre o tour. Ao simular outro perfil o tour
+   * também aparece, porque o roteiro muda conforme o que o perfil pode ver.
+   */
+  useEffect(() => {
+    if (!usuario?.id) return;
+    let visto = null;
+    try {
+      visto = localStorage.getItem(chaveDoTour(simulando ? `${usuario.id}.${usuario.perfil}` : usuario.id));
+    } catch {
+      visto = "sim"; // Sem armazenamento, não insiste.
+    }
+    if (!visto) definirTourAberto(true);
+  }, [usuario?.id, usuario?.perfil, simulando]);
 
   async function trocarVisao(perfil) {
     definirErro(null);
@@ -345,6 +374,7 @@ export function Layout() {
           simulando={simulando}
           aoSair={sair}
           aoSimular={trocarVisao}
+          aoVerTour={() => definirTourAberto(true)}
           ocupado={ocupado}
         />
 
@@ -380,6 +410,8 @@ export function Layout() {
           <Outlet />
         </main>
       </div>
+
+      {tourAberto ? <Tour aoEncerrar={() => definirTourAberto(false)} /> : null}
     </div>
   );
 }

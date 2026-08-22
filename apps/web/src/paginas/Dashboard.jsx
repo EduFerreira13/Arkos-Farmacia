@@ -67,7 +67,7 @@ export function Dashboard() {
         <Carregando texto="Carregando indicadores" />
       ) : (
         <>
-          <div className="grid grid-cols-4 gap-4">
+          <div data-tour="indicadores" className="grid grid-cols-4 gap-4">
             <CardIndicador
               rotulo="Vendas do dia"
               valor={formatarMoeda(resumo?.valor_total_dia)}

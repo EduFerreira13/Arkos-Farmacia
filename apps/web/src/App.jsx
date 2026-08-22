@@ -6,6 +6,7 @@ import { Dashboard } from "./paginas/Dashboard.jsx";
 import { PDV } from "./paginas/PDV.jsx";
 import { Vendas } from "./paginas/Vendas.jsx";
 import { HistoricoVendas } from "./paginas/HistoricoVendas.jsx";
+import { Relacionamento } from "./paginas/Relacionamento.jsx";
 import { Produtos } from "./paginas/Produtos.jsx";
 import { Movimentacoes } from "./paginas/Movimentacoes.jsx";
 import { Inventario } from "./paginas/Inventario.jsx";
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="/pdv" element={comPermissao("vender", <PDV />)} />
         <Route path="/vendas" element={comPermissao("vender", <Vendas />)} />
         <Route path="/vendas/historico" element={comPermissao("vender", <HistoricoVendas />)} />
+        <Route path="/relacionamento" element={comPermissao("vender", <Relacionamento />)} />
 
         <Route path="/produtos" element={comPermissao("consultar_estoque", <Produtos />)} />
         <Route path="/movimentacoes" element={comPermissao("ajustar_estoque", <Movimentacoes />)} />
