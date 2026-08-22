@@ -184,3 +184,48 @@ export async function totaisContas() {
   );
   return rows[0];
 }
+
+/**
+ * Movimentações de caixa de um período, com o operador dono do caixa.
+ * @param {{ de: string, ate: string }} intervalo
+ */
+export async function listarMovimentacoesNoPeriodo({ de, ate }) {
+  const { rows } = await consultar(
+    `SELECT m.criado_em, m.tipo, m.valor, m.origem, m.descricao, m.venda_id,
+            c.usuario_id, c.aberto_em, c.fechado_em
+       FROM financeiro.movimentacoes_caixa m
+       JOIN financeiro.caixa c ON c.id = m.caixa_id
+      WHERE m.criado_em::date BETWEEN $1::date AND $2::date
+      ORDER BY m.criado_em`,
+    [de, ate]
+  );
+  return rows;
+}
+
+/** Caixas abertos/fechados no período, para conferência do fechamento. */
+export async function listarCaixasNoPeriodo({ de, ate }) {
+  const { rows } = await consultar(
+    `SELECT id, usuario_id, valor_abertura, valor_fechamento_esperado,
+            valor_fechamento_contado, aberto_em, fechado_em
+       FROM financeiro.caixa
+      WHERE aberto_em::date BETWEEN $1::date AND $2::date
+      ORDER BY aberto_em`,
+    [de, ate]
+  );
+  return rows;
+}
+
+/**
+ * Contas de um período por data de vencimento.
+ * @param {"contas_pagar"|"contas_receber"} tabela
+ * @param {{ de: string, ate: string }} intervalo
+ */
+export async function listarContasNoPeriodo(tabela, { de, ate }) {
+  const { rows } = await consultar(
+    `SELECT * FROM financeiro.${tabela}
+      WHERE vencimento BETWEEN $1::date AND $2::date
+      ORDER BY vencimento`,
+    [de, ate]
+  );
+  return rows;
+}

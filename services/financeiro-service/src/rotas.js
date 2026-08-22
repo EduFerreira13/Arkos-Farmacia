@@ -6,9 +6,13 @@ import {
 import { criarAutenticacao } from "@arkos/auth-middleware";
 import { env } from "./env.js";
 import { vendas } from "./servicos.js";
+import { formatarData, formatarDataHora, gerarCsv, nomeArquivo, periodo } from "./relatorios.js";
 import {
   abrirCaixa,
   buscarCaixa,
+  listarCaixasNoPeriodo,
+  listarContasNoPeriodo,
+  listarMovimentacoesNoPeriodo,
   buscarCaixaAberto,
   fecharCaixa,
   inserirContaPagar,
@@ -205,6 +209,130 @@ export async function registrarRotas(app) {
       });
     }
     return { conta };
+  });
+
+  /** Movimento de caixa do período em planilha (CSV que o Excel abre direto). */
+  app.get("/relatorios/caixa", async (requisicao, resposta) => {
+    const intervalo = periodo(requisicao.query);
+    if (intervalo.erro) return invalido(resposta, intervalo.erro);
+
+    const [linhas, caixas] = await Promise.all([
+      listarMovimentacoesNoPeriodo(intervalo),
+      listarCaixasNoPeriodo(intervalo),
+    ]);
+
+    const somaPorTipo = (tipo) =>
+      linhas.filter((l) => l.tipo === tipo).reduce((t, l) => t + Number(l.valor), 0);
+    const somaVendas = linhas
+      .filter((l) => l.origem === "venda" && l.tipo === "entrada")
+      .reduce((t, l) => t + Number(l.valor), 0);
+    const divergencias = caixas
+      .filter((c) => c.fechado_em)
+      .reduce(
+        (t, c) => t + (Number(c.valor_fechamento_contado) - Number(c.valor_fechamento_esperado)),
+        0
+      );
+
+    const csv = gerarCsv(
+      [
+        { titulo: "Data e hora", valor: (l) => formatarDataHora(l.criado_em) },
+        { titulo: "Tipo", valor: (l) => (l.tipo === "entrada" ? "Entrada" : "Saida") },
+        {
+          titulo: "Origem",
+          valor: (l) => (l.origem === "venda" ? "Venda" : "Lancamento manual"),
+        },
+        { titulo: "Descricao", valor: (l) => l.descricao ?? "" },
+        { titulo: "Venda de origem", valor: (l) => (l.venda_id ? l.venda_id.slice(0, 8) : "") },
+        { titulo: "Operador do caixa", valor: (l) => l.usuario_id },
+        { titulo: "Valor (R$)", valor: (l) => Number(l.valor) },
+      ],
+      linhas,
+      [
+        { titulo: "Lancamentos no periodo", valor: linhas.length },
+        { titulo: "Entradas (R$)", valor: somaPorTipo("entrada") },
+        { titulo: "Saidas (R$)", valor: somaPorTipo("saida") },
+        { titulo: "Entradas de venda (R$)", valor: somaVendas },
+        { titulo: "Resultado do periodo (R$)", valor: somaPorTipo("entrada") - somaPorTipo("saida") },
+        { titulo: "Caixas abertos no periodo", valor: caixas.length },
+        { titulo: "Caixas fechados", valor: caixas.filter((c) => c.fechado_em).length },
+        { titulo: "Soma das divergencias de fechamento (R$)", valor: divergencias },
+      ]
+    );
+
+    return resposta
+      .header("Content-Type", "text/csv; charset=utf-8")
+      .header(
+        "Content-Disposition",
+        `attachment; filename="${nomeArquivo("movimento_caixa", intervalo.de, intervalo.ate)}"`
+      )
+      .send(csv);
+  });
+
+  /** Contas a pagar ou a receber com vencimento no período, em planilha. */
+  app.get("/relatorios/contas", { preHandler: auth.exigirPermissao("ver_financeiro") }, async (requisicao, resposta) => {
+    const intervalo = periodo(requisicao.query);
+    if (intervalo.erro) return invalido(resposta, intervalo.erro);
+
+    const tipo = requisicao.query?.tipo === "receber" ? "receber" : "pagar";
+    const tabela = tipo === "receber" ? "contas_receber" : "contas_pagar";
+    const linhas = await listarContasNoPeriodo(tabela, intervalo);
+
+    const quitado = tipo === "receber" ? "recebido" : "pago";
+    const soma = (filtro) =>
+      linhas.filter(filtro).reduce((t, l) => t + Number(l.valor), 0);
+    const hoje = new Date().toISOString().slice(0, 10);
+
+    const csv = gerarCsv(
+      [
+        { titulo: "Vencimento", valor: (l) => formatarData(l.vencimento) },
+        { titulo: "Descricao", valor: (l) => l.descricao },
+        {
+          titulo: tipo === "receber" ? "Origem" : "Fornecedor",
+          valor: (l) => (tipo === "receber" ? l.origem : (l.fornecedor_id ?? "")),
+        },
+        {
+          titulo: "Situacao",
+          valor: (l) =>
+            l.status === quitado
+              ? quitado === "pago"
+                ? "Paga"
+                : "Recebida"
+              : String(l.vencimento).slice(0, 10) < hoje
+                ? "Atrasada"
+                : "Pendente",
+        },
+        {
+          titulo: quitado === "pago" ? "Pago em" : "Recebido em",
+          valor: (l) => formatarDataHora(l.pago_em ?? l.recebido_em),
+        },
+        { titulo: "Valor (R$)", valor: (l) => Number(l.valor) },
+      ],
+      linhas,
+      [
+        { titulo: "Contas no periodo", valor: linhas.length },
+        { titulo: "Total no periodo (R$)", valor: soma(() => true) },
+        {
+          titulo: "Total pendente (R$)",
+          valor: soma((l) => l.status !== quitado),
+        },
+        {
+          titulo: "Total atrasado (R$)",
+          valor: soma((l) => l.status !== quitado && String(l.vencimento).slice(0, 10) < hoje),
+        },
+        {
+          titulo: quitado === "pago" ? "Total pago (R$)" : "Total recebido (R$)",
+          valor: soma((l) => l.status === quitado),
+        },
+      ]
+    );
+
+    return resposta
+      .header("Content-Type", "text/csv; charset=utf-8")
+      .header(
+        "Content-Disposition",
+        `attachment; filename="${nomeArquivo(`contas_a_${tipo}`, intervalo.de, intervalo.ate)}"`
+      )
+      .send(csv);
   });
 
   /**
