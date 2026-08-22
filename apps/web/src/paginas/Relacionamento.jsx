@@ -643,7 +643,12 @@ export function Relacionamento() {
                       tamanho="pequeno"
                       variante="secundario"
                       icone={PhoneCall}
-                      onClick={() => definirFichaAberta(cliente.id)}
+                      onClick={(evento) => {
+                        // A linha inteira também abre a ficha: sem isto o clique
+                        // no botão dispararia as duas coisas.
+                        evento.stopPropagation();
+                        definirFichaAberta(cliente.id);
+                      }}
                     >
                       Abrir ficha
                     </Botao>
