@@ -14,6 +14,16 @@ import {
   periodo,
 } from "./relatorios.js";
 import {
+  analisarVendas,
+  atualizarCliente,
+  inserirCliente,
+  listarClientes,
+  listarReceitas,
+  listarVendas,
+  removerPagamento,
+  vincularCliente,
+} from "./consultas.js";
+import {
   atualizarLoteDoItem,
   buscarVenda,
   buscarVendaCompleta,
@@ -87,7 +97,39 @@ export async function registrarRotas(app) {
     return resposta.code(201).send({ venda: { ...venda, itens: [], pagamentos: [], receita: null } });
   });
 
-  app.get("/", async () => ({ vendas: await listarVendasDoDia() }));
+  /**
+   * Histórico de vendas. Sem filtro de data, responde o movimento de hoje —
+   * é o que a tela "Vendas do dia" usa. Aceita `de`, `ate`, `status`,
+   * `controlado=sim|nao`, `busca` (produto, paciente ou cliente) e `limite`.
+   */
+  app.get("/", async (requisicao, resposta) => {
+    const { de, ate, status, controlado, busca, limite } = requisicao.query ?? {};
+
+    if (status && !Object.values(STATUS_VENDA).includes(status)) {
+      return invalido(resposta, `status inválido. Use: ${Object.values(STATUS_VENDA).join(", ")}.`);
+    }
+
+    const vendas = await listarVendas({ de, ate, status, controlado, busca, limite });
+
+    // Totais do recorte, para a tela não precisar somar de novo.
+    const finalizadas = vendas.filter((venda) => venda.status === STATUS_VENDA.FINALIZADA);
+    const somaFinalizadas = finalizadas.reduce((total, venda) => total + Number(venda.valor_total), 0);
+
+    return {
+      vendas,
+      totais: {
+        cupons: vendas.length,
+        cupons_finalizados: finalizadas.length,
+        valor_finalizado: Number(somaFinalizadas.toFixed(2)),
+        ticket_medio: finalizadas.length
+          ? Number((somaFinalizadas / finalizadas.length).toFixed(2))
+          : 0,
+        descontos: Number(
+          finalizadas.reduce((total, venda) => total + Number(venda.desconto), 0).toFixed(2)
+        ),
+      },
+    };
+  });
 
   app.get("/resumo/hoje", async () => await resumoDoDia());
 
@@ -96,6 +138,55 @@ export async function registrarRotas(app) {
    * `?de=AAAA-MM-DD&ate=AAAA-MM-DD`; sem parâmetros, traz o dia de hoje.
    * `?agrupar=produto` troca a lista de cupons pelo total por produto.
    */
+  /** Números para os relatórios e o BI: por produto, por dia e por forma. */
+  app.get("/analise", async (requisicao, resposta) => {
+    const intervalo = periodo(requisicao.query);
+    if (intervalo.erro) return invalido(resposta, intervalo.erro);
+    return { periodo: intervalo, ...(await analisarVendas(intervalo)) };
+  });
+
+  /** Receitas retidas — tela fiscal/regulatória. */
+  app.get("/receitas", async (requisicao) => {
+    const { de, ate, busca } = requisicao.query ?? {};
+    return { receitas: await listarReceitas({ de, ate, busca }) };
+  });
+
+  app.get("/clientes", async (requisicao) => ({
+    clientes: await listarClientes({ busca: requisicao.query?.busca }),
+  }));
+
+  app.post("/clientes", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
+    const corpo = requisicao.body ?? {};
+    if (!corpo.nome || !String(corpo.nome).trim()) {
+      return invalido(resposta, "Informe o nome do cliente.");
+    }
+    try {
+      return resposta.code(201).send({ cliente: await inserirCliente(corpo) });
+    } catch (erro) {
+      if (erro.code === "23505") {
+        return resposta
+          .code(409)
+          .send({ erro: ERROS.DADOS_INVALIDOS, mensagem: "Já existe cliente com este CPF." });
+      }
+      throw erro;
+    }
+  });
+
+  app.patch("/clientes/:id", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
+    try {
+      const cliente = await atualizarCliente(requisicao.params.id, requisicao.body ?? {});
+      if (!cliente) return invalido(resposta, "Informe algum campo para atualizar.");
+      return { cliente };
+    } catch (erro) {
+      if (erro.code === "23505") {
+        return resposta
+          .code(409)
+          .send({ erro: ERROS.DADOS_INVALIDOS, mensagem: "Já existe cliente com este CPF." });
+      }
+      throw erro;
+    }
+  });
+
   app.get("/relatorio", async (requisicao, resposta) => {
     const intervalo = periodo(requisicao.query);
     if (intervalo.erro) {
@@ -265,13 +356,27 @@ export async function registrarRotas(app) {
     const venda = await carregarVendaAberta(requisicao.params.id, resposta);
     if (!venda) return resposta;
 
-    const desconto = Number(requisicao.body?.desconto);
-    if (!Number.isFinite(desconto) || desconto < 0) {
-      return invalido(resposta, "desconto inválido.");
-    }
-
     const itens = await listarItens(venda.id);
     const bruto = itens.reduce((soma, item) => soma + item.quantidade * item.preco_unitario, 0);
+
+    // Aceita desconto em reais (`desconto`) ou em percentual (`desconto_pct`) —
+    // o caixa às vezes combina "10%", às vezes "5 reais".
+    const corpo = requisicao.body ?? {};
+    let desconto;
+
+    if (corpo.desconto_pct !== undefined) {
+      const percentual = Number(corpo.desconto_pct);
+      if (!Number.isFinite(percentual) || percentual < 0 || percentual > 100) {
+        return invalido(resposta, "desconto_pct deve estar entre 0 e 100.");
+      }
+      desconto = Number(((bruto * percentual) / 100).toFixed(2));
+    } else {
+      desconto = Number(corpo.desconto);
+      if (!Number.isFinite(desconto) || desconto < 0) {
+        return invalido(resposta, "desconto inválido.");
+      }
+    }
+
     if (desconto > bruto) {
       return invalido(resposta, "O desconto não pode ser maior que o valor dos itens.");
     }
@@ -343,6 +448,39 @@ export async function registrarRotas(app) {
     });
 
     return resposta.code(201).send({ pagamento, venda: await buscarVendaCompleta(venda.id) });
+  });
+
+  /** Remove uma forma de pagamento antes de finalizar (cliente trocou de ideia). */
+  app.delete(
+    "/:id/pagamentos/:pagamentoId",
+    { preHandler: auth.exigirPermissao("vender") },
+    async (requisicao, resposta) => {
+      const venda = await carregarVendaAberta(requisicao.params.id, resposta);
+      if (!venda) return resposta;
+
+      const removido = await removerPagamento({
+        vendaId: venda.id,
+        pagamentoId: requisicao.params.pagamentoId,
+      });
+      if (!removido) return naoEncontrado(resposta, "Pagamento não encontrado nesta venda.");
+
+      return { venda: await buscarVendaCompleta(venda.id) };
+    }
+  );
+
+  /** Vincula (ou desvincula, com cliente_id nulo) o cliente da venda. */
+  app.post("/:id/cliente", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
+    const venda = await carregarVendaAberta(requisicao.params.id, resposta);
+    if (!venda) return resposta;
+
+    const clienteId = requisicao.body?.cliente_id ?? null;
+    try {
+      await vincularCliente({ vendaId: venda.id, clienteId });
+    } catch (erro) {
+      if (erro.code === "23503") return invalido(resposta, "Cliente não encontrado.");
+      throw erro;
+    }
+    return { venda: await buscarVendaCompleta(venda.id) };
   });
 
   /**
