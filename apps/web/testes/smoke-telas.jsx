@@ -650,6 +650,12 @@ globalThis.localStorage = dom.window.localStorage;
 // ------------------------------------------------------------------ execução
 
 let falhas = 0;
+
+/** Asserção simples, para as verificações que não montam página isolada. */
+function ok2(rotulo, condicao, extra = "") {
+  if (!condicao) falhas += 1;
+  console.log(`${condicao ? "PASS" : "FALHA"} — ${rotulo}${extra ? ` :: ${extra}` : ""}`);
+}
 const errosDeConsole = [];
 const erroOriginal = console.error;
 console.error = (...args) => {
@@ -820,6 +826,60 @@ const semFixture = chamadas.filter(
 if (semFixture.length) {
   console.log(`\nRotas chamadas sem fixture: ${[...new Set(semFixture)].join(", ")}`);
 }
+
+
+// ------------------------------------------------ tour do primeiro acesso
+
+/** Renderiza o App inteiro na rota e devolve o texto que apareceu. */
+async function textoDaRota(perfil, caminho) {
+  perfilAtual = perfil;
+  const container = dom.window.document.createElement("div");
+  dom.window.document.body.appendChild(container);
+  const raiz = createRoot(container);
+
+  await act(async () => {
+    raiz.render(
+      React.createElement(
+        ProvedorPreferencias,
+        null,
+        React.createElement(
+          ProvedorAutenticacao,
+          null,
+          React.createElement(Rota, { initialEntries: [caminho] }, React.createElement(App))
+        )
+      )
+    );
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+
+  const texto = container.textContent ?? "";
+  await act(async () => raiz.unmount());
+  container.remove();
+  return texto;
+}
+
+console.log("");
+localStorage.clear();
+localStorage.setItem("arkos.token", "token-de-teste");
+
+const primeiroAcesso = await textoDaRota("operador_caixa", "/");
+ok2("tour abre no primeiro acesso", primeiroAcesso.includes("Bem-vindo ao Arkos"));
+ok2(
+  "tour se apresenta com o perfil de quem entrou",
+  primeiroAcesso.includes("Operador de caixa")
+);
+
+// Marcar como visto é o que o botão "Pular" faz: o tour não pode voltar.
+localStorage.setItem(`arkos.tour.visto.${USUARIO.id}`, "sim");
+const segundoAcesso = await textoDaRota("operador_caixa", "/");
+ok2("tour não reaparece depois de visto", !segundoAcesso.includes("Bem-vindo ao Arkos"));
+
+localStorage.removeItem(`arkos.tour.visto.${USUARIO.id}`);
+const tourGerente = await textoDaRota("gerente", "/");
+ok2("tour abre para os outros perfis também", tourGerente.includes("Bem-vindo ao Arkos"));
+localStorage.setItem(`arkos.tour.visto.${USUARIO.id}`, "sim");
 
 console.log(`\n${falhas === 0 ? "TODAS AS TELAS RENDERIZARAM" : `${falhas} TELA(S) COM FALHA`}`);
 process.exit(falhas === 0 ? 0 : 1);

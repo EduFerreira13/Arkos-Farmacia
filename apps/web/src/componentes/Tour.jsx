@@ -189,6 +189,16 @@ export function Tour({ aoEncerrar }) {
 
   return (
     <div className="fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-label="Tour do sistema">
+      {/* Camada que segura o clique: sem ela dava para clicar no menu por baixo
+          do tour e acabar em outra tela no meio da explicação. Clicar avança. */}
+      <div
+        className="absolute inset-0"
+        onClick={() =>
+          definirIndice((atual) => (atual + 1 < passos.length ? atual + 1 : atual))
+        }
+        role="presentation"
+      />
+
       {/* Recorte: o furo é o próprio elemento, o resto escurece. */}
       {area ? (
         <div
