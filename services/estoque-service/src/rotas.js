@@ -8,6 +8,7 @@ import {
 } from "@arkos/shared-types";
 import { criarAutenticacao, temPermissao } from "@arkos/auth-middleware";
 import { env } from "./env.js";
+import { formatarData, formatarDataHora, gerarCsv, nomeArquivo, periodo } from "./relatorios.js";
 import {
   ErroNegocio,
   registrarEntradaLote,
@@ -27,6 +28,8 @@ import {
   listarHistoricoPrecos,
   listarLotes,
   listarMovimentacoes,
+  listarMovimentacoesNoPeriodo,
+  listarPosicaoEstoque,
   listarProdutos,
   listarProdutosAVencer,
 } from "./repositorio.js";
@@ -318,6 +321,103 @@ export async function registrarRotas(app) {
       return invalido(resposta, `dias deve ser uma das janelas: ${janelas.join(", ")}.`);
     }
     return { dias: diasValidos, lotes: await listarProdutosAVencer(diasValidos) };
+  });
+
+  /** Posição de estoque em planilha (CSV que o Excel abre direto). */
+  app.get("/relatorios/estoque", async (requisicao, resposta) => {
+    const linhas = await listarPosicaoEstoque();
+    const valorEmEstoque = (linha) => linha.saldo_disponivel * Number(linha.preco_custo);
+
+    const csv = gerarCsv(
+      [
+        { titulo: "Produto", valor: (l) => l.nome },
+        { titulo: "Categoria", valor: (l) => l.categoria_nome ?? "" },
+        { titulo: "Principio ativo", valor: (l) => l.principio_ativo ?? "" },
+        { titulo: "Fabricante", valor: (l) => l.fabricante ?? "" },
+        { titulo: "Fornecedor", valor: (l) => l.fornecedor_nome ?? "" },
+        { titulo: "Codigo de barras", valor: (l) => l.codigo_barras ?? "" },
+        { titulo: "Tipo de controle", valor: (l) => l.tipo_controle },
+        { titulo: "Classe terapeutica", valor: (l) => l.classe_terapeutica ?? "" },
+        { titulo: "Unidade de venda", valor: (l) => l.unidade_venda },
+        { titulo: "Saldo disponivel", valor: (l) => l.saldo_disponivel },
+        { titulo: "Saldo vencido", valor: (l) => l.saldo_vencido },
+        { titulo: "Estoque minimo", valor: (l) => l.estoque_minimo },
+        {
+          titulo: "Situacao",
+          valor: (l) =>
+            l.saldo_disponivel === 0
+              ? "Sem estoque"
+              : l.saldo_disponivel <= l.estoque_minimo
+                ? "Abaixo do minimo"
+                : "Normal",
+        },
+        { titulo: "Proxima validade", valor: (l) => formatarData(l.proxima_validade) },
+        { titulo: "Preco de custo (R$)", valor: (l) => Number(l.preco_custo) },
+        { titulo: "Preco de venda (R$)", valor: (l) => Number(l.preco_venda) },
+        { titulo: "Valor em estoque pelo custo (R$)", valor: valorEmEstoque },
+      ],
+      linhas,
+      [
+        { titulo: "Produtos", valor: linhas.length },
+        {
+          titulo: "Unidades disponiveis",
+          valor: linhas.reduce((t, l) => t + l.saldo_disponivel, 0),
+        },
+        {
+          titulo: "Produtos abaixo do minimo",
+          valor: linhas.filter((l) => l.saldo_disponivel <= l.estoque_minimo).length,
+        },
+        {
+          titulo: "Valor total em estoque pelo custo (R$)",
+          valor: linhas.reduce((t, l) => t + valorEmEstoque(l), 0),
+        },
+      ]
+    );
+
+    const hoje = new Date().toISOString().slice(0, 10);
+    return resposta
+      .header("Content-Type", "text/csv; charset=utf-8")
+      .header("Content-Disposition", `attachment; filename="estoque_posicao_${hoje}.csv"`)
+      .send(csv);
+  });
+
+  /** Auditoria de movimentações do período em planilha. */
+  app.get("/relatorios/movimentacoes", async (requisicao, resposta) => {
+    const intervalo = periodo(requisicao.query);
+    if (intervalo.erro) return invalido(resposta, intervalo.erro);
+
+    const linhas = await listarMovimentacoesNoPeriodo(intervalo);
+    const soma = (tipo) =>
+      linhas.filter((l) => l.tipo === tipo).reduce((t, l) => t + l.quantidade, 0);
+
+    const csv = gerarCsv(
+      [
+        { titulo: "Data e hora", valor: (l) => formatarDataHora(l.criado_em) },
+        { titulo: "Tipo", valor: (l) => l.tipo },
+        { titulo: "Produto", valor: (l) => l.produto_nome },
+        { titulo: "Tipo de controle", valor: (l) => l.tipo_controle },
+        { titulo: "Lote", valor: (l) => l.numero_lote ?? "" },
+        { titulo: "Validade do lote", valor: (l) => formatarData(l.data_validade) },
+        { titulo: "Quantidade", valor: (l) => l.quantidade },
+        { titulo: "Motivo", valor: (l) => l.motivo ?? "" },
+        { titulo: "Usuario responsavel", valor: (l) => l.usuario_id },
+      ],
+      linhas,
+      [
+        { titulo: "Movimentacoes no periodo", valor: linhas.length },
+        { titulo: "Unidades que entraram", valor: soma("entrada") + soma("devolucao") },
+        { titulo: "Unidades que sairam em venda", valor: soma("saida") },
+        { titulo: "Unidades perdidas", valor: soma("perda") },
+      ]
+    );
+
+    return resposta
+      .header("Content-Type", "text/csv; charset=utf-8")
+      .header(
+        "Content-Disposition",
+        `attachment; filename="${nomeArquivo("movimentacoes_estoque", intervalo.de, intervalo.ate)}"`
+      )
+      .send(csv);
   });
 
   // Cadastros auxiliares — o formulário de produto precisa deles.

@@ -253,3 +253,47 @@ export async function listarMovimentacoes({ produtoId, limite = 100 }) {
   );
   return rows;
 }
+
+/** Posição de estoque por produto — base do relatório em planilha. */
+export async function listarPosicaoEstoque() {
+  const { rows } = await consultar(
+    `SELECT p.nome, p.principio_ativo, p.fabricante, p.tipo_controle,
+            p.classe_terapeutica, p.unidade_venda, p.codigo_barras,
+            c.nome AS categoria_nome, f.nome AS fornecedor_nome,
+            p.preco_custo, p.preco_venda, p.estoque_minimo,
+            COALESCE(SUM(CASE WHEN l.data_validade >= current_date THEN l.quantidade END), 0)::int
+              AS saldo_disponivel,
+            COALESCE(SUM(CASE WHEN l.data_validade <  current_date THEN l.quantidade END), 0)::int
+              AS saldo_vencido,
+            MIN(CASE WHEN l.data_validade >= current_date AND l.quantidade > 0
+                     THEN l.data_validade END) AS proxima_validade
+       FROM estoque.produtos p
+       LEFT JOIN estoque.categorias c ON c.id = p.categoria_id
+       LEFT JOIN estoque.fornecedores f ON f.id = p.fornecedor_id
+       LEFT JOIN estoque.lotes l ON l.produto_id = p.id
+      GROUP BY p.id, p.nome, p.principio_ativo, p.fabricante, p.tipo_controle,
+               p.classe_terapeutica, p.unidade_venda, p.codigo_barras,
+               c.nome, f.nome, p.preco_custo, p.preco_venda, p.estoque_minimo
+      ORDER BY p.nome`
+  );
+  return rows;
+}
+
+/**
+ * Movimentações de um período, para auditoria em planilha.
+ * @param {{ de: string, ate: string }} intervalo
+ */
+export async function listarMovimentacoesNoPeriodo({ de, ate }) {
+  const { rows } = await consultar(
+    `SELECT m.criado_em, m.tipo, m.quantidade, m.motivo, m.usuario_id,
+            p.nome AS produto_nome, p.tipo_controle,
+            l.numero_lote, l.data_validade
+       FROM estoque.movimentacoes_estoque m
+       JOIN estoque.produtos p ON p.id = m.produto_id
+       LEFT JOIN estoque.lotes l ON l.id = m.lote_id
+      WHERE m.criado_em::date BETWEEN $1::date AND $2::date
+      ORDER BY m.criado_em`,
+    [de, ate]
+  );
+  return rows;
+}
