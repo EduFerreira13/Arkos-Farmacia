@@ -91,21 +91,41 @@ npm run testar:telas --workspace=apps/web
 | `gerente@arkos.com` | Gerente | `arkos123` |
 | `admin@arkos.com` | Administrador | `arkos123` |
 
+### Conferência automática
+
+```bash
+npm run test:integracao   # 121 verificações contra as APIs dos 6 serviços
+npm run test:fluxo        # o fluxo do MVP ponta a ponta
+npm run test:telas        # renderiza cada tela e testa o acesso por perfil
+```
+
+O de integração e o de fluxo precisam dos serviços rodando (`npm run dev:services`).
+Os três criam dados no banco de desenvolvimento.
+
 ### Dados de demonstração
 
 `npm run seed:demo` **limpa as tabelas de negócio** (produtos, lotes, vendas,
-caixa, contas, fiscal — os usuários são preservados) e cria um cenário coerente:
-18 produtos entre medicamentos livres, tarja vermelha e tarja preta, perfumaria e
-correlatos; 4 fornecedores; 24 lotes com validades variadas (incluindo um lote
-vencido e quatro vencendo em menos de 30 dias); histórico de entrada, perda,
-ajuste de inventário e devolução; 15 vendas distribuídas entre hoje, ontem e
-anteontem (com receita nos controlados, pagamento misto, uma venda aberta e uma
-cancelada); notas fiscais simuladas; caixa de ontem fechado com divergência de
-R$ 2,50; dois caixas abertos hoje; e contas a pagar/receber com itens vencidos.
+clientes, compras, caixa, contas, fiscal — os usuários são preservados) e cria
+**120 dias de operação**:
 
-O saldo de cada lote fecha com a soma das movimentações, e nenhuma venda
-finalizada de controlado existe sem receita — os mesmos invariantes que as APIs
-exigem.
+- 25 produtos (medicamentos livres, tarja vermelha e preta, perfumaria,
+  correlatos), 4 fornecedores e 35 lotes com validades variadas — um vencido e
+  quatro vencendo em menos de 30 dias;
+- cerca de 1.250 vendas ao longo de quatro meses, com movimento maior no sábado
+  e loja fechada no domingo, pagamento misto, desconto ocasional, uma venda
+  aberta e uma cancelada hoje;
+- 36 clientes com padrão de compra de verdade: crônicos que levam o mesmo
+  medicamento a cada 21 a 45 dias (alguns já atrasados), recorrentes de cesta
+  variada, esporádicos, três que compravam e pararam, um recém-cadastrado e um
+  que pediu para não receber oferta;
+- caixa fechado por dia de operação, com divergência pequena em alguns;
+- notas fiscais simuladas, registros de SNGPC (os recentes pendentes de envio),
+  pedidos de compra nos quatro estados e contatos de relacionamento já feitos.
+
+Dois invariantes são conferidos e impressos no fim: nenhum lote tem saldo
+divergente da soma das movimentações, e nenhuma venda finalizada de controlado
+existe sem receita. O sorteio usa semente fixa — rodar de novo dá o mesmo
+cenário.
 
 ### Conferindo o fluxo completo
 
@@ -144,6 +164,27 @@ npm run sync:schema
 ```
 
 Isso varre o banco, atualiza `database/schema/` e já commita a mudança automaticamente (ver detalhes em [`docs/ARQUITETURA.md`](./docs/ARQUITETURA.md)).
+
+## Relacionamento com clientes
+
+A farmácia já sabe o que cada pessoa compra e de quanto em quanto tempo. A tela
+de **Relacionamento** transforma isso na fila de quem ligar hoje: quem está
+atrasado na reposição do medicamento de uso contínuo (com quantos dias de
+atraso), quem começou a sumir, quem nunca voltou depois da primeira compra. Cada
+linha vem com o motivo, a oferta sugerida a partir do histórico e uma mensagem
+pronta para copiar — e o contato feito fica registrado com canal, oferta e
+resultado, para a farmácia saber o que funcionou.
+
+No balcão o ciclo fecha: identificando o cliente no ponto de venda, o operador vê
+o ritmo de compra dele e os itens que ele repõe, com um botão para incluir no
+carrinho e aviso quando o item está sem estoque.
+
+## Tour do primeiro acesso
+
+No primeiro login de cada usuário o sistema abre um tour de um minuto apontando
+para as áreas da tela. O roteiro é filtrado pela permissão do perfil — o operador
+de caixa não é apresentado a telas que ele não pode abrir. Dá para pular, navegar
+pelas setas do teclado e rever depois pelo ícone de ajuda na barra de cima.
 
 ## Status
 

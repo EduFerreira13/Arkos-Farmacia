@@ -40,7 +40,7 @@ Cada serviço:
 
 | Serviço | Responsabilidade |
 |---|---|
-| `vendas-service` | PDV, cupom, formas de pagamento, clientes, histórico |
+| `vendas-service` | PDV, cupom, formas de pagamento, clientes, histórico, relacionamento (CRM) |
 | `estoque-service` | entrada/saída, lotes, validade, alertas, inventário |
 | `compras-service` | pedido de compra, recebimento com conferência, sugestão |
 | `financeiro-service` | contas a pagar/receber, fluxo de caixa |
@@ -92,3 +92,15 @@ exemplo, dá entrada no estoque e cria a conta a pagar por HTTP.
 O dia da farmácia é o dia local (`TZ_NEGOCIO` no `.env`, `America/Sao_Paulo`).
 Cada serviço abre a conexão com o Postgres nesse fuso, senão `current_date`
 viraria à meia-noite UTC e a venda das 21h cairia no movimento do dia seguinte.
+
+## Onde mora a inteligência do relacionamento
+
+A análise de recompra fica no `vendas-service`, junto do dado que a sustenta: as
+vendas e os itens de cada cliente. Ela não consulta outro serviço.
+
+O cruzamento com preço e saldo do produto sugerido acontece **na borda** — a tela
+pede o catálogo ao `estoque-service` e junta as duas respostas. Isso mantém o
+isolamento (nenhum serviço lê o schema do outro) sem criar uma conversa de
+serviço para serviço a cada linha da lista. O mesmo vale para a margem e a curva
+ABC dos relatórios: a receita vem de vendas, o custo vem do estoque, e a conta é
+feita onde os dois se encontram.

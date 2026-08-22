@@ -199,6 +199,43 @@ chegou de verdade): a resposta traz `aviso_conta` pedindo o lançamento manual.
 
 ---
 
+## Relacionamento com clientes (CRM) — vendas-service
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/vendas/crm/clientes` | Fila de contato ordenada por urgência (`?situacao=&busca=`) |
+| GET | `/vendas/crm/clientes/:id` | Ficha: análise, últimas compras e contatos |
+| GET | `/vendas/crm/resumo` | Contadores por situação, recompra prevista e contatos |
+| GET | `/vendas/crm/contatos` | Contatos registrados (`?de=&ate=&resultado=`) |
+| POST | `/vendas/crm/contatos` | Registra contato (`cliente_id`, `canal`, `motivo`, `oferta`) |
+| PATCH | `/vendas/crm/contatos/:id` | Atualiza o resultado do contato |
+
+A análise sai só do schema `vendas` — nenhum outro serviço é consultado. O preço
+e o saldo atual do produto sugerido são cruzados por quem monta a tela, pelo
+`estoque-service`: não faz sentido oferecer o que não há para entregar.
+
+**Como a situação de cada cliente é decidida:**
+
+| Situação | Regra |
+|---|---|
+| `novo` | nenhuma compra, ou só uma há menos de 30 dias |
+| `ativo` | comprando dentro do próprio ritmo |
+| `recompra_atrasada` | passou de 25% do intervalo médio dele sem aparecer |
+| `em_risco` | sem histórico de ritmo e 30 dias parado, ou 1,5× o intervalo |
+| `inativo` | três intervalos sem comprar (mínimo de 45 dias) |
+
+O intervalo médio é a janela entre a primeira e a última compra dividida pelo
+número de compras menos um — só existe a partir da segunda compra. **Uso
+contínuo** é o produto que o cliente levou três vezes ou mais: é o sinal mais
+forte, porque significa tratamento em andamento e, se atrasou, provavelmente a
+pessoa ficou sem o medicamento.
+
+Cada cliente da fila vem com `motivo` (por que ligar), `oferta` (o que propor),
+`mensagem` (texto pronto, tirado do próprio histórico) e `prioridade`, que ordena
+a lista. Cliente com `aceita_contato = false` não entra na fila.
+
+---
+
 ## Relatórios em planilha
 
 As rotas `/relatorio*` devolvem **CSV** (`text/csv`) com separador `;`, decimal
