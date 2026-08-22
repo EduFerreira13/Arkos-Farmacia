@@ -14,6 +14,7 @@ export const env = {
   JWT_SECRET: process.env.JWT_SECRET,
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN ?? "8h",
   NODE_ENV: process.env.NODE_ENV ?? "development",
+  TZ_NEGOCIO: process.env.TZ_NEGOCIO ?? "America/Sao_Paulo",
 
   // Comunicação entre serviços é sempre HTTP (docs/ARQUITETURA.md).
   ESTOQUE_URL: `http://localhost:${process.env.ESTOQUE_SERVICE_PORT ?? 3002}`,
