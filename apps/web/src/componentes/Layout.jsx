@@ -2,20 +2,28 @@ import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
+  ArrowLeftRight,
   Bell,
+  BarChart3,
   ChevronsLeft,
   ChevronsRight,
+  ClipboardList,
   Eye,
   FileText,
+  History,
   LayoutDashboard,
   LogOut,
   Moon,
   Package,
-  PackagePlus,
+  PieChart,
   Receipt,
+  ScrollText,
   Search,
   ShoppingCart,
+  Stethoscope,
   Sun,
+  Truck,
+  Users,
   Wallet,
 } from "lucide-react";
 import { PERFIL_LABEL, PERFIS, PERFIS_LISTA } from "@arkos/shared-types";
@@ -39,6 +47,7 @@ export const SECOES = [
     itens: [
       { para: "/pdv", rotulo: "Ponto de venda", icone: ShoppingCart, permissao: "vender" },
       { para: "/vendas", rotulo: "Vendas do dia", icone: Receipt, permissao: "vender" },
+      { para: "/vendas/historico", rotulo: "Histórico de vendas", icone: History, permissao: "vender" },
     ],
   },
   {
@@ -46,19 +55,85 @@ export const SECOES = [
     itens: [
       { para: "/produtos", rotulo: "Produtos", icone: Package, permissao: "consultar_estoque" },
       {
-        para: "/entrada-lote",
-        rotulo: "Entrada de lote",
-        icone: PackagePlus,
+        para: "/movimentacoes",
+        rotulo: "Entradas e saídas",
+        icone: ArrowLeftRight,
+        permissao: "ajustar_estoque",
+      },
+      {
+        para: "/inventario",
+        rotulo: "Inventário",
+        icone: ClipboardList,
         permissao: "ajustar_estoque",
       },
       { para: "/alertas", rotulo: "Alertas", icone: AlertTriangle, permissao: "consultar_estoque" },
     ],
   },
   {
+    titulo: "Compras",
+    itens: [
+      { para: "/compras", rotulo: "Pedidos de compra", icone: Truck, permissao: "ajustar_estoque" },
+      {
+        para: "/compras/sugestao",
+        rotulo: "Sugestão de compra",
+        icone: ClipboardList,
+        permissao: "ajustar_estoque",
+      },
+    ],
+  },
+  {
     titulo: "Financeiro",
     itens: [
+      { para: "/financeiro", rotulo: "Visão geral", icone: PieChart, permissao: "ver_financeiro" },
       { para: "/caixa", rotulo: "Caixa", icone: Wallet, permissao: "vender" },
       { para: "/contas", rotulo: "Contas", icone: FileText, permissao: "ver_financeiro" },
+    ],
+  },
+  {
+    titulo: "Fiscal e regulatório",
+    itens: [
+      { para: "/fiscal/notas", rotulo: "Notas fiscais", icone: ScrollText, permissao: "vender" },
+      {
+        para: "/fiscal/controlados",
+        rotulo: "Controlados (SNGPC)",
+        icone: Stethoscope,
+        permissao: "validar_receita",
+      },
+      {
+        para: "/fiscal/receitas",
+        rotulo: "Receitas retidas",
+        icone: ScrollText,
+        permissao: "validar_receita",
+      },
+    ],
+  },
+  {
+    titulo: "Relatórios",
+    itens: [
+      {
+        para: "/relatorios",
+        rotulo: "Relatórios e indicadores",
+        icone: BarChart3,
+        permissao: "ver_financeiro",
+      },
+    ],
+  },
+  {
+    titulo: "Cadastros",
+    itens: [
+      {
+        para: "/cadastros/fornecedores",
+        rotulo: "Fornecedores",
+        icone: Truck,
+        permissao: "ajustar_estoque",
+      },
+      { para: "/cadastros/clientes", rotulo: "Clientes", icone: Users, permissao: "vender" },
+      {
+        para: "/cadastros/usuarios",
+        rotulo: "Usuários",
+        icone: Users,
+        permissao: "gerenciar_usuarios",
+      },
     ],
   },
 ];

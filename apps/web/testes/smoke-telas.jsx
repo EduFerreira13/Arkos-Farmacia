@@ -41,15 +41,31 @@ const { ProvedorAutenticacao } = await import("../src/lib/autenticacao.jsx");
 
 const { default: App } = await import("../src/App.jsx");
 
+const fiscal = await import("../src/paginas/Fiscal.jsx");
+const cadastros = await import("../src/paginas/Cadastros.jsx");
+
 const paginas = {
   Dashboard: (await import("../src/paginas/Dashboard.jsx")).Dashboard,
   Produtos: (await import("../src/paginas/Produtos.jsx")).Produtos,
-  EntradaLote: (await import("../src/paginas/EntradaLote.jsx")).EntradaLote,
+  Movimentacoes: (await import("../src/paginas/Movimentacoes.jsx")).Movimentacoes,
+  Inventario: (await import("../src/paginas/Inventario.jsx")).Inventario,
   Alertas: (await import("../src/paginas/Alertas.jsx")).Alertas,
   PDV: (await import("../src/paginas/PDV.jsx")).PDV,
   Vendas: (await import("../src/paginas/Vendas.jsx")).Vendas,
+  HistoricoVendas: (await import("../src/paginas/HistoricoVendas.jsx")).HistoricoVendas,
+  Compras: (await import("../src/paginas/Compras.jsx")).Compras,
+  SugestaoCompra: (await import("../src/paginas/SugestaoCompra.jsx")).SugestaoCompra,
+  FinanceiroVisaoGeral: (await import("../src/paginas/FinanceiroVisaoGeral.jsx"))
+    .FinanceiroVisaoGeral,
   Caixa: (await import("../src/paginas/Caixa.jsx")).Caixa,
   Contas: (await import("../src/paginas/Contas.jsx")).Contas,
+  FiscalNotas: fiscal.FiscalNotas,
+  FiscalControlados: fiscal.FiscalControlados,
+  FiscalReceitas: fiscal.FiscalReceitas,
+  Relatorios: (await import("../src/paginas/Relatorios.jsx")).Relatorios,
+  CadastroFornecedores: cadastros.CadastroFornecedores,
+  CadastroClientes: cadastros.CadastroClientes,
+  CadastroUsuarios: cadastros.CadastroUsuarios,
   Login: (await import("../src/paginas/Login.jsx")).Login,
 };
 
@@ -226,8 +242,198 @@ const RESPOSTAS = [
     },
   ],
   [/\/api\/vendas\/resumo\/hoje/, RESUMO_VENDAS],
+  [
+    /\/api\/vendas\/analise/,
+    {
+      periodo: { de: "2026-07-23", ate: "2026-08-21" },
+      por_produto: [
+        {
+          produto_id: PRODUTO.id,
+          produto_nome: PRODUTO.nome,
+          tipo_controle: "livre",
+          unidades: 12,
+          cupons: 8,
+          receita: 118.8,
+          preco_medio: 9.9,
+        },
+      ],
+      por_dia: [{ dia: "2026-08-21", cupons: 6, valor: 493.6, ticket_medio: 82.27 }],
+      por_forma_pagamento: [{ forma_pagamento: "dinheiro", valor: 67, quantidade: 2 }],
+      totais: { cupons: 15, valor: 1027.3, descontos: 13, ticket_medio: 68.49 },
+    },
+  ],
+  [
+    /\/api\/vendas\/receitas/,
+    {
+      receitas: [
+        {
+          id: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+          venda_id: VENDA.id,
+          medico_nome: "Dra. Helena Prado",
+          medico_crm: "CRM-SP 122870",
+          paciente_nome: "Joao Batista Nunes",
+          data_emissao: "2026-08-13",
+          status_venda: "finalizada",
+          vendido_em: "2026-08-21T12:18:00.000Z",
+          valor_total: 41.8,
+          itens_controlados: "Clonazepam 2mg 30 comprimidos",
+          tipos_controle: "tarja_preta",
+        },
+      ],
+    },
+  ],
+  [
+    /\/api\/vendas\/clientes/,
+    {
+      clientes: [
+        {
+          id: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+          nome: "Marta Ribeiro Alves",
+          cpf: "123.456.789-00",
+          telefone: "(11) 99999-0000",
+          email: "marta@exemplo.com",
+          convenio: "Unimed",
+          observacao: null,
+          ativo: true,
+          criado_em: "2026-08-01T12:00:00.000Z",
+          total_compras: 3,
+          total_gasto: 245.7,
+        },
+      ],
+    },
+  ],
+  [
+    /\/api\/auth\/usuarios/,
+    {
+      usuarios: [
+        {
+          id: USUARIO.id,
+          nome: USUARIO.nome,
+          email: USUARIO.email,
+          ativo: true,
+          criado_em: "2026-08-01T12:00:00.000Z",
+          perfil: "gerente",
+        },
+      ],
+    },
+  ],
+  [
+    /\/api\/compras\/pedidos\/[^/?]+$/,
+    {
+      pedido: {
+        id: "10101010-1010-1010-1010-101010101010",
+        fornecedor_id: PRODUTO.fornecedor_id,
+        fornecedor_nome: "Distribuidora Panvel Norte",
+        status: "enviado",
+        observacao: "Reposicao semanal",
+        valor_total: 45,
+        criado_em: "2026-08-20T12:00:00.000Z",
+        itens: [
+          {
+            id: "12121212-1212-1212-1212-121212121212",
+            produto_id: PRODUTO.id,
+            produto_nome: PRODUTO.nome,
+            quantidade: 10,
+            preco_unitario: 4.5,
+          },
+        ],
+        recebimentos: [],
+      },
+    },
+  ],
+  [
+    /\/api\/compras\/pedidos/,
+    {
+      pedidos: [
+        {
+          id: "10101010-1010-1010-1010-101010101010",
+          fornecedor_nome: "Distribuidora Panvel Norte",
+          status: "enviado",
+          valor_total: 45,
+          criado_em: "2026-08-20T12:00:00.000Z",
+          total_itens: 1,
+          total_unidades: 10,
+          teve_divergencia: false,
+        },
+      ],
+    },
+  ],
+  [
+    /\/api\/compras\/sugestao/,
+    {
+      sugestoes: [
+        {
+          produto_id: PRODUTO.id,
+          produto_nome: PRODUTO.nome,
+          saldo_atual: 2,
+          estoque_minimo: 4,
+          quantidade_sugerida: 6,
+          preco_custo: 4.2,
+          fornecedor_id: PRODUTO.fornecedor_id,
+          fornecedor_nome: "Distribuidora Panvel Norte",
+        },
+      ],
+    },
+  ],
+  [
+    /\/api\/financeiro\/visao-geral/,
+    {
+      a_pagar: { total: 10443.25, por_faixa: { vencido: { valor: 2310.4, quantidade: 1 } } },
+      a_receber: { total: 5305.7, por_faixa: { ate_15_dias: { valor: 3240.6, quantidade: 1 } } },
+      saldo_projetado: -5137.55,
+      atrasados: { a_pagar: 2310.4, a_receber: 1875.2 },
+      mes: { pago: 0, recebido: 0, resultado: 0 },
+      caixa_por_dia: [{ dia: "2026-08-21", entradas: 493.6, saidas: 150 }],
+      caixa_aberto: CAIXA,
+      vendas_hoje: RESUMO_VENDAS,
+    },
+  ],
+  [
+    /\/api\/fiscal\/notas-fiscais/,
+    {
+      notas: [
+        {
+          id: "13131313-1313-1313-1313-131313131313",
+          venda_id: VENDA.id,
+          chave_acesso: "12345678901234567890123456789012345678901234",
+          status: "simulado",
+          xml_url: "/xml-simulado/x.xml",
+          emitida_em: "2026-08-21T12:18:00.000Z",
+        },
+      ],
+    },
+  ],
+  [
+    /\/api\/fiscal\/controlados-sngpc/,
+    {
+      registros: [
+        {
+          id: "14141414-1414-1414-1414-141414141414",
+          venda_id: VENDA.id,
+          produto_id: PRODUTO.id,
+          receita_id: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+          enviado_anvisa: false,
+          enviado_em: null,
+          criado_em: "2026-08-21T12:18:00.000Z",
+        },
+      ],
+      totais: { total: 4, enviados: 0, pendentes: 4 },
+    },
+  ],
   [/\/api\/vendas\/[^/?]+$/, { venda: VENDA }],
-  [/\/api\/vendas$/, { vendas: [VENDA] }],
+  [
+    /\/api\/vendas(\?|$)/,
+    {
+      vendas: [VENDA],
+      totais: {
+        cupons: 1,
+        cupons_finalizados: 1,
+        valor_finalizado: 21.4,
+        ticket_medio: 21.4,
+        descontos: 0,
+      },
+    },
+  ],
   [
     /\/api\/financeiro\/caixa\/status/,
     {
@@ -444,14 +650,33 @@ const TELAS = [
   ["/caixa", "Abertura, lançamentos do turno"],
   ["/pdv", "ponto de venda"],
   ["/produtos", "Cadastro, preços e estoque"],
-  ["/entrada-lote", "Toda entrada registra lote"],
+  ["/vendas/historico", "Todas as vendas do período"],
+  ["/movimentacoes", "Toda movimentação grava usuário"],
+  ["/inventario", "Contagem física por lote"],
+  ["/compras", "Do rascunho ao recebimento"],
+  ["/financeiro", "O que entra contra o que sai"],
+  ["/relatorios", "Vendas por período e por produto"],
+  ["/fiscal/controlados", "Sistema Nacional de Gerenciamento"],
+  ["/cadastros/clientes", "Base para venda a prazo"],
+  ["/cadastros/usuarios", "Quem entra no sistema"],
   ["/contas", "A pagar por fornecedores"],
 ];
+
+const COMUNS = ["/caixa", "/pdv", "/produtos", "/vendas/historico", "/cadastros/clientes"];
 const ESPERADO = {
-  administrador: ["/caixa", "/pdv", "/produtos", "/entrada-lote", "/contas"],
-  gerente: ["/caixa", "/pdv", "/produtos", "/entrada-lote", "/contas"],
-  farmaceutico: ["/caixa", "/pdv", "/produtos"],
-  operador_caixa: ["/caixa", "/pdv", "/produtos"],
+  administrador: TELAS.map(([caminho]) => caminho),
+  gerente: [
+    ...COMUNS,
+    "/movimentacoes",
+    "/inventario",
+    "/compras",
+    "/financeiro",
+    "/relatorios",
+    "/fiscal/controlados",
+    "/contas",
+  ],
+  farmaceutico: [...COMUNS, "/fiscal/controlados"],
+  operador_caixa: COMUNS,
 };
 
 for (const [perfil, permitidas] of Object.entries(ESPERADO)) {

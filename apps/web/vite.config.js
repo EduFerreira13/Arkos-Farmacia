@@ -29,6 +29,7 @@ export default defineConfig(({ mode }) => {
         "/api/vendas": alvo(porta("VENDAS_SERVICE_PORT", 3003), "/api/vendas", "/vendas"),
         "/api/financeiro": alvo(porta("FINANCEIRO_SERVICE_PORT", 3004), "/api/financeiro", ""),
         "/api/fiscal": alvo(porta("FISCAL_SERVICE_PORT", 3005), "/api/fiscal", ""),
+        "/api/compras": alvo(porta("COMPRAS_SERVICE_PORT", 3006), "/api/compras", "/compras"),
       },
     },
   };

@@ -7,6 +7,7 @@ import {
   ShieldAlert,
   ShoppingCart,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   FORMA_PAGAMENTO,
@@ -128,6 +129,7 @@ export function PDV() {
   const [ocupado, definirOcupado] = useState(false);
   const [receita, definirReceita] = useState(RECEITA_VAZIA);
   const [desconto, definirDesconto] = useState("");
+  const [tipoDesconto, definirTipoDesconto] = useState("reais");
   const [formaPagamento, definirFormaPagamento] = useState(FORMA_PAGAMENTO.DINHEIRO);
   const [valorPagamento, definirValorPagamento] = useState("");
   const [resultado, definirResultado] = useState(null);
@@ -195,9 +197,18 @@ export function PDV() {
   async function aplicarDesconto(evento) {
     evento.preventDefault();
     await executar(async () => {
-      const resposta = await api.vendas.post(`/${venda.id}/desconto`, {
-        desconto: Number(desconto || 0),
-      });
+      const corpo =
+        tipoDesconto === "pct"
+          ? { desconto_pct: Number(desconto || 0) }
+          : { desconto: Number(desconto || 0) };
+      const resposta = await api.vendas.post(`/${venda.id}/desconto`, corpo);
+      definirVenda(resposta.venda);
+    });
+  }
+
+  async function removerPagamento(pagamento) {
+    await executar(async () => {
+      const resposta = await api.vendas.del(`/${venda.id}/pagamentos/${pagamento.id}`);
       definirVenda(resposta.venda);
     });
   }
@@ -435,19 +446,59 @@ export function PDV() {
                   <span>{formatarMoeda(total)}</span>
                 </div>
 
-                <form onSubmit={aplicarDesconto} className="flex items-end gap-2">
-                  <CampoTexto
-                    rotulo={`Desconto em reais (até ${limiteDesconto}% do seu perfil)`}
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    className="flex-1"
-                    value={desconto}
-                    onChange={(evento) => definirDesconto(evento.target.value)}
-                  />
-                  <Botao variante="secundario" type="submit" disabled={ocupado}>
-                    Aplicar
-                  </Botao>
+                <form onSubmit={aplicarDesconto} className="space-y-2">
+                  <div className="flex items-end gap-2">
+                    <CampoTexto
+                      rotulo={`Desconto (seu perfil vai até ${limiteDesconto}%)`}
+                      type="number"
+                      step={tipoDesconto === "pct" ? "0.1" : "0.01"}
+                      min="0"
+                      max={tipoDesconto === "pct" ? "100" : undefined}
+                      className="flex-1"
+                      value={desconto}
+                      onChange={(evento) => definirDesconto(evento.target.value)}
+                      ajuda={
+                        tipoDesconto === "pct"
+                          ? `${desconto || 0}% do subtotal dá ${formatarMoeda(
+                              (bruto * Number(desconto || 0)) / 100
+                            )}`
+                          : bruto > 0
+                            ? `${formatarMoeda(Number(desconto || 0))} é ${(
+                                (Number(desconto || 0) / bruto) *
+                                100
+                              )
+                                .toFixed(1)
+                                .replace(".", ",")}% do subtotal`
+                            : undefined
+                      }
+                    />
+
+                    {/* Reais ou percentual: o desconto é combinado das duas formas no balcão. */}
+                    <div className="flex items-center gap-1 rounded-botao border border-borda p-1">
+                      {[
+                        ["reais", "R$"],
+                        ["pct", "%"],
+                      ].map(([valor, rotulo]) => (
+                        <button
+                          key={valor}
+                          type="button"
+                          onClick={() => definirTipoDesconto(valor)}
+                          className={[
+                            "h-8 w-10 rounded-botao text-rotulo transition-colors",
+                            tipoDesconto === valor
+                              ? "bg-primario text-white"
+                              : "text-secundario hover:bg-borda/60",
+                          ].join(" ")}
+                        >
+                          {rotulo}
+                        </button>
+                      ))}
+                    </div>
+
+                    <Botao variante="secundario" type="submit" disabled={ocupado}>
+                      Aplicar
+                    </Botao>
+                  </div>
                 </form>
               </div>
             ) : null}
@@ -490,10 +541,22 @@ export function PDV() {
                     {pagamentos.map((pagamento) => (
                       <li
                         key={pagamento.id}
-                        className="flex justify-between text-corpo text-secundario"
+                        className="flex items-center justify-between gap-2 text-corpo"
                       >
-                        <span>{FORMA_PAGAMENTO_LABEL[pagamento.forma_pagamento]}</span>
-                        <span>{formatarMoeda(pagamento.valor)}</span>
+                        <span className="text-secundario">
+                          {FORMA_PAGAMENTO_LABEL[pagamento.forma_pagamento]}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="text-texto">{formatarMoeda(pagamento.valor)}</span>
+                          {/* Cliente troca de ideia antes de finalizar: dá para tirar. */}
+                          <BotaoIcone
+                            icone={X}
+                            rotulo={`Remover ${
+                              FORMA_PAGAMENTO_LABEL[pagamento.forma_pagamento]
+                            } de ${formatarMoeda(pagamento.valor)}`}
+                            onClick={() => removerPagamento(pagamento)}
+                          />
+                        </span>
                       </li>
                     ))}
                   </ul>

@@ -9,6 +9,7 @@ const PREFIXOS = {
   vendas: "/api/vendas",
   financeiro: "/api/financeiro",
   fiscal: "/api/fiscal",
+  compras: "/api/compras",
 };
 
 export const CHAVE_TOKEN = "arkos.token";
@@ -129,4 +130,5 @@ export const api = {
   vendas: metodosDe("vendas"),
   financeiro: metodosDe("financeiro"),
   fiscal: metodosDe("fiscal"),
+  compras: metodosDe("compras"),
 };
