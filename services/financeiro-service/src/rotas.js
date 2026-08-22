@@ -6,7 +6,14 @@ import {
 import { criarAutenticacao } from "@arkos/auth-middleware";
 import { env } from "./env.js";
 import { vendas } from "./servicos.js";
-import { formatarData, formatarDataHora, gerarCsv, nomeArquivo, periodo } from "./relatorios.js";
+import {
+  formatarData,
+  formatarDataHora,
+  gerarCsv,
+  hojeNoFuso,
+  nomeArquivo,
+  periodo,
+} from "./relatorios.js";
 import {
   abrirCaixa,
   buscarCaixa,
@@ -280,7 +287,7 @@ export async function registrarRotas(app) {
     const quitado = tipo === "receber" ? "recebido" : "pago";
     const soma = (filtro) =>
       linhas.filter(filtro).reduce((t, l) => t + Number(l.valor), 0);
-    const hoje = new Date().toISOString().slice(0, 10);
+    const hoje = hojeNoFuso();
 
     const csv = gerarCsv(
       [
