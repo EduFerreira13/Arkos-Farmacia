@@ -11,6 +11,7 @@ arkos/
 ├── services/                    # BACKEND — cada um roda e é deployado separado
 │   ├── vendas-service/
 │   ├── estoque-service/
+│   ├── compras-service/
 │   ├── financeiro-service/
 │   ├── fiscal-service/
 │   └── auth-service/
@@ -39,8 +40,9 @@ Cada serviço:
 
 | Serviço | Responsabilidade |
 |---|---|
-| `vendas-service` | PDV, cupom, formas de pagamento |
-| `estoque-service` | entrada/saída, lotes, validade, alertas |
+| `vendas-service` | PDV, cupom, formas de pagamento, clientes, histórico |
+| `estoque-service` | entrada/saída, lotes, validade, alertas, inventário |
+| `compras-service` | pedido de compra, recebimento com conferência, sugestão |
 | `financeiro-service` | contas a pagar/receber, fluxo de caixa |
 | `fiscal-service` | NF-e, SNGPC, controlados |
 | `auth-service` | login, usuários, permissões (RBAC) |
@@ -69,3 +71,24 @@ Pré-requisito: variável de ambiente `DATABASE_URL` apontando para o banco loca
 ## Pacotes compartilhados (`packages/shared-types`)
 
 O único lugar com código compartilhado entre frontend e serviços — tipos de dados e contratos de API (ex: o formato de um "Produto" ou "Venda"). Evita duplicar a mesma interface em 5 lugares diferentes, sem criar acoplamento de lógica de negócio entre os serviços.
+
+## Serviços e portas
+
+| Serviço | Porta | Schema |
+|---|---|---|
+| `auth-service` | 3001 | `auth` |
+| `estoque-service` | 3002 | `estoque` |
+| `vendas-service` | 3003 | `vendas` |
+| `financeiro-service` | 3004 | `financeiro` |
+| `fiscal-service` | 3005 | `fiscal` |
+| `compras-service` | 3006 | `compras` |
+
+O frontend fala com todos por `/api/<serviço>/...`; o proxy do Vite resolve a
+porta. Nenhum serviço lê o schema de outro — o recebimento de compra, por
+exemplo, dá entrada no estoque e cria a conta a pagar por HTTP.
+
+## Fuso do negócio
+
+O dia da farmácia é o dia local (`TZ_NEGOCIO` no `.env`, `America/Sao_Paulo`).
+Cada serviço abre a conexão com o Postgres nesse fuso, senão `current_date`
+viraria à meia-noite UTC e a venda das 21h cairia no movimento do dia seguinte.

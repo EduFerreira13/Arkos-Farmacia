@@ -599,6 +599,38 @@ const VENDAS = [
   },
 ];
 
+const CLIENTES = [
+  {
+    nome: "Marta Ribeiro Alves",
+    cpf: "312.456.789-01",
+    telefone: "(11) 98877-1200",
+    email: "marta.alves@exemplo.com",
+    convenio: "Unimed",
+  },
+  {
+    nome: "Joao Batista Nunes",
+    cpf: "455.221.980-33",
+    telefone: "(11) 99120-4477",
+    email: "joao.nunes@exemplo.com",
+    convenio: null,
+  },
+  {
+    nome: "Luciana Prado Martins",
+    cpf: "128.905.334-77",
+    telefone: "(11) 97733-8890",
+    email: null,
+    convenio: "Bradesco Saude",
+  },
+  {
+    nome: "Sergio Almeida Lima",
+    cpf: "890.112.445-09",
+    telefone: "(11) 96655-2211",
+    email: null,
+    convenio: null,
+    observacao: "Cliente de venda a prazo",
+  },
+];
+
 const CONTAS_PAGAR = [
   { descricao: "Nota fiscal 4521 - Distribuidora Panvel Norte", valor: 4820.75, vencimento: 12, fornecedor: "panvel", status: "pendente" },
   { descricao: "Nota fiscal 4487 - Farmalog Distribuicao", valor: 2310.4, vencimento: -5, fornecedor: "farmalog", status: "pendente" },
@@ -677,7 +709,10 @@ async function main() {
                vendas.receitas, vendas.pagamentos, vendas.itens_venda, vendas.vendas,
                financeiro.movimentacoes_caixa, financeiro.caixa,
                financeiro.contas_pagar, financeiro.contas_receber,
-               fiscal.notas_fiscais, fiscal.controlados_sngpc
+               fiscal.notas_fiscais, fiscal.controlados_sngpc,
+               vendas.clientes,
+               compras.itens_recebimento, compras.recebimentos,
+               compras.itens_pedido, compras.pedidos
       CASCADE
     `);
 
@@ -736,6 +771,25 @@ async function main() {
       lotePorChave[lote.chave] = { ...lote, id: rows[0].id, produto, saidas: 0 };
     }
 
+    // ------------------------------------------------------------ clientes
+    const clientePorNome = {};
+    for (const cliente of CLIENTES) {
+      const { rows } = await client.query(
+        `INSERT INTO vendas.clientes (nome, cpf, telefone, email, convenio, observacao)
+              VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, nome`,
+        [
+          cliente.nome,
+          cliente.cpf,
+          cliente.telefone,
+          cliente.email,
+          cliente.convenio,
+          cliente.observacao ?? null,
+        ]
+      );
+      clientePorNome[rows[0].nome] = rows[0].id;
+    }
+
     // ---------------------------------------------- vendas, receitas, fiscal
     const movimentacoes = []; // saidas geradas pelas vendas
     const lancamentosCaixa = []; // entradas de caixa por venda
@@ -755,10 +809,14 @@ async function main() {
       );
       const total = dinheiro(Math.max(bruto - desconto, 0));
 
+      // Quando a receita nomeia um paciente que é cliente cadastrado, a venda
+      // já sai vinculada a ele — é assim que a operação real acontece.
+      const clienteId = venda.receita ? (clientePorNome[venda.receita.paciente_nome] ?? null) : null;
+
       const { rows: criada } = await client.query(
         `INSERT INTO vendas.vendas
-           (usuario_id, status, valor_total, desconto, motivo_cancelamento, criado_em)
-         VALUES ($1, $2, $3, $4, $5, ${instante(venda.dias, venda.hora)})
+           (usuario_id, status, valor_total, desconto, motivo_cancelamento, cliente_id, criado_em)
+         VALUES ($1, $2, $3, $4, $5, $6, ${instante(venda.dias, venda.hora)})
          RETURNING id`,
         [
           usuarioId[venda.usuario],
@@ -766,6 +824,7 @@ async function main() {
           venda.status === "finalizada" ? total : venda.status === "aberta" ? total : 0,
           desconto,
           venda.motivo_cancelamento ?? null,
+          clienteId,
         ]
       );
       const vendaId = criada[0].id;
@@ -1022,6 +1081,7 @@ async function main() {
       "Alerta de validade (30 dias)",
       `SELECT COUNT(*)::int AS lotes FROM estoque.vw_produtos_a_vencer WHERE dias_para_vencer <= 30`
     );
+    await resumo("Clientes", `SELECT COUNT(*)::int AS total FROM vendas.clientes`);
     await resumo("Notas fiscais", `SELECT COUNT(*)::int AS total FROM fiscal.notas_fiscais`);
     await resumo("Registros SNGPC", `SELECT COUNT(*)::int AS total FROM fiscal.controlados_sngpc`);
     await resumo(
