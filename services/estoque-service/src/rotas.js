@@ -8,7 +8,14 @@ import {
 } from "@arkos/shared-types";
 import { criarAutenticacao, temPermissao } from "@arkos/auth-middleware";
 import { env } from "./env.js";
-import { formatarData, formatarDataHora, gerarCsv, nomeArquivo, periodo } from "./relatorios.js";
+import {
+  formatarData,
+  formatarDataHora,
+  gerarCsv,
+  hojeNoFuso,
+  nomeArquivo,
+  periodo,
+} from "./relatorios.js";
 import {
   ErroNegocio,
   registrarEntradaLote,
@@ -374,10 +381,9 @@ export async function registrarRotas(app) {
       ]
     );
 
-    const hoje = new Date().toISOString().slice(0, 10);
     return resposta
       .header("Content-Type", "text/csv; charset=utf-8")
-      .header("Content-Disposition", `attachment; filename="estoque_posicao_${hoje}.csv"`)
+      .header("Content-Disposition", `attachment; filename="estoque_posicao_${hojeNoFuso()}.csv"`)
       .send(csv);
   });
 
