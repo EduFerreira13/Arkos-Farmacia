@@ -12,6 +12,7 @@
 | receita_id | uuid | NO | - |
 | enviado_anvisa | boolean | NO | false |
 | criado_em | timestamp with time zone | NO | now() |
+| enviado_em | timestamp with time zone | YES | - |
 
 ## notas_fiscais
 

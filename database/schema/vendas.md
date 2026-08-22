@@ -2,6 +2,20 @@
 
 > Gerado automaticamente por `database/scripts/sync-schema.js`. Não editar à mão.
 
+## clientes
+
+| Coluna | Tipo | Nulo? | Default |
+|---|---|---|---|
+| id | uuid | NO | gen_random_uuid() |
+| nome | character varying | NO | - |
+| cpf | character varying | YES | - |
+| telefone | character varying | YES | - |
+| email | character varying | YES | - |
+| convenio | character varying | YES | - |
+| observacao | text | YES | - |
+| ativo | boolean | NO | true |
+| criado_em | timestamp with time zone | NO | now() |
+
 ## itens_venda
 
 | Coluna | Tipo | Nulo? | Default |
@@ -46,6 +60,7 @@
 | desconto | numeric | NO | 0 |
 | motivo_cancelamento | text | YES | - |
 | criado_em | timestamp with time zone | NO | now() |
+| cliente_id | uuid | YES | - |
 
 ## vw_vendas_hoje
 
