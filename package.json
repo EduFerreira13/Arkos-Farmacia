@@ -22,7 +22,9 @@
     "dev:services": "concurrently -n auth,estoque,vendas,financeiro,fiscal,compras -c blue,green,magenta,yellow,cyan,white \"npm:dev:auth\" \"npm:dev:estoque\" \"npm:dev:vendas\" \"npm:dev:financeiro\" \"npm:dev:fiscal\" \"npm:dev:compras\"",
     "dev": "concurrently -n servicos,web -c blue,magenta \"npm:dev:services\" \"npm:dev:web\"",
     "test:fluxo": "node scripts/teste-fluxo-mvp.mjs",
-    "dev:compras": "npm run dev --workspace=services/compras-service"
+    "dev:compras": "npm run dev --workspace=services/compras-service",
+    "test:integracao": "node scripts/teste-integracao.mjs",
+    "test:telas": "npm run testar:telas --workspace=apps/web"
   },
   "engines": {
     "node": ">=20"
