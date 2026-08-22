@@ -8,6 +8,12 @@ import { criarAutenticacao, descontoMaximoPct } from "@arkos/auth-middleware";
 import { env } from "./env.js";
 import { ErroServico, estoque, financeiro, fiscal } from "./servicos.js";
 import {
+  formatarDataHora,
+  gerarCsv,
+  nomeArquivo,
+  periodo,
+} from "./relatorios.js";
+import {
   atualizarLoteDoItem,
   buscarVenda,
   buscarVendaCompleta,
@@ -16,7 +22,9 @@ import {
   inserirItem,
   inserirPagamento,
   listarItens,
+  listarItensNoPeriodo,
   listarVendasDoDia,
+  listarVendasNoPeriodo,
   marcarCancelada,
   marcarFinalizada,
   removerItem,
@@ -82,6 +90,100 @@ export async function registrarRotas(app) {
   app.get("/", async () => ({ vendas: await listarVendasDoDia() }));
 
   app.get("/resumo/hoje", async () => await resumoDoDia());
+
+  /**
+   * Relatório de vendas do período em planilha (CSV que o Excel abre direto).
+   * `?de=AAAA-MM-DD&ate=AAAA-MM-DD`; sem parâmetros, traz o dia de hoje.
+   * `?agrupar=produto` troca a lista de cupons pelo total por produto.
+   */
+  app.get("/relatorio", async (requisicao, resposta) => {
+    const intervalo = periodo(requisicao.query);
+    if (intervalo.erro) {
+      return resposta.code(400).send({ erro: ERROS.DADOS_INVALIDOS, mensagem: intervalo.erro });
+    }
+
+    const porProduto = requisicao.query?.agrupar === "produto";
+
+    if (porProduto) {
+      const itens = await listarItensNoPeriodo(intervalo);
+      const csv = gerarCsv(
+        [
+          { titulo: "Produto", valor: (l) => l.produto_nome },
+          { titulo: "Tipo de controle", valor: (l) => l.tipo_controle },
+          { titulo: "Unidades vendidas", valor: (l) => l.unidades },
+          { titulo: "Cupons", valor: (l) => l.vendas },
+          { titulo: "Receita (R$)", valor: (l) => Number(l.receita) },
+        ],
+        itens,
+        [
+          { titulo: "Unidades no periodo", valor: itens.reduce((t, l) => t + l.unidades, 0) },
+          {
+            titulo: "Receita no periodo (R$)",
+            valor: itens.reduce((t, l) => t + Number(l.receita), 0),
+          },
+        ]
+      );
+      return resposta
+        .header("Content-Type", "text/csv; charset=utf-8")
+        .header(
+          "Content-Disposition",
+          `attachment; filename="${nomeArquivo("vendas_por_produto", intervalo.de, intervalo.ate)}"`
+        )
+        .send(csv);
+    }
+
+    const vendas = await listarVendasNoPeriodo(intervalo);
+    const finalizadas = vendas.filter((venda) => venda.status === STATUS_VENDA.FINALIZADA);
+
+    const csv = gerarCsv(
+      [
+        { titulo: "Data e hora", valor: (v) => formatarDataHora(v.criado_em) },
+        { titulo: "Venda", valor: (v) => v.id.slice(0, 8) },
+        { titulo: "Status", valor: (v) => v.status },
+        { titulo: "Itens", valor: (v) => v.total_itens },
+        { titulo: "Unidades", valor: (v) => v.total_unidades ?? 0 },
+        { titulo: "Produtos", valor: (v) => v.produtos ?? "" },
+        { titulo: "Tem controlado", valor: (v) => (v.tem_controlado ? "Sim" : "Nao") },
+        { titulo: "Paciente da receita", valor: (v) => v.paciente_nome ?? "" },
+        { titulo: "Medico", valor: (v) => v.medico_nome ?? "" },
+        {
+          titulo: "Registro no Conselho Regional de Medicina",
+          valor: (v) => v.medico_crm ?? "",
+        },
+        { titulo: "Formas de pagamento", valor: (v) => v.formas_pagamento ?? "" },
+        { titulo: "Desconto (R$)", valor: (v) => Number(v.desconto) },
+        { titulo: "Total (R$)", valor: (v) => Number(v.valor_total) },
+        { titulo: "Motivo do cancelamento", valor: (v) => v.motivo_cancelamento ?? "" },
+      ],
+      vendas,
+      [
+        { titulo: "Cupons no periodo", valor: vendas.length },
+        { titulo: "Cupons finalizados", valor: finalizadas.length },
+        {
+          titulo: "Total finalizado (R$)",
+          valor: finalizadas.reduce((t, v) => t + Number(v.valor_total), 0),
+        },
+        {
+          titulo: "Descontos concedidos (R$)",
+          valor: finalizadas.reduce((t, v) => t + Number(v.desconto), 0),
+        },
+        {
+          titulo: "Ticket medio (R$)",
+          valor: finalizadas.length
+            ? finalizadas.reduce((t, v) => t + Number(v.valor_total), 0) / finalizadas.length
+            : 0,
+        },
+      ]
+    );
+
+    return resposta
+      .header("Content-Type", "text/csv; charset=utf-8")
+      .header(
+        "Content-Disposition",
+        `attachment; filename="${nomeArquivo("vendas", intervalo.de, intervalo.ate)}"`
+      )
+      .send(csv);
+  });
 
   app.get("/:id", async (requisicao, resposta) => {
     const venda = await buscarVendaCompleta(requisicao.params.id);

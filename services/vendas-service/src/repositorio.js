@@ -246,3 +246,47 @@ export async function resumoDoDia() {
     },
   };
 }
+
+/**
+ * Vendas de um período, para o relatório em planilha.
+ * @param {{ de: string, ate: string }} intervalo datas AAAA-MM-DD, inclusivas
+ */
+export async function listarVendasNoPeriodo({ de, ate }) {
+  const { rows } = await consultar(
+    `SELECT v.id, v.usuario_id, v.status, v.valor_total, v.desconto, v.criado_em,
+            v.motivo_cancelamento,
+            (SELECT COUNT(*) FROM vendas.itens_venda i WHERE i.venda_id = v.id)::int AS total_itens,
+            (SELECT SUM(i.quantidade) FROM vendas.itens_venda i WHERE i.venda_id = v.id)::int AS total_unidades,
+            (SELECT string_agg(DISTINCT p.forma_pagamento, ' + ')
+               FROM vendas.pagamentos p WHERE p.venda_id = v.id) AS formas_pagamento,
+            (SELECT string_agg(i.produto_nome, ' | ' ORDER BY i.id)
+               FROM vendas.itens_venda i WHERE i.venda_id = v.id) AS produtos,
+            EXISTS (SELECT 1 FROM vendas.itens_venda i
+                     WHERE i.venda_id = v.id AND i.tipo_controle <> 'livre') AS tem_controlado,
+            r.paciente_nome, r.medico_nome, r.medico_crm
+       FROM vendas.vendas v
+       LEFT JOIN vendas.receitas r ON r.venda_id = v.id
+      WHERE v.criado_em::date BETWEEN $1::date AND $2::date
+      ORDER BY v.criado_em`,
+    [de, ate]
+  );
+  return rows;
+}
+
+/** Itens vendidos no período, agrupados por produto — base do "mais vendidos". */
+export async function listarItensNoPeriodo({ de, ate }) {
+  const { rows } = await consultar(
+    `SELECT i.produto_nome, i.tipo_controle,
+            SUM(i.quantidade)::int AS unidades,
+            COUNT(DISTINCT i.venda_id)::int AS vendas,
+            SUM(i.quantidade * i.preco_unitario) AS receita
+       FROM vendas.itens_venda i
+       JOIN vendas.vendas v ON v.id = i.venda_id
+      WHERE v.status = 'finalizada'
+        AND v.criado_em::date BETWEEN $1::date AND $2::date
+      GROUP BY i.produto_nome, i.tipo_controle
+      ORDER BY unidades DESC, i.produto_nome`,
+    [de, ate]
+  );
+  return rows;
+}
