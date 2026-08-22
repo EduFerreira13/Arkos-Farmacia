@@ -617,9 +617,14 @@ const CONTAS_RECEBER = [
 
 // ------------------------------------------------------------------- utilitarios
 
-/** Expressão SQL de um instante: dia relativo a hoje + hora do dia. */
+/**
+ * Expressão SQL de um instante: dia relativo a hoje + hora do dia, no fuso de
+ * São Paulo. Sem o AT TIME ZONE a hora seria gravada em UTC e apareceria três
+ * horas mais cedo na tela e nos relatórios.
+ */
 const instante = (dias, hora) =>
-  `(date_trunc('day', now()) - interval '${dias} days' + interval '${hora}')`;
+  `((date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo')` +
+  ` - interval '${dias} days' + interval '${hora}') AT TIME ZONE 'America/Sao_Paulo')`;
 
 const dataRelativa = (dias) => `(current_date + ${dias})`;
 
@@ -637,7 +642,10 @@ async function main() {
     process.exit(1);
   }
 
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  const client = new Client({
+    connectionString: process.env.DATABASE_URL,
+    options: `-c timezone=${process.env.TZ_NEGOCIO ?? "America/Sao_Paulo"}`,
+  });
   await client.connect();
 
   try {

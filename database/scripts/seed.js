@@ -30,7 +30,10 @@ async function main() {
     process.exit(1);
   }
 
-  const client = new Client({ connectionString: databaseUrl });
+  const client = new Client({
+    connectionString: databaseUrl,
+    options: `-c timezone=${process.env.TZ_NEGOCIO ?? "America/Sao_Paulo"}`,
+  });
   await client.connect();
 
   try {
