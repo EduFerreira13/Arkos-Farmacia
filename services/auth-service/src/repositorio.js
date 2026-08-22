@@ -77,3 +77,14 @@ export async function atualizarUsuario(id, campos) {
   );
   return buscarUsuarioPorId(id);
 }
+
+/** Lista de usuários para a tela de cadastro (administrador). */
+export async function listarUsuarios() {
+  const { rows } = await consultar(
+    `SELECT u.id, u.nome, u.email, u.ativo, u.criado_em, p.nome AS perfil
+       FROM auth.usuarios u
+       JOIN auth.perfis p ON p.id = u.perfil_id
+      ORDER BY u.nome`
+  );
+  return rows;
+}

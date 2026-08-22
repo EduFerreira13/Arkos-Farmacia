@@ -9,6 +9,7 @@ import {
   buscarUsuarioPorId,
   criarUsuario,
   listarPerfis,
+  listarUsuarios,
 } from "./repositorio.js";
 
 const auth = criarAutenticacao({ secret: env.JWT_SECRET });
@@ -157,6 +158,12 @@ export async function registrarRotas(app) {
   app.get("/perfis", { preHandler: auth.autenticar }, async () => {
     return { perfis: await listarPerfis() };
   });
+
+  app.get(
+    "/usuarios",
+    { preHandler: [auth.autenticar, auth.exigirPerfil([PERFIS.ADMINISTRADOR])] },
+    async () => ({ usuarios: await listarUsuarios() })
+  );
 
   app.post(
     "/usuarios",
