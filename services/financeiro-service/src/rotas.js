@@ -162,15 +162,16 @@ export async function registrarRotas(app) {
 
   app.post("/contas-pagar", { preHandler: auth.exigirPermissao("ver_financeiro") }, async (requisicao, resposta) => {
     const { fornecedor_id, descricao, valor, vencimento } = requisicao.body ?? {};
-    if (!descricao || !vencimento) return invalido(resposta, "Informe descricao e vencimento.");
+    if (!descricao) return invalido(resposta, "Informe descricao.");
     const valorNumero = valorValido(valor);
     if (!valorNumero) return invalido(resposta, "valor precisa ser maior que zero.");
 
+    // Compra recebida sem data combinada entra com vencimento em 30 dias.
     const conta = await inserirContaPagar({
       fornecedorId: fornecedor_id,
       descricao,
       valor: valorNumero,
-      vencimento,
+      vencimento: vencimento ?? null,
     });
     return resposta.code(201).send({ conta });
   });

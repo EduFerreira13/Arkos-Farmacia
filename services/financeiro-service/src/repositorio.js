@@ -130,7 +130,7 @@ export async function listarContas(tabela, status) {
 export async function inserirContaPagar({ fornecedorId, descricao, valor, vencimento }) {
   const { rows } = await consultar(
     `INSERT INTO financeiro.contas_pagar (fornecedor_id, descricao, valor, vencimento)
-          VALUES ($1, $2, $3, $4)
+          VALUES ($1, $2, $3, COALESCE($4::date, current_date + 30))
        RETURNING id, fornecedor_id, descricao, valor, vencimento, status, pago_em`,
     [fornecedorId ?? null, descricao, valor, vencimento]
   );
