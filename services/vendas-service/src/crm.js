@@ -255,8 +255,22 @@ function montarSugestao({
   }
 
   if (situacao === SITUACOES.NOVO) {
+    // Quem só se cadastrou e quem já levou algo merecem conversas diferentes.
+    if (totalCompras === 0) {
+      return {
+        motivo: "Cadastrado, ainda sem compra",
+        oferta: convenio
+          ? `Convidar para a primeira compra usando o convênio ${convenio}`
+          : "Convidar para a primeira compra e apresentar os convênios aceitos",
+        mensagem:
+          `Olá! Vi que você deixou seu cadastro com a gente. Se precisar de algum medicamento, ` +
+          `me chama que eu confiro o estoque e separo${convenio ? ` — aceitamos ${convenio}` : ""}.`,
+        prioridade: 25,
+      };
+    }
+
     return {
-      motivo: totalCompras === 0 ? "Cadastrado, ainda sem compra" : "Primeira compra recente",
+      motivo: "Primeira compra recente",
       oferta: convenio
         ? `Explicar como usar o convênio ${convenio} e os descontos dele`
         : "Apresentar os convênios e o desconto de recompra",
