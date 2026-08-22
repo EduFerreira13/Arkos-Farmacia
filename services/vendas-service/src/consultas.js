@@ -83,7 +83,7 @@ export async function listarClientes({ busca } = {}) {
 
   const { rows } = await consultar(
     `SELECT cl.id, cl.nome, cl.cpf, cl.telefone, cl.email, cl.convenio, cl.observacao,
-            cl.ativo, cl.criado_em,
+            cl.ativo, cl.aceita_contato, cl.data_nascimento, cl.criado_em,
             (SELECT COUNT(*) FROM vendas.vendas v
               WHERE v.cliente_id = cl.id AND v.status = 'finalizada')::int AS total_compras,
             (SELECT COALESCE(SUM(v.valor_total), 0) FROM vendas.vendas v
@@ -99,9 +99,11 @@ export async function listarClientes({ busca } = {}) {
 
 export async function inserirCliente(dados) {
   const { rows } = await consultar(
-    `INSERT INTO vendas.clientes (nome, cpf, telefone, email, convenio, observacao)
-          VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, nome, cpf, telefone, email, convenio, observacao, ativo, criado_em`,
+    `INSERT INTO vendas.clientes
+       (nome, cpf, telefone, email, convenio, observacao, data_nascimento, aceita_contato)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, true))
+     RETURNING id, nome, cpf, telefone, email, convenio, observacao, ativo, aceita_contato,
+               data_nascimento, criado_em`,
     [
       dados.nome,
       dados.cpf ?? null,
@@ -109,12 +111,24 @@ export async function inserirCliente(dados) {
       dados.email ?? null,
       dados.convenio ?? null,
       dados.observacao ?? null,
+      dados.data_nascimento ?? null,
+      dados.aceita_contato ?? null,
     ]
   );
   return rows[0];
 }
 
-const CAMPOS_CLIENTE = ["nome", "cpf", "telefone", "email", "convenio", "observacao", "ativo"];
+const CAMPOS_CLIENTE = [
+  "nome",
+  "cpf",
+  "telefone",
+  "email",
+  "convenio",
+  "observacao",
+  "ativo",
+  "aceita_contato",
+  "data_nascimento",
+];
 
 export async function atualizarCliente(id, campos) {
   const partes = [];
@@ -131,7 +145,8 @@ export async function atualizarCliente(id, campos) {
   const { rows } = await consultar(
     `UPDATE vendas.clientes SET ${partes.join(", ")}
       WHERE id = $${valores.length}
-      RETURNING id, nome, cpf, telefone, email, convenio, observacao, ativo, criado_em`,
+      RETURNING id, nome, cpf, telefone, email, convenio, observacao, ativo, aceita_contato,
+                data_nascimento, criado_em`,
     valores
   );
   return rows[0] ?? null;

@@ -14,6 +14,14 @@ import {
   periodo,
 } from "./relatorios.js";
 import {
+  analisarClientes,
+  atualizarResultadoContato,
+  historicoDoCliente,
+  listarContatos,
+  registrarContato,
+  resumoCrm,
+} from "./crm.js";
+import {
   analisarVendas,
   atualizarCliente,
   inserirCliente,
@@ -149,6 +157,93 @@ export async function registrarRotas(app) {
   app.get("/receitas", async (requisicao) => {
     const { de, ate, busca } = requisicao.query ?? {};
     return { receitas: await listarReceitas({ de, ate, busca }) };
+  });
+
+  /**
+   * Fila de relacionamento: clientes ordenados por urgência de contato, com a
+   * situação de recompra, o produto de uso contínuo e a oferta sugerida a partir
+   * do histórico. Cliente que pediu para não ser incomodado sai da lista.
+   */
+  app.get("/crm/clientes", async (requisicao, resposta) => {
+    const { situacao, busca, incluir_sem_compra } = requisicao.query ?? {};
+
+    const clientes = await analisarClientes({
+      situacao,
+      busca,
+      incluirSemCompra: incluir_sem_compra !== "nao",
+    });
+
+    if (situacao && !clientes.length) {
+      // Situação inválida devolve lista vazia, não erro: a tela filtra livremente.
+      requisicao.log.debug({ situacao }, "nenhum cliente na situacao pedida");
+    }
+
+    return {
+      clientes: clientes.filter((cliente) => cliente.aceita_contato),
+      sem_contato: clientes.filter((cliente) => !cliente.aceita_contato).length,
+    };
+  });
+
+  app.get("/crm/resumo", async () => await resumoCrm());
+
+  app.get("/crm/clientes/:id", async (requisicao, resposta) => {
+    const [analise] = await analisarClientes({ incluirSemCompra: true }).then((lista) =>
+      lista.filter((cliente) => cliente.id === requisicao.params.id)
+    );
+    if (!analise) return naoEncontrado(resposta, "Cliente não encontrado.");
+
+    return { cliente: analise, ...(await historicoDoCliente(requisicao.params.id)) };
+  });
+
+  app.get("/crm/contatos", async (requisicao) => {
+    const { de, ate, resultado } = requisicao.query ?? {};
+    return { contatos: await listarContatos({ de, ate, resultado }) };
+  });
+
+  app.post("/crm/contatos", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
+    const { cliente_id, canal, motivo, oferta, observacao, resultado } = requisicao.body ?? {};
+
+    const canais = ["telefone", "whatsapp", "email", "presencial"];
+    if (!cliente_id) return invalido(resposta, "Informe cliente_id.");
+    if (!canais.includes(canal)) {
+      return invalido(resposta, `canal inválido. Use: ${canais.join(", ")}.`);
+    }
+    if (!motivo || !String(motivo).trim()) {
+      return invalido(resposta, "motivo do contato é obrigatório.");
+    }
+
+    try {
+      const contato = await registrarContato({
+        clienteId: cliente_id,
+        usuarioId: requisicao.usuario.id,
+        canal,
+        motivo: String(motivo).trim().slice(0, 80),
+        oferta,
+        observacao,
+        resultado,
+      });
+      return resposta.code(201).send({ contato });
+    } catch (erro) {
+      if (erro.code === "23503") return invalido(resposta, "Cliente não encontrado.");
+      if (erro.code === "22P02") return invalido(resposta, "resultado inválido para o contato.");
+      throw erro;
+    }
+  });
+
+  app.patch("/crm/contatos/:id", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
+    const { resultado, observacao } = requisicao.body ?? {};
+    const resultados = ["aguardando", "interessado", "sem_interesse", "nao_atendeu", "convertido"];
+    if (!resultados.includes(resultado)) {
+      return invalido(resposta, `resultado inválido. Use: ${resultados.join(", ")}.`);
+    }
+
+    const contato = await atualizarResultadoContato({
+      contatoId: requisicao.params.id,
+      resultado,
+      observacao,
+    });
+    if (!contato) return naoEncontrado(resposta, "Contato não encontrado.");
+    return { contato };
   });
 
   app.get("/clientes", async (requisicao) => ({

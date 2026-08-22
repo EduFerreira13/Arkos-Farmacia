@@ -13,8 +13,12 @@ export async function criarVenda(usuarioId) {
 
 export async function buscarVenda(id) {
   const { rows } = await consultar(
-    `SELECT id, usuario_id, status, valor_total, desconto, motivo_cancelamento, criado_em
-       FROM vendas.vendas WHERE id = $1`,
+    `SELECT v.id, v.usuario_id, v.status, v.valor_total, v.desconto, v.motivo_cancelamento,
+            v.criado_em, v.cliente_id,
+            c.nome AS cliente_nome, c.convenio AS cliente_convenio, c.telefone AS cliente_telefone
+       FROM vendas.vendas v
+       LEFT JOIN vendas.clientes c ON c.id = v.cliente_id
+      WHERE v.id = $1`,
     [id]
   );
   return rows[0] ?? null;
