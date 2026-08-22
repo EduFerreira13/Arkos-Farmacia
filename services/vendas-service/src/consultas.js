@@ -220,7 +220,10 @@ export async function listarReceitas({ de, ate, busca } = {}) {
  * tela, cruzando estes números com o catálogo.
  */
 export async function analisarVendas({ de, ate }) {
-  const { rows: porProduto } = await consultar(
+  // Quatro leituras independentes: em paralelo, o relatório abre bem mais rápido.
+  const [{ rows: porProduto }, { rows: porDia }, { rows: porForma }, { rows: totais }] =
+    await Promise.all([
+      consultar(
     `SELECT i.produto_id, i.produto_nome, i.tipo_controle,
             SUM(i.quantidade)::int AS unidades,
             COUNT(DISTINCT i.venda_id)::int AS cupons,
@@ -230,12 +233,11 @@ export async function analisarVendas({ de, ate }) {
        JOIN vendas.vendas v ON v.id = i.venda_id
       WHERE v.status = 'finalizada'
         AND v.criado_em::date BETWEEN $1::date AND $2::date
-      GROUP BY i.produto_id, i.produto_nome, i.tipo_controle
-      ORDER BY receita DESC`,
-    [de, ate]
-  );
-
-  const { rows: porDia } = await consultar(
+        GROUP BY i.produto_id, i.produto_nome, i.tipo_controle
+        ORDER BY receita DESC`,
+        [de, ate]
+      ),
+      consultar(
     `SELECT v.criado_em::date AS dia,
             COUNT(*)::int AS cupons,
             COALESCE(SUM(v.valor_total), 0) AS valor,
@@ -243,31 +245,30 @@ export async function analisarVendas({ de, ate }) {
        FROM vendas.vendas v
       WHERE v.status = 'finalizada'
         AND v.criado_em::date BETWEEN $1::date AND $2::date
-      GROUP BY 1
-      ORDER BY 1`,
-    [de, ate]
-  );
-
-  const { rows: porForma } = await consultar(
+        GROUP BY 1
+        ORDER BY 1`,
+        [de, ate]
+      ),
+      consultar(
     `SELECT p.forma_pagamento, SUM(p.valor) AS valor, COUNT(*)::int AS quantidade
        FROM vendas.pagamentos p
        JOIN vendas.vendas v ON v.id = p.venda_id
       WHERE v.status = 'finalizada'
         AND v.criado_em::date BETWEEN $1::date AND $2::date
-      GROUP BY p.forma_pagamento
-      ORDER BY valor DESC`,
-    [de, ate]
-  );
-
-  const { rows: totais } = await consultar(
+        GROUP BY p.forma_pagamento
+        ORDER BY valor DESC`,
+        [de, ate]
+      ),
+      consultar(
     `SELECT COUNT(*)::int AS cupons,
             COALESCE(SUM(valor_total), 0) AS valor,
             COALESCE(SUM(desconto), 0) AS descontos,
             COALESCE(AVG(valor_total), 0) AS ticket_medio
        FROM vendas.vendas
-      WHERE status = 'finalizada' AND criado_em::date BETWEEN $1::date AND $2::date`,
-    [de, ate]
-  );
+        WHERE status = 'finalizada' AND criado_em::date BETWEEN $1::date AND $2::date`,
+        [de, ate]
+      ),
+    ]);
 
   return {
     por_produto: porProduto,

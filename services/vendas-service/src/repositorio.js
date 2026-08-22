@@ -186,28 +186,29 @@ export async function atualizarLoteDoItem({ itemId, loteId }) {
  * (o card de indicador mostra a variação percentual — REGRAS-VISUAIS §4).
  */
 export async function resumoDoDia() {
-  const { rows: totais } = await consultar(
-    `SELECT total_vendas::int AS total_vendas, valor_total_dia, ticket_medio
-       FROM vendas.vw_vendas_hoje`
-  );
-
-  const { rows: ontem } = await consultar(
-    `SELECT COUNT(*)::int AS total_vendas,
-            COALESCE(SUM(valor_total), 0) AS valor_total_dia,
-            COALESCE(AVG(valor_total), 0) AS ticket_medio
-       FROM vendas.vendas
-      WHERE status = 'finalizada'
-        AND criado_em::date = current_date - 1`
-  );
-
-  const { rows: porForma } = await consultar(
+  // As três leituras são independentes: vão juntas para não somar latência.
+  const [{ rows: totais }, { rows: ontem }, { rows: porForma }] = await Promise.all([
+    consultar(
+      `SELECT total_vendas::int AS total_vendas, valor_total_dia, ticket_medio
+         FROM vendas.vw_vendas_hoje`
+    ),
+    consultar(
+      `SELECT COUNT(*)::int AS total_vendas,
+              COALESCE(SUM(valor_total), 0) AS valor_total_dia,
+              COALESCE(AVG(valor_total), 0) AS ticket_medio
+         FROM vendas.vendas
+        WHERE status = 'finalizada'
+          AND criado_em::date = current_date - 1`
+    ),
+    consultar(
     `SELECT p.forma_pagamento, SUM(p.valor) AS valor, COUNT(*)::int AS quantidade
        FROM vendas.pagamentos p
        JOIN vendas.vendas v ON v.id = p.venda_id
       WHERE v.status = 'finalizada' AND v.criado_em::date = current_date
-      GROUP BY p.forma_pagamento
-      ORDER BY p.forma_pagamento`
-  );
+        GROUP BY p.forma_pagamento
+        ORDER BY p.forma_pagamento`
+    ),
+  ]);
 
   const variacao = (hoje, anterior) => {
     if (!anterior) return null;
