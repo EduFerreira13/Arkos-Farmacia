@@ -23,6 +23,7 @@ import {
   registrarSaidaFefo,
 } from "./movimentacoes.js";
 import {
+  atualizarFornecedor,
   atualizarProduto,
   buscarProduto,
   buscarProdutoPorCodigoBarras,
@@ -436,6 +437,21 @@ export async function registrarRotas(app) {
   });
 
   app.get("/fornecedores", async () => ({ fornecedores: await listarFornecedores() }));
+
+  app.patch("/fornecedores/:id", { preHandler: auth.exigirPermissao("ajustar_estoque") }, async (requisicao, resposta) => {
+    try {
+      const fornecedor = await atualizarFornecedor(requisicao.params.id, requisicao.body ?? {});
+      if (!fornecedor) return invalido(resposta, "Informe algum campo para atualizar.");
+      return { fornecedor };
+    } catch (erro) {
+      if (erro.code === "23505") {
+        return resposta
+          .code(409)
+          .send({ erro: ERROS.DADOS_INVALIDOS, mensagem: "Já existe fornecedor com este CNPJ." });
+      }
+      throw erro;
+    }
+  });
 
   app.post("/fornecedores", { preHandler: auth.exigirPermissao("ajustar_estoque") }, async (requisicao, resposta) => {
     const corpo = requisicao.body ?? {};

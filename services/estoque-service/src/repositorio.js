@@ -297,3 +297,26 @@ export async function listarMovimentacoesNoPeriodo({ de, ate }) {
   );
   return rows;
 }
+
+const CAMPOS_FORNECEDOR = ["nome", "cnpj", "telefone", "email"];
+
+export async function atualizarFornecedor(id, campos) {
+  const partes = [];
+  const valores = [];
+
+  for (const campo of CAMPOS_FORNECEDOR) {
+    if (campos[campo] === undefined) continue;
+    valores.push(campos[campo]);
+    partes.push(`${campo} = $${valores.length}`);
+  }
+  if (!partes.length) return null;
+
+  valores.push(id);
+  const { rows } = await consultar(
+    `UPDATE estoque.fornecedores SET ${partes.join(", ")}
+      WHERE id = $${valores.length}
+      RETURNING id, nome, cnpj, telefone, email`,
+    valores
+  );
+  return rows[0] ?? null;
+}
