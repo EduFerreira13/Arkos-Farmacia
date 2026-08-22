@@ -229,3 +229,58 @@ export async function listarContasNoPeriodo(tabela, { de, ate }) {
   );
   return rows;
 }
+
+/**
+ * Contas a pagar e a receber agrupadas por faixa de vencimento — base da visão
+ * geral do financeiro, que mostra a correlação entre o que entra e o que sai.
+ */
+export async function correlacaoContas() {
+  const faixas = `
+    CASE
+      WHEN vencimento < current_date THEN 'vencido'
+      WHEN vencimento <= current_date + 7 THEN 'ate_7_dias'
+      WHEN vencimento <= current_date + 15 THEN 'ate_15_dias'
+      WHEN vencimento <= current_date + 30 THEN 'ate_30_dias'
+      ELSE 'depois_de_30_dias'
+    END`;
+
+  const { rows: pagar } = await consultar(
+    `SELECT ${faixas} AS faixa, COUNT(*)::int AS quantidade, SUM(valor) AS valor
+       FROM financeiro.contas_pagar
+      WHERE status <> 'pago'
+      GROUP BY 1`
+  );
+
+  const { rows: receber } = await consultar(
+    `SELECT ${faixas} AS faixa, COUNT(*)::int AS quantidade, SUM(valor) AS valor
+       FROM financeiro.contas_receber
+      WHERE status <> 'recebido'
+      GROUP BY 1`
+  );
+
+  const { rows: quitado } = await consultar(
+    `SELECT
+       (SELECT COALESCE(SUM(valor), 0) FROM financeiro.contas_pagar
+         WHERE status = 'pago' AND pago_em::date >= date_trunc('month', current_date)) AS pago_no_mes,
+       (SELECT COALESCE(SUM(valor), 0) FROM financeiro.contas_receber
+         WHERE status = 'recebido' AND recebido_em::date >= date_trunc('month', current_date))
+         AS recebido_no_mes`
+  );
+
+  return { pagar, receber, mes: quitado[0] };
+}
+
+/** Entradas e saídas de caixa dos últimos dias, para a curva do dashboard. */
+export async function caixaPorDia(dias = 14) {
+  const { rows } = await consultar(
+    `SELECT criado_em::date AS dia,
+            COALESCE(SUM(CASE WHEN tipo = 'entrada' THEN valor END), 0) AS entradas,
+            COALESCE(SUM(CASE WHEN tipo = 'saida' THEN valor END), 0) AS saidas
+       FROM financeiro.movimentacoes_caixa
+      WHERE criado_em::date > current_date - $1::int
+      GROUP BY 1
+      ORDER BY 1`,
+    [dias]
+  );
+  return rows;
+}

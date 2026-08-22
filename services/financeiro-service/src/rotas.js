@@ -17,6 +17,8 @@ import {
 import {
   abrirCaixa,
   buscarCaixa,
+  caixaPorDia,
+  correlacaoContas,
   listarCaixasNoPeriodo,
   listarContasNoPeriodo,
   listarMovimentacoesNoPeriodo,
@@ -341,6 +343,57 @@ export async function registrarRotas(app) {
         `attachment; filename="${nomeArquivo(`contas_a_${tipo}`, intervalo.de, intervalo.ate)}"`
       )
       .send(csv);
+  });
+
+  /**
+   * Visão geral do financeiro: o que há para pagar e para receber por faixa de
+   * vencimento, o resultado projetado dessa correlação, o que já foi quitado no
+   * mês e a curva de caixa dos últimos dias.
+   */
+  app.get("/visao-geral", { preHandler: auth.exigirPermissao("ver_financeiro") }, async (requisicao) => {
+    const [correlacao, curva, caixa, totais] = await Promise.all([
+      correlacaoContas(),
+      caixaPorDia(14),
+      buscarCaixaAberto(requisicao.usuario.id),
+      totaisContas(),
+    ]);
+
+    const somar = (linhas) => linhas.reduce((total, linha) => total + Number(linha.valor), 0);
+    const aPagar = somar(correlacao.pagar);
+    const aReceber = somar(correlacao.receber);
+
+    const porFaixa = (linhas) =>
+      Object.fromEntries(
+        linhas.map((linha) => [linha.faixa, { valor: Number(linha.valor), quantidade: linha.quantidade }])
+      );
+
+    let resumoVendas = null;
+    try {
+      resumoVendas = await vendas.resumoDoDia(requisicao.headers.authorization);
+    } catch {
+      resumoVendas = null;
+    }
+
+    return {
+      a_pagar: { total: Number(aPagar.toFixed(2)), por_faixa: porFaixa(correlacao.pagar) },
+      a_receber: { total: Number(aReceber.toFixed(2)), por_faixa: porFaixa(correlacao.receber) },
+      // Positivo = o que entra cobre o que sai no que está em aberto.
+      saldo_projetado: Number((aReceber - aPagar).toFixed(2)),
+      atrasados: {
+        a_pagar: Number(totais.a_pagar_atrasado),
+        a_receber: Number(totais.a_receber_atrasado),
+      },
+      mes: {
+        pago: Number(correlacao.mes.pago_no_mes),
+        recebido: Number(correlacao.mes.recebido_no_mes),
+        resultado: Number(
+          (Number(correlacao.mes.recebido_no_mes) - Number(correlacao.mes.pago_no_mes)).toFixed(2)
+        ),
+      },
+      caixa_por_dia: curva,
+      caixa_aberto: caixa,
+      vendas_hoje: resumoVendas,
+    };
   });
 
   /**
