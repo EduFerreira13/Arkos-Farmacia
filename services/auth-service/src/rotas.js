@@ -69,6 +69,66 @@ export async function registrarRotas(app) {
     return { token, usuario: publico };
   });
 
+  /**
+   * Simulação de perfil: o administrador assume outro perfil para conferir
+   * exatamente o que aquele perfil vê e pode fazer. O token devolvido vale com
+   * as permissões do perfil simulado (inclusive os limites, como desconto
+   * máximo) e registra o perfil real de quem está operando.
+   */
+  app.post("/simular", { preHandler: auth.autenticar }, async (requisicao, resposta) => {
+    const { perfil } = requisicao.body ?? {};
+
+    // Em simulação o perfil do token já é o simulado, então a checagem de
+    // administrador tem de ser feita aqui, e não por exigirPerfil.
+    if (requisicao.usuario.simulando) {
+      return resposta.code(422).send({
+        erro: ERROS.DADOS_INVALIDOS,
+        mensagem: "Encerre a simulação atual antes de assumir outro perfil.",
+      });
+    }
+    if (requisicao.usuario.perfil !== PERFIS.ADMINISTRADOR) {
+      return resposta.code(403).send({
+        erro: ERROS.SEM_PERMISSAO,
+        mensagem: "Só o administrador pode simular outro perfil.",
+      });
+    }
+    if (!PERFIS_LISTA.includes(perfil)) {
+      return resposta.code(400).send({
+        erro: ERROS.DADOS_INVALIDOS,
+        mensagem: `Perfil inválido. Use um de: ${PERFIS_LISTA.join(", ")}.`,
+      });
+    }
+
+    const alvo = await buscarPerfilPorNome(perfil);
+    if (!alvo) {
+      return resposta.code(400).send({
+        erro: ERROS.DADOS_INVALIDOS,
+        mensagem: "Perfil não cadastrado no banco.",
+      });
+    }
+
+    const real = await buscarUsuarioPorId(requisicao.usuario.id);
+    const simulado = {
+      id: real.id,
+      nome: real.nome,
+      email: real.email,
+      perfil: alvo.nome,
+      permissoes: alvo.permissoes ?? {},
+    };
+
+    // Simulação é curta de propósito: é para conferir tela, não para operar o dia.
+    const token = assinarToken(simulado, {
+      secret: env.JWT_SECRET,
+      expiresIn: "1h",
+      extras: { simulando: true, perfil_real: real.perfil },
+    });
+
+    return {
+      token,
+      usuario: { ...simulado, simulando: true, perfil_real: real.perfil, ativo: real.ativo },
+    };
+  });
+
   app.get("/me", { preHandler: auth.autenticar }, async (requisicao, resposta) => {
     const usuario = await buscarUsuarioPorId(requisicao.usuario.id);
     if (!usuario) {
@@ -77,6 +137,20 @@ export async function registrarRotas(app) {
         mensagem: "Usuário não encontrado.",
       });
     }
+
+    // Em simulação, quem vale é o perfil do token, não o do cadastro.
+    if (requisicao.usuario.simulando) {
+      return {
+        usuario: {
+          ...usuarioPublico(usuario),
+          perfil: requisicao.usuario.perfil,
+          permissoes: requisicao.usuario.permissoes,
+          simulando: true,
+          perfil_real: requisicao.usuario.perfil_real,
+        },
+      };
+    }
+
     return { usuario: usuarioPublico(usuario) };
   });
 
