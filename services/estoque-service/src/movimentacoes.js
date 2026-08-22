@@ -218,12 +218,18 @@ export function registrarMovimentacaoManual({
       novaQuantidade,
     ]);
 
+    // No ajuste, a quantidade gravada é o delta COM SINAL (contagem física menos
+    // saldo do sistema): sem isso não se sabe se o inventário achou sobra ou
+    // falta. Nos outros tipos o sentido já vem do próprio tipo.
+    const quantidadeRegistrada =
+      tipo === TIPO_MOVIMENTACAO.AJUSTE ? quantidadeMovimentada : Math.abs(quantidadeMovimentada);
+
     const { rows } = await cliente.query(
       `INSERT INTO estoque.movimentacoes_estoque
          (produto_id, lote_id, tipo, quantidade, motivo, usuario_id)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, produto_id, lote_id, tipo, quantidade, motivo, usuario_id, criado_em`,
-      [produtoId, lote.id, tipo, Math.abs(quantidadeMovimentada), motivo, usuarioId]
+      [produtoId, lote.id, tipo, quantidadeRegistrada, motivo, usuarioId]
     );
 
     return {

@@ -415,6 +415,8 @@ export async function registrarRotas(app) {
         { titulo: "Unidades que entraram", valor: soma("entrada") + soma("devolucao") },
         { titulo: "Unidades que sairam em venda", valor: soma("saida") },
         { titulo: "Unidades perdidas", valor: soma("perda") },
+        // No ajuste a quantidade é o delta: positivo achou sobra, negativo falta.
+        { titulo: "Saldo dos ajustes de inventario", valor: soma("ajuste") },
       ]
     );
 
@@ -456,6 +458,9 @@ export async function registrarRotas(app) {
   app.post("/fornecedores", { preHandler: auth.exigirPermissao("ajustar_estoque") }, async (requisicao, resposta) => {
     const corpo = requisicao.body ?? {};
     if (!corpo.nome) return invalido(resposta, "Informe nome.");
+    if (corpo.cnpj && String(corpo.cnpj).length > 18) {
+      return invalido(resposta, "CNPJ deve ter no máximo 18 caracteres (00.000.000/0000-00).");
+    }
     try {
       return resposta.code(201).send({ fornecedor: await inserirFornecedor(corpo) });
     } catch (erro) {
