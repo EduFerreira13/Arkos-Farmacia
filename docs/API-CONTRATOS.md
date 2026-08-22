@@ -13,6 +13,7 @@
 | POST | `/auth/login` | `{ email, senha }` → `{ token, usuario }` |
 | GET | `/auth/me` | Retorna dados do usuário autenticado |
 | GET | `/auth/perfis` | Lista os 4 perfis padrão |
+| POST | `/auth/simular` | `{ perfil }` → token valendo com o perfil escolhido (só administrador) |
 | POST | `/auth/usuarios` | Cria usuário (admin) |
 | PATCH | `/auth/usuarios/:id` | Ativa/desativa, troca perfil |
 
@@ -27,6 +28,13 @@
   "usuario": { "id": "uuid", "nome": "Ana", "perfil": "gerente" }
 }
 ```
+
+**Simulação de perfil**: `POST /auth/simular` devolve um token que vale com o
+perfil pedido (e com os limites dele, como desconto máximo), guardando o perfil
+real em `perfil_real` — a ação continua rastreável a quem operou. Vale 1 hora e
+não aceita simular dentro de simulação; enquanto durar, `GET /auth/me` responde
+com o perfil simulado. Encerrar é do lado do cliente: ele volta a usar o token
+original que guardou.
 
 ---
 
@@ -46,6 +54,8 @@
 | GET | `/movimentacoes` | Auditoria — `?produto_id=&limite=` |
 | GET/POST | `/categorias` | Cadastro auxiliar exigido pelo formulário de produto |
 | GET/POST | `/fornecedores` | Cadastro auxiliar exigido pelo formulário de produto |
+| GET | `/relatorios/estoque` | Planilha da posição atual (saldo, vencido, situação, valor em estoque) |
+| GET | `/relatorios/movimentacoes` | Planilha da auditoria — `?de=&ate=` |
 
 Permissão por movimentação: `saida` e `devolucao` pedem `vender` (são as duas
 pontas da venda, e o estorno automático da finalização usa o token do operador);
@@ -76,6 +86,7 @@ pontas da venda, e o estorno automático da finalização usa o token do operado
 | POST | `/vendas/:id/desconto` | Aplica desconto, limitado ao percentual do perfil (§3) |
 | GET | `/vendas` | Vendas do dia (status, itens, formas de pagamento) |
 | GET | `/vendas/resumo/hoje` | Total, ticket médio, quebra por forma de pagamento e variação vs. ontem |
+| GET | `/vendas/relatorio` | Planilha do período — `?de=&ate=`, `?agrupar=produto` para o total por produto |
 
 `POST /vendas/:id/finalizar` também recusa (422) venda sem item, venda com
 pagamentos abaixo do total (`pagamento_insuficiente`) e item acima do estoque
@@ -107,6 +118,8 @@ estoque e caixa) — ver `docs/PENDENCIAS.md`.
 | POST | `/contas-receber` | Cria conta a receber |
 | PATCH | `/contas-pagar/:id/pagar` | Quita a conta (status `pago`, `pago_em`) |
 | PATCH | `/contas-receber/:id/receber` | Baixa o recebimento (status `recebido`) |
+| GET | `/relatorios/caixa` | Planilha do movimento de caixa — `?de=&ate=` |
+| GET | `/relatorios/contas` | Planilha de contas por vencimento — `?tipo=pagar\|receber&de=&ate=` |
 | GET | `/fluxo-caixa/hoje` | Junta o caixa aberto do operador com o resumo do dia buscado no vendas-service |
 
 Sem caixa aberto, `POST /caixa/movimentacoes` recusa com 422 `caixa_fechado` —
@@ -127,6 +140,26 @@ por consequência, a venda não finaliza antes de o operador abrir o caixa (§5)
 com chave de acesso simulada de 44 dígitos derivada do ID da venda.
 
 ---
+
+## Relatórios em planilha
+
+As rotas `/relatorio*` devolvem **CSV** (`text/csv`) com separador `;`, decimal
+com vírgula e BOM — é o formato que o Excel em português abre com um duplo
+clique, já com as colunas separadas. O nome do arquivo vem no
+`Content-Disposition`. Como a rota exige token, o front baixa por `fetch` e não
+por link direto.
+
+Toda coluna cujo título traz `(R$)` sai com duas casas; quantidade inteira sai
+sem casas. O período é inclusivo nas duas pontas e, quando omitido, vale o dia
+de hoje.
+
+## Fuso do negócio
+
+O dia da farmácia (dashboard, `vw_vendas_hoje`, fechamento de caixa, janelas de
+validade, período padrão dos relatórios) é o dia local, definido por
+`TZ_NEGOCIO` no `.env` (`America/Sao_Paulo`). Cada serviço abre a conexão com o
+Postgres já nesse fuso — sem isso `current_date` viraria à meia-noite UTC e a
+venda das 21h cairia no movimento do dia seguinte.
 
 ## Fluxo entre serviços — exemplo completo (finalizar uma venda)
 
