@@ -40,9 +40,28 @@ Se sua tarefa está no `estoque-service`, não mexa no `vendas-service` no mesmo
 
 Nunca editar `database/schema/` manualmente — esses arquivos são gerados pelo `npm run sync:schema`. Se você alterou uma tabela, rode o comando antes de abrir o PR, e deixe o commit automático de sync junto (ou em PR separado, tanto faz).
 
+## Testes
+
+Três suítes, todas contra o banco de desenvolvimento:
+
+```bash
+npm run test:integracao   # 121 verificações nas APIs dos 6 serviços
+npm run test:fluxo        # o fluxo do MVP ponta a ponta
+npm run test:telas        # renderiza cada tela e testa o acesso por perfil
+```
+
+As duas primeiras precisam dos serviços no ar (`npm run dev:services`). A de
+telas roda sozinha, em jsdom, e é a que pega erro de runtime que o build não vê.
+
+Mexeu em regra de negócio? Acrescente a verificação na suíte de integração junto
+com a mudança — é lá que fica registrado o que o sistema promete não deixar
+acontecer (venda de controlado sem receita, saída acima do saldo, desconto acima
+do limite do perfil).
+
 ## Antes de abrir o PR, confirme
 
 - [ ] Rodei `npm run sync:schema` se mexi em alguma tabela
+- [ ] Rodei as três suítes de teste e todas passaram
 - [ ] Segui as regras de negócio em `docs/REGRAS-NEGOCIO.md`
 - [ ] Segui o design system em `docs/REGRAS-VISUAIS.md` (se mexi em UI)
 - [ ] Não misturei mudanças de mais de um serviço no mesmo PR
