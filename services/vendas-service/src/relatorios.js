@@ -6,6 +6,8 @@
  * assistente de importação.
  */
 
+import { env } from "./env.js";
+
 const SEPARADOR = ";";
 const BOM = "﻿";
 
@@ -53,6 +55,14 @@ export function gerarCsv(colunas, linhas, totais) {
   return BOM + partes.join("\r\n") + "\r\n";
 }
 
+/**
+ * Hoje no fuso do negócio (AAAA-MM-DD). Usar o UTC aqui faria o relatório
+ * "de hoje" pular para o dia seguinte depois das 21h em São Paulo.
+ */
+export function hojeNoFuso() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: env.TZ_NEGOCIO }).format(new Date());
+}
+
 /** Nome de arquivo com o período, para não sobrescrever exportação anterior. */
 export function nomeArquivo(prefixo, de, ate) {
   return `${prefixo}_${de}_a_${ate}.csv`;
@@ -61,7 +71,7 @@ export function nomeArquivo(prefixo, de, ate) {
 const dataHora = new Intl.DateTimeFormat("pt-BR", {
   dateStyle: "short",
   timeStyle: "short",
-  timeZone: "America/Sao_Paulo",
+  timeZone: env.TZ_NEGOCIO,
 });
 
 export function formatarDataHora(valor) {
@@ -80,7 +90,7 @@ export function formatarData(valor) {
  */
 export function periodo(query = {}) {
   const formato = /^\d{4}-\d{2}-\d{2}$/;
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = hojeNoFuso();
   const de = query.de ?? hoje;
   const ate = query.ate ?? hoje;
 
