@@ -24,6 +24,7 @@ arkos/
 ├── services/                    # Backend — cada domínio é um serviço isolado
 │   ├── vendas-service/
 │   ├── estoque-service/
+│   ├── compras-service/
 │   ├── financeiro-service/
 │   ├── fiscal-service/
 │   └── auth-service/
@@ -72,7 +73,14 @@ npm run dev:web
 ```
 
 `npm run dev` sobe backend e frontend de uma vez. Para um serviço só:
-`npm run dev:estoque` (ou `dev:auth`, `dev:vendas`, `dev:financeiro`, `dev:fiscal`).
+`npm run dev:estoque` (ou `dev:auth`, `dev:vendas`, `dev:financeiro`, `dev:fiscal`,
+`dev:compras`).
+
+Conferência automática das telas (renderiza cada uma e testa o acesso por perfil):
+
+```bash
+npm run testar:telas --workspace=apps/web
+```
 
 ### Usuários criados pelo seed (desenvolvimento)
 
@@ -121,6 +129,7 @@ caixa e fechamento com divergência.
 | vendas-service | 3003 |
 | financeiro-service | 3004 |
 | fiscal-service | 3005 |
+| compras-service | 3006 |
 | frontend (Vite) | 5173 |
 
 O frontend fala com os serviços por `/api/<serviço>/...` e o proxy do Vite

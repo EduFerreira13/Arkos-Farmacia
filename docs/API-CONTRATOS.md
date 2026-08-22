@@ -13,6 +13,7 @@
 | POST | `/auth/login` | `{ email, senha }` → `{ token, usuario }` |
 | GET | `/auth/me` | Retorna dados do usuário autenticado |
 | GET | `/auth/perfis` | Lista os 4 perfis padrão |
+| GET | `/auth/usuarios` | Lista usuários (admin) |
 | POST | `/auth/simular` | `{ perfil }` → token valendo com o perfil escolhido (só administrador) |
 | POST | `/auth/usuarios` | Cria usuário (admin) |
 | PATCH | `/auth/usuarios/:id` | Ativa/desativa, troca perfil |
@@ -54,6 +55,7 @@ original que guardou.
 | GET | `/movimentacoes` | Auditoria — `?produto_id=&limite=` |
 | GET/POST | `/categorias` | Cadastro auxiliar exigido pelo formulário de produto |
 | GET/POST | `/fornecedores` | Cadastro auxiliar exigido pelo formulário de produto |
+| PATCH | `/fornecedores/:id` | Atualiza fornecedor |
 | GET | `/relatorios/estoque` | Planilha da posição atual (saldo, vencido, situação, valor em estoque) |
 | GET | `/relatorios/movimentacoes` | Planilha da auditoria — `?de=&ate=` |
 
@@ -87,6 +89,19 @@ pontas da venda, e o estorno automático da finalização usa o token do operado
 | GET | `/vendas` | Vendas do dia (status, itens, formas de pagamento) |
 | GET | `/vendas/resumo/hoje` | Total, ticket médio, quebra por forma de pagamento e variação vs. ontem |
 | GET | `/vendas/relatorio` | Planilha do período — `?de=&ate=`, `?agrupar=produto` para o total por produto |
+| GET | `/vendas/analise` | Vendas por produto, por dia e por forma no período (base do BI) |
+| GET | `/vendas/receitas` | Receitas retidas — `?de=&ate=&busca=` |
+| GET/POST | `/vendas/clientes` | Cadastro de clientes (`?busca=`) |
+| PATCH | `/vendas/clientes/:id` | Atualiza cliente |
+| POST | `/vendas/:id/cliente` | Vincula (ou desvincula) o cliente da venda |
+| DELETE | `/vendas/:id/pagamentos/:pagamentoId` | Remove forma de pagamento antes de finalizar |
+
+`GET /vendas` aceita `de`, `ate`, `status`, `controlado=sim|nao`, `busca`
+(produto, paciente ou cliente) e `limite`, e devolve os totais do recorte. Sem
+filtro de data, responde o movimento de hoje.
+
+`POST /vendas/:id/desconto` aceita `desconto` (reais) **ou** `desconto_pct`
+(percentual) — os dois passam pelo mesmo limite do perfil (§3).
 
 `POST /vendas/:id/finalizar` também recusa (422) venda sem item, venda com
 pagamentos abaixo do total (`pagamento_insuficiente`) e item acima do estoque
@@ -120,6 +135,7 @@ estoque e caixa) — ver `docs/PENDENCIAS.md`.
 | PATCH | `/contas-receber/:id/receber` | Baixa o recebimento (status `recebido`) |
 | GET | `/relatorios/caixa` | Planilha do movimento de caixa — `?de=&ate=` |
 | GET | `/relatorios/contas` | Planilha de contas por vencimento — `?tipo=pagar\|receber&de=&ate=` |
+| GET | `/visao-geral` | Correlação entre pagar e receber por faixa de vencimento, saldo projetado e curva de caixa |
 | GET | `/fluxo-caixa/hoje` | Junta o caixa aberto do operador com o resumo do dia buscado no vendas-service |
 
 Sem caixa aberto, `POST /caixa/movimentacoes` recusa com 422 `caixa_fechado` —
@@ -134,10 +150,52 @@ por consequência, a venda não finaliza antes de o operador abrir o caixa (§5)
 | POST | `/notas-fiscais` | Emite NFC-e — **mockado no MVP**, sempre retorna `status: "simulado"` |
 | GET | `/notas-fiscais/:venda_id` | Consulta nota de uma venda |
 | POST | `/controlados-sngpc` | Registra envio ao SNGPC — **mockado**, `enviado_anvisa` sempre `false` |
-| GET | `/controlados-sngpc` | Lista registros — `?venda_id=` |
+| GET | `/notas-fiscais` | Lista notas do período — `?de=&ate=` |
+| GET | `/controlados-sngpc` | Lista registros — `?venda_id=&de=&ate=&pendentes=sim` |
+| POST | `/controlados-sngpc/enviar` | Marca registros como enviados — **simulado**, só grava a data |
 
 `POST /notas-fiscais` é idempotente: a mesma venda devolve sempre a mesma nota,
 com chave de acesso simulada de 44 dígitos derivada do ID da venda.
+
+---
+
+## compras-service (porta 3006)
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/compras/pedidos` | Lista (filtros: `status`, `de`, `ate`) |
+| GET | `/compras/pedidos/:id` | Pedido com itens e recebimentos |
+| POST | `/compras/pedidos` | Cria pedido em rascunho (`fornecedor_id`, `itens[]`) |
+| POST | `/compras/pedidos/:id/enviar` | Marca como enviado ao fornecedor |
+| POST | `/compras/pedidos/:id/cancelar` | Cancela — exige motivo |
+| POST | `/compras/pedidos/:id/receber` | Conferência item a item, entrada no estoque e conta a pagar |
+| GET | `/compras/sugestao` | Sugestão de compra a partir do estoque baixo |
+| GET | `/compras/relatorios/pedidos` | Planilha dos pedidos do período |
+
+**Regra crítica (§4)**: `POST /compras/pedidos/:id/receber` compara a quantidade
+recebida com a pedida, item a item. Divergência **não bloqueia** a entrada — é
+gravada em `compras.itens_recebimento.divergencia` e devolvida em
+`alerta_divergencia` para o gestor ver. Cada item recebido entra como lote no
+`estoque-service` e o valor **efetivamente recebido** (não o do pedido) vira
+conta a pagar no `financeiro-service`.
+
+**Exemplo — recebimento com falta:**
+```json
+// POST /compras/pedidos/:id/receber
+{ "itens": [{ "item_pedido_id": "uuid", "quantidade_recebida": 8,
+              "numero_lote": "REC-1042", "data_validade": "2027-12-31" }] }
+
+// 200 OK
+{
+  "recebimento": { "tem_divergencia": true },
+  "alerta_divergencia": ["Dipirona 500mg: pedido 10, recebido 8"],
+  "valor_recebido": 36.00,
+  "conta_pagar": { "id": "uuid", "valor": 36.00 }
+}
+```
+
+Se a conta a pagar falhar depois da entrada, a mercadoria **não** é desfeita (ela
+chegou de verdade): a resposta traz `aviso_conta` pedindo o lançamento manual.
 
 ---
 
