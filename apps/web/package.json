@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "testar:telas": "esbuild testes/smoke-telas.jsx --bundle --platform=node --format=esm --jsx=automatic --outfile=node_modules/.cache/smoke-telas.mjs --external:jsdom --define:import.meta.env.DEV=false --log-level=warning && node node_modules/.cache/smoke-telas.mjs"
   },
   "dependencies": {
     "@arkos/shared-types": "0.1.0",
@@ -19,6 +20,7 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "jsdom": "^30.0.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "vite": "^6.0.7"
