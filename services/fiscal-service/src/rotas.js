@@ -53,6 +53,33 @@ export async function registrarRotas(app) {
     return resposta.code(201).send({ nota: rows[0], reemitida: false });
   });
 
+  /** Notas emitidas no período — tela fiscal. */
+  app.get("/notas-fiscais", async (requisicao) => {
+    const { de, ate } = requisicao.query ?? {};
+    const condicoes = [];
+    const valores = [];
+
+    if (de) {
+      valores.push(de);
+      condicoes.push(`emitida_em::date >= $${valores.length}::date`);
+    }
+    if (ate) {
+      valores.push(ate);
+      condicoes.push(`emitida_em::date <= $${valores.length}::date`);
+    }
+
+    const onde = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";
+    const { rows } = await consultar(
+      `SELECT id, venda_id, chave_acesso, status, xml_url, emitida_em
+         FROM fiscal.notas_fiscais ${onde}
+        ORDER BY emitida_em DESC
+        LIMIT 300`,
+      valores
+    );
+
+    return { notas: rows };
+  });
+
   app.get("/notas-fiscais/:venda_id", async (requisicao, resposta) => {
     const { rows } = await consultar(
       `SELECT id, venda_id, chave_acesso, status, xml_url, emitida_em
@@ -88,20 +115,70 @@ export async function registrarRotas(app) {
   });
 
   app.get("/controlados-sngpc", async (requisicao) => {
-    const { venda_id } = requisicao.query ?? {};
+    const { venda_id, de, ate, pendentes } = requisicao.query ?? {};
+    const condicoes = [];
     const valores = [];
-    let onde = "";
+
     if (venda_id) {
       valores.push(venda_id);
-      onde = "WHERE venda_id = $1";
+      condicoes.push(`venda_id = $${valores.length}`);
     }
+    if (de) {
+      valores.push(de);
+      condicoes.push(`criado_em::date >= $${valores.length}::date`);
+    }
+    if (ate) {
+      valores.push(ate);
+      condicoes.push(`criado_em::date <= $${valores.length}::date`);
+    }
+    if (pendentes === "sim") condicoes.push("enviado_anvisa = false");
+
+    const onde = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";
     const { rows } = await consultar(
-      `SELECT id, venda_id, produto_id, receita_id, enviado_anvisa, criado_em
+      `SELECT id, venda_id, produto_id, receita_id, enviado_anvisa, enviado_em, criado_em
          FROM fiscal.controlados_sngpc ${onde}
         ORDER BY criado_em DESC
-        LIMIT 200`,
+        LIMIT 300`,
       valores
     );
-    return { registros: rows };
+
+    const { rows: totais } = await consultar(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE enviado_anvisa)::int AS enviados,
+              COUNT(*) FILTER (WHERE NOT enviado_anvisa)::int AS pendentes
+         FROM fiscal.controlados_sngpc`
+    );
+
+    return { registros: rows, totais: totais[0] };
   });
+
+  /**
+   * Marca registros como enviados ao SNGPC — **mockado**: no MVP não existe
+   * transmissão real para a Anvisa, isto só registra que o envio foi feito, com
+   * a data, para o controle da farmácia (§7).
+   */
+  app.post(
+    "/controlados-sngpc/enviar",
+    { preHandler: auth.exigirPermissao("validar_receita") },
+    async (requisicao, resposta) => {
+      const ids = requisicao.body?.ids;
+      if (!Array.isArray(ids) || !ids.length) {
+        return invalido(resposta, "Informe os ids dos registros a enviar.");
+      }
+
+      const { rows } = await consultar(
+        `UPDATE fiscal.controlados_sngpc
+            SET enviado_anvisa = true, enviado_em = now()
+          WHERE id = ANY($1::uuid[]) AND enviado_anvisa = false
+          RETURNING id, venda_id, enviado_anvisa, enviado_em`,
+        [ids]
+      );
+
+      return {
+        registros: rows,
+        enviados: rows.length,
+        aviso: "Envio simulado: a integração com a Anvisa não está no MVP.",
+      };
+    }
+  );
 }
