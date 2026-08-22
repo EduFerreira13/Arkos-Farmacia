@@ -12,6 +12,8 @@ const PREFIXOS = {
 };
 
 export const CHAVE_TOKEN = "arkos.token";
+/** Token do administrador guardado enquanto ele simula outro perfil. */
+export const CHAVE_TOKEN_ORIGINAL = "arkos.token.original";
 
 export class ErroApi extends Error {
   /**
@@ -70,6 +72,48 @@ export async function chamar(servico, caminho, opcoes = {}) {
   }
 
   return dados;
+}
+
+/**
+ * Baixa um arquivo gerado pelo serviço (relatório em planilha). Precisa passar
+ * pelo fetch, e não por um link direto, porque a rota exige o token.
+ *
+ * @param {keyof typeof PREFIXOS} servico
+ * @param {string} caminho
+ * @param {string} nomePadrao usado se o serviço não mandar Content-Disposition
+ */
+export async function baixarArquivo(servico, caminho, nomePadrao) {
+  const token = lerToken();
+  const resposta = await fetch(`${PREFIXOS[servico]}${caminho}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (!resposta.ok) {
+    const texto = await resposta.text();
+    let dados = null;
+    try {
+      dados = texto ? JSON.parse(texto) : null;
+    } catch {
+      dados = null;
+    }
+    throw new ErroApi(resposta.status, dados);
+  }
+
+  const cabecalho = resposta.headers.get("Content-Disposition") ?? "";
+  const encontrado = /filename="?([^"]+)"?/.exec(cabecalho);
+  const nome = encontrado?.[1] ?? nomePadrao;
+
+  const blob = await resposta.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nome;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+
+  return nome;
 }
 
 const metodosDe = (servico) => ({

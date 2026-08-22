@@ -4,7 +4,7 @@ import { usarPreferencias } from "../lib/preferencias.jsx";
  * Tabela que respeita a densidade escolhida pelo usuário (§4):
  * denso = linha ~36px / padding 8px; confortável = linha ~48px / padding 14px.
  */
-export function Tabela({ colunas, linhas, chave, aoClicarLinha, vazio }) {
+export function Tabela({ colunas, linhas, chave, aoClicarLinha, vazio, totais }) {
   const { densidade } = usarPreferencias();
   const denso = densidade === "denso";
   const paddingCelula = denso ? "px-3 py-2" : "px-4 py-3.5";
@@ -57,6 +57,29 @@ export function Tabela({ colunas, linhas, chave, aoClicarLinha, vazio }) {
             </tr>
           ))}
         </tbody>
+
+        {/* Linha de totais: o rótulo ocupa a primeira coluna e cada valor cai
+            na coluna correspondente pela chave. */}
+        {totais ? (
+          <tfoot>
+            <tr className={`${alturaLinha} border-t-2 border-borda bg-borda/30`}>
+              {colunas.map((coluna, indice) => {
+                const valor = totais[coluna.chave];
+                const conteudo = indice === 0 ? (totais.__rotulo ?? "Total") : valor;
+                return (
+                  <td
+                    key={coluna.chave}
+                    className={`${paddingCelula} font-semibold text-texto ${
+                      coluna.alinhamento === "direita" ? "text-right" : ""
+                    }`}
+                  >
+                    {conteudo ?? ""}
+                  </td>
+                );
+              })}
+            </tr>
+          </tfoot>
+        ) : null}
       </table>
     </div>
   );

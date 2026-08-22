@@ -5,6 +5,7 @@ import {
   Bell,
   ChevronsLeft,
   ChevronsRight,
+  Eye,
   FileText,
   LayoutDashboard,
   LogOut,
@@ -18,13 +19,18 @@ import {
   Sun,
   Wallet,
 } from "lucide-react";
-import { PERFIL_LABEL } from "@arkos/shared-types";
+import { PERFIL_LABEL, PERFIS, PERFIS_LISTA } from "@arkos/shared-types";
 import { Logo, Simbolo } from "./Logo.jsx";
-import { BotaoIcone } from "./Botao.jsx";
+import { Botao, BotaoIcone } from "./Botao.jsx";
 import { usarPreferencias } from "../lib/preferencias.jsx";
 import { temPermissao, usarAutenticacao } from "../lib/autenticacao.jsx";
 
-const SECOES = [
+/**
+ * Cada item declara a permissão que o perfil precisa ter. Sem ela, o item nem
+ * aparece no menu — o perfil não descobre a existência de uma tela que não pode
+ * usar (as rotas também barram o acesso direto pela URL, em App.jsx).
+ */
+export const SECOES = [
   {
     titulo: null,
     itens: [{ para: "/", rotulo: "Dashboard", icone: LayoutDashboard, fim: true }],
@@ -33,21 +39,26 @@ const SECOES = [
     titulo: "Vendas",
     itens: [
       { para: "/pdv", rotulo: "Ponto de venda", icone: ShoppingCart, permissao: "vender" },
-      { para: "/vendas", rotulo: "Vendas do dia", icone: Receipt },
+      { para: "/vendas", rotulo: "Vendas do dia", icone: Receipt, permissao: "vender" },
     ],
   },
   {
     titulo: "Estoque",
     itens: [
-      { para: "/produtos", rotulo: "Produtos", icone: Package },
-      { para: "/entrada-lote", rotulo: "Entrada de lote", icone: PackagePlus },
-      { para: "/alertas", rotulo: "Alertas", icone: AlertTriangle },
+      { para: "/produtos", rotulo: "Produtos", icone: Package, permissao: "consultar_estoque" },
+      {
+        para: "/entrada-lote",
+        rotulo: "Entrada de lote",
+        icone: PackagePlus,
+        permissao: "ajustar_estoque",
+      },
+      { para: "/alertas", rotulo: "Alertas", icone: AlertTriangle, permissao: "consultar_estoque" },
     ],
   },
   {
     titulo: "Financeiro",
     itens: [
-      { para: "/caixa", rotulo: "Caixa", icone: Wallet },
+      { para: "/caixa", rotulo: "Caixa", icone: Wallet, permissao: "vender" },
       { para: "/contas", rotulo: "Contas", icone: FileText, permissao: "ver_financeiro" },
     ],
   },
@@ -124,39 +135,83 @@ function Sidebar({ recolhida, aoAlternar, usuario }) {
   );
 }
 
-function Topbar({ usuario, aoSair }) {
+/** Seletor de simulação de perfil — aparece só para o administrador. */
+function SeletorDeVisao({ usuario, perfilReal, simulando, aoSimular, ocupado }) {
+  const navegar = useNavigate();
+  if (perfilReal !== PERFIS.ADMINISTRADOR) return null;
+
+  const valorAtual = simulando ? usuario.perfil : PERFIS.ADMINISTRADOR;
+
+  return (
+    <label className="flex items-center gap-2">
+      <Eye size={16} aria-hidden="true" className="text-secundario" />
+      <span className="sr-only">Ver o sistema como outro perfil</span>
+      <select
+        value={valorAtual}
+        disabled={ocupado}
+        onChange={async (evento) => {
+          await aoSimular(evento.target.value);
+          navegar("/");
+        }}
+        className="h-9 rounded-botao border border-borda bg-fundo px-2 text-rotulo text-texto focus-visible:foco-arkos"
+      >
+        <option value={PERFIS.ADMINISTRADOR}>Ver como: Administrador</option>
+        {PERFIS_LISTA.filter((perfil) => perfil !== PERFIS.ADMINISTRADOR).map((perfil) => (
+          <option key={perfil} value={perfil}>
+            Ver como: {PERFIL_LABEL[perfil]}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function Topbar({ usuario, perfilReal, simulando, aoSair, aoSimular, ocupado }) {
   const { tema, densidade, alternarTema, alternarDensidade } = usarPreferencias();
   const [busca, definirBusca] = useState("");
   const navegar = useNavigate();
+  const podeVerProdutos = temPermissao(usuario, "consultar_estoque");
 
   function submeterBusca(evento) {
     evento.preventDefault();
     const termo = busca.trim();
-    if (termo) navegar(`/produtos?busca=${encodeURIComponent(termo)}`);
+    if (termo && podeVerProdutos) navegar(`/produtos?busca=${encodeURIComponent(termo)}`);
   }
 
   return (
     <header className="flex h-16 shrink-0 items-center gap-4 border-b border-borda bg-card px-5">
-      <form onSubmit={submeterBusca} className="relative w-96">
-        <Search
-          size={16}
-          strokeWidth={2}
-          aria-hidden="true"
-          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-secundario"
-        />
-        <input
-          value={busca}
-          onChange={(evento) => definirBusca(evento.target.value)}
-          placeholder="Buscar produto, lote ou venda"
-          aria-label="Busca global"
-          className="h-10 w-full rounded-botao border border-borda bg-fundo pl-9 pr-3 text-corpo text-texto placeholder:text-secundario focus-visible:foco-arkos"
-        />
-      </form>
+      {podeVerProdutos ? (
+        <form onSubmit={submeterBusca} className="relative w-80">
+          <Search
+            size={16}
+            strokeWidth={2}
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-secundario"
+          />
+          <input
+            value={busca}
+            onChange={(evento) => definirBusca(evento.target.value)}
+            placeholder="Buscar produto, lote ou venda"
+            aria-label="Busca global"
+            className="h-10 w-full rounded-botao border border-borda bg-fundo pl-9 pr-3 text-corpo text-texto placeholder:text-secundario focus-visible:foco-arkos"
+          />
+        </form>
+      ) : null}
 
       <div className="ml-auto flex items-center gap-1">
+        <SeletorDeVisao
+          usuario={usuario}
+          perfilReal={perfilReal}
+          simulando={simulando}
+          aoSimular={aoSimular}
+          ocupado={ocupado}
+        />
+
+        <div className="mx-2 h-8 w-px bg-borda" aria-hidden="true" />
+
         <BotaoIcone
           icone={Rows3}
-          rotulo={`Densidade: ${densidade === "denso" ? "densa" : "confortável"}`}
+          rotulo={`Densidade da tabela: ${densidade === "denso" ? "densa" : "confortável"}`}
           onClick={alternarDensidade}
         />
         <BotaoIcone icone={Bell} rotulo="Notificações" />
@@ -184,7 +239,28 @@ function Topbar({ usuario, aoSair }) {
 
 export function Layout() {
   const [recolhida, definirRecolhida] = useState(false);
-  const { usuario, sair } = usarAutenticacao();
+  const [ocupado, definirOcupado] = useState(false);
+  const [erro, definirErro] = useState(null);
+  const { usuario, sair, simular, encerrarSimulacao, simulando, perfilReal } = usarAutenticacao();
+  const navegar = useNavigate();
+
+  async function trocarVisao(perfil) {
+    definirErro(null);
+    definirOcupado(true);
+    try {
+      if (perfil === PERFIS.ADMINISTRADOR) await encerrarSimulacao();
+      else if (simulando) {
+        await encerrarSimulacao();
+        await simular(perfil);
+      } else {
+        await simular(perfil);
+      }
+    } catch (falha) {
+      definirErro(falha.message);
+    } finally {
+      definirOcupado(false);
+    }
+  }
 
   return (
     <div className="flex h-full bg-fundo">
@@ -194,7 +270,43 @@ export function Layout() {
         usuario={usuario}
       />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar usuario={usuario} aoSair={sair} />
+        <Topbar
+          usuario={usuario}
+          perfilReal={perfilReal}
+          simulando={simulando}
+          aoSair={sair}
+          aoSimular={trocarVisao}
+          ocupado={ocupado}
+        />
+
+        {/* Enquanto o administrador simula outro perfil, fica claro na tela. */}
+        {simulando ? (
+          <div className="flex shrink-0 items-center justify-between gap-4 bg-alerta/20 px-5 py-2">
+            <p className="text-corpo text-texto">
+              Você está vendo o sistema como{" "}
+              <strong>{PERFIL_LABEL[usuario.perfil] ?? usuario.perfil}</strong>. As permissões
+              limitadas desse perfil valem também para as ações.
+            </p>
+            <Botao
+              tamanho="pequeno"
+              variante="secundario"
+              disabled={ocupado}
+              onClick={async () => {
+                await trocarVisao(PERFIS.ADMINISTRADOR);
+                navegar("/");
+              }}
+            >
+              Voltar a ser administrador
+            </Botao>
+          </div>
+        ) : null}
+
+        {erro ? (
+          <div className="shrink-0 bg-erro/15 px-5 py-2 text-corpo text-erro" role="alert">
+            {erro}
+          </div>
+        ) : null}
+
         <main className="flex-1 overflow-y-auto px-8 py-7">
           <Outlet />
         </main>

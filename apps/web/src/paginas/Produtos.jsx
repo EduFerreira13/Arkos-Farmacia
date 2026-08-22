@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Package, Plus } from "lucide-react";
+import { Package, Pencil, Plus } from "lucide-react";
 import { TIPO_CONTROLE, TIPO_CONTROLE_LABEL, TIPO_CONTROLE_LISTA } from "@arkos/shared-types";
 import { api } from "../lib/api.js";
 import { usarBusca } from "../lib/usarBusca.js";
 import { formatarData, formatarMoeda, formatarNumero } from "../lib/formato.js";
 import { temPermissao, usarAutenticacao } from "../lib/autenticacao.jsx";
-import { Botao } from "../componentes/Botao.jsx";
+import { Botao, BotaoIcone } from "../componentes/Botao.jsx";
+import { ExportarRelatorio } from "../componentes/ExportarRelatorio.jsx";
 import { CampoSelect, CampoTexto } from "../componentes/Campos.jsx";
 import { Modal } from "../componentes/Modal.jsx";
 import { Tabela } from "../componentes/Tabela.jsx";
@@ -34,14 +35,31 @@ function badgeEstoque(produto) {
   return <Badge tom="sucesso">{formatarNumero(quantidade)}</Badge>;
 }
 
-function DetalheProduto({ produtoId, aoFechar }) {
+function DetalheProduto({ produtoId, aoFechar, aoEditar, podeEditar }) {
   const { dados, carregando, erro } = usarBusca(
     () => api.estoque.get(`/produtos/${produtoId}`),
     [produtoId]
   );
 
   return (
-    <Modal aberto largura="max-w-3xl" titulo="Detalhe do produto" aoFechar={aoFechar}>
+    <Modal
+      aberto
+      largura="max-w-3xl"
+      titulo="Detalhe do produto"
+      aoFechar={aoFechar}
+      rodape={
+        podeEditar && dados ? (
+          <>
+            <Botao variante="secundario" onClick={aoFechar}>
+              Fechar
+            </Botao>
+            <Botao icone={Pencil} onClick={() => aoEditar(dados.produto)}>
+              Editar produto
+            </Botao>
+          </>
+        ) : null
+      }
+    >
       {carregando ? <Carregando /> : null}
       {erro ? <Aviso tom="erro">{erro.message}</Aviso> : null}
       {dados ? (
@@ -147,6 +165,7 @@ export function Produtos() {
   const [busca, definirBusca] = useState(parametros.get("busca") ?? "");
   const [tipoControle, definirTipoControle] = useState("");
   const [formularioAberto, definirFormularioAberto] = useState(false);
+  const [produtoEmEdicao, definirProdutoEmEdicao] = useState(null);
   const [produtoSelecionado, definirProdutoSelecionado] = useState(null);
 
   const consulta = useMemo(() => {
@@ -175,11 +194,33 @@ export function Produtos() {
         titulo="Produtos"
         descricao="Cadastro, preços e estoque disponível por produto."
         acoes={
-          podeCadastrar ? (
-            <Botao icone={Plus} onClick={() => definirFormularioAberto(true)}>
-              Novo produto
-            </Botao>
-          ) : null
+          <>
+            <ExportarRelatorio
+              servico="estoque"
+              caminho="/relatorios/estoque"
+              titulo="Exportar posição de estoque"
+              comPeriodo={false}
+              rotulo="Exportar estoque"
+            />
+            <ExportarRelatorio
+              servico="estoque"
+              caminho="/relatorios/movimentacoes"
+              titulo="Exportar movimentações"
+              descricao="Entradas, saídas, ajustes, perdas e devoluções do período."
+              rotulo="Exportar movimentações"
+            />
+            {podeCadastrar ? (
+              <Botao
+                icone={Plus}
+                onClick={() => {
+                  definirProdutoEmEdicao(null);
+                  definirFormularioAberto(true);
+                }}
+              >
+                Novo produto
+              </Botao>
+            ) : null}
+          </>
         }
       />
 
@@ -241,6 +282,23 @@ export function Produtos() {
                 alinhamento: "direita",
                 renderizar: (p) => badgeEstoque(p),
               },
+              {
+                chave: "acoes",
+                titulo: "",
+                largura: "56px",
+                renderizar: (produto) =>
+                  podeCadastrar ? (
+                    <BotaoIcone
+                      icone={Pencil}
+                      rotulo={`Editar ${produto.nome}`}
+                      onClick={(evento) => {
+                        evento.stopPropagation();
+                        definirProdutoEmEdicao(produto);
+                        definirFormularioAberto(true);
+                      }}
+                    />
+                  ) : null,
+              },
             ]}
             linhas={dados.produtos}
             chave={(produto) => produto.id}
@@ -256,7 +314,13 @@ export function Produtos() {
                 }
                 acao={
                   podeCadastrar ? (
-                    <Botao icone={Plus} onClick={() => definirFormularioAberto(true)}>
+                    <Botao
+                      icone={Plus}
+                      onClick={() => {
+                        definirProdutoEmEdicao(null);
+                        definirFormularioAberto(true);
+                      }}
+                    >
                       Novo produto
                     </Botao>
                   ) : null
@@ -269,9 +333,11 @@ export function Produtos() {
 
       {formularioAberto ? (
         <FormularioProduto
+          produto={produtoEmEdicao}
           aoFechar={() => definirFormularioAberto(false)}
           aoSalvar={() => {
             definirFormularioAberto(false);
+            definirProdutoEmEdicao(null);
             recarregar();
           }}
         />
@@ -280,6 +346,12 @@ export function Produtos() {
       {produtoSelecionado ? (
         <DetalheProduto
           produtoId={produtoSelecionado}
+          podeEditar={podeCadastrar}
+          aoEditar={(produto) => {
+            definirProdutoSelecionado(null);
+            definirProdutoEmEdicao(produto);
+            definirFormularioAberto(true);
+          }}
           aoFechar={() => definirProdutoSelecionado(null)}
         />
       ) : null}

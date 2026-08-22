@@ -5,6 +5,7 @@ import { usarBusca } from "../lib/usarBusca.js";
 import { formatarData, formatarMoeda, hojeISO } from "../lib/formato.js";
 import { temPermissao, usarAutenticacao } from "../lib/autenticacao.jsx";
 import { Botao } from "../componentes/Botao.jsx";
+import { ExportarRelatorio } from "../componentes/ExportarRelatorio.jsx";
 import { CampoSelect, CampoTexto } from "../componentes/Campos.jsx";
 import { Modal } from "../componentes/Modal.jsx";
 import { Tabela } from "../componentes/Tabela.jsx";
@@ -123,6 +124,19 @@ function ListaContas({ tipo, titulo, descricao, podeLancar }) {
 
   const { dados, carregando, recarregar } = usarBusca(() => api.financeiro.get(rota), [rota]);
 
+  const contas = dados?.contas ?? [];
+  const quitado = pagar ? "pago" : "recebido";
+  const somar = (filtro) =>
+    contas.filter(filtro).reduce((soma, conta) => soma + Number(conta.valor), 0);
+
+  const totais = contas.length
+    ? {
+        __rotulo: `${contas.length} conta(s)`,
+        status: `${formatarMoeda(somar((conta) => conta.status !== quitado))} em aberto`,
+        valor: formatarMoeda(somar(() => true)),
+      }
+    : null;
+
   async function quitar(conta) {
     definirErro(null);
     try {
@@ -140,11 +154,19 @@ function ListaContas({ tipo, titulo, descricao, podeLancar }) {
         descricao={descricao}
         icone={FileText}
         acoes={
-          podeLancar ? (
-            <Botao tamanho="pequeno" icone={Plus} onClick={() => definirFormularioAberto(true)}>
-              Nova conta
-            </Botao>
-          ) : null
+          <>
+            <ExportarRelatorio
+              servico="financeiro"
+              caminho={`/relatorios/contas?tipo=${tipo}`}
+              titulo={`Exportar contas a ${tipo}`}
+              descricao="Contas com vencimento no período escolhido."
+            />
+            {podeLancar ? (
+              <Botao tamanho="pequeno" icone={Plus} onClick={() => definirFormularioAberto(true)}>
+                Nova conta
+              </Botao>
+            ) : null}
+          </>
         }
       />
       {erro ? (
@@ -181,6 +203,7 @@ function ListaContas({ tipo, titulo, descricao, podeLancar }) {
             },
           ]}
           linhas={dados.contas}
+          totais={totais}
           chave={(conta) => conta.id}
           vazio={
             <EstadoVazio

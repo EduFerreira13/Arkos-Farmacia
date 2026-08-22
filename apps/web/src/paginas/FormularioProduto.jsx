@@ -25,9 +25,27 @@ const INICIAL = {
   venda_sob_encomenda: false,
 };
 
-/** Cadastro de produto — campos obrigatórios do §1 das regras de negócio. */
-export function FormularioProduto({ aoFechar, aoSalvar }) {
-  const [campos, definirCampos] = useState(INICIAL);
+/**
+ * Cadastro e edição de produto — campos obrigatórios do §1 das regras de
+ * negócio. Com `produto`, o formulário edita (PATCH) em vez de criar; mudança
+ * de preço gera histórico no serviço de estoque (§8).
+ */
+export function FormularioProduto({ produto, aoFechar, aoSalvar }) {
+  const edicao = Boolean(produto);
+  const [campos, definirCampos] = useState(() =>
+    produto
+      ? {
+          ...INICIAL,
+          ...Object.fromEntries(
+            Object.keys(INICIAL).map((campo) => [campo, produto[campo] ?? INICIAL[campo]])
+          ),
+          preco_custo: String(produto.preco_custo ?? ""),
+          preco_venda: String(produto.preco_venda ?? ""),
+          estoque_minimo: String(produto.estoque_minimo ?? "0"),
+          venda_sob_encomenda: Boolean(produto.venda_sob_encomenda),
+        }
+      : INICIAL
+  );
   const [erro, definirErro] = useState(null);
   const [enviando, definirEnviando] = useState(false);
 
@@ -56,7 +74,7 @@ export function FormularioProduto({ aoFechar, aoSalvar }) {
     definirErro(null);
     definirEnviando(true);
     try {
-      await api.estoque.post("/produtos", {
+      const corpo = {
         ...campos,
         principio_ativo: campos.principio_ativo || null,
         classe_terapeutica: campos.classe_terapeutica || null,
@@ -66,7 +84,11 @@ export function FormularioProduto({ aoFechar, aoSalvar }) {
         preco_custo: Number(campos.preco_custo || 0),
         preco_venda: Number(campos.preco_venda || 0),
         estoque_minimo: Number(campos.estoque_minimo || 0),
-      });
+      };
+
+      if (edicao) await api.estoque.patch(`/produtos/${produto.id}`, corpo);
+      else await api.estoque.post("/produtos", corpo);
+
       aoSalvar();
     } catch (falha) {
       definirErro(falha.message);
@@ -79,8 +101,12 @@ export function FormularioProduto({ aoFechar, aoSalvar }) {
     <Modal
       aberto
       largura="max-w-3xl"
-      titulo="Novo produto"
-      descricao="Campos marcados são obrigatórios pelas regras de negócio da farmácia."
+      titulo={edicao ? "Editar produto" : "Novo produto"}
+      descricao={
+        edicao
+          ? "Alteração de preço fica registrada no histórico do produto."
+          : "Campos marcados são obrigatórios pelas regras de negócio da farmácia."
+      }
       aoFechar={aoFechar}
       rodape={
         <>
@@ -88,7 +114,7 @@ export function FormularioProduto({ aoFechar, aoSalvar }) {
             Cancelar
           </Botao>
           <Botao type="submit" form="formulario-produto" disabled={enviando}>
-            {enviando ? "Salvando" : "Salvar produto"}
+            {enviando ? "Salvando" : edicao ? "Salvar alterações" : "Salvar produto"}
           </Botao>
         </>
       }

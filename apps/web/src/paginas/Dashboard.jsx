@@ -71,7 +71,7 @@ export function Dashboard() {
             <CardIndicador
               rotulo="Vendas do dia"
               valor={formatarMoeda(resumo?.valor_total_dia)}
-              detalhe={`${formatarNumero(resumo?.total_vendas ?? 0)} cupons`}
+              detalhe={`${formatarNumero(resumo?.total_vendas ?? 0)} cupons na loja`}
               icone={ShoppingCart}
               variacao={resumo?.variacao_pct?.valor_total_dia ?? null}
             />

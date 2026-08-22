@@ -6,6 +6,7 @@ import { usarBusca } from "../lib/usarBusca.js";
 import { formatarDataHora, formatarMoeda, formatarNumero } from "../lib/formato.js";
 import { temPermissao, usarAutenticacao } from "../lib/autenticacao.jsx";
 import { Botao } from "../componentes/Botao.jsx";
+import { ExportarRelatorio } from "../componentes/ExportarRelatorio.jsx";
 import { CampoTextoLongo } from "../componentes/Campos.jsx";
 import { Modal } from "../componentes/Modal.jsx";
 import { Tabela } from "../componentes/Tabela.jsx";
@@ -82,11 +83,40 @@ export function Vendas() {
 
   const { dados, carregando, erro, recarregar } = usarBusca(() => api.vendas.get(""), []);
 
+  const finalizadas = (dados?.vendas ?? []).filter(
+    (venda) => venda.status === STATUS_VENDA.FINALIZADA
+  );
+  const totais = dados?.vendas.length
+    ? {
+        __rotulo: `${finalizadas.length} cupom(ns) finalizado(s)`,
+        total_itens: finalizadas.reduce((soma, venda) => soma + venda.total_itens, 0),
+        valor_total: formatarMoeda(
+          finalizadas.reduce((soma, venda) => soma + Number(venda.valor_total), 0)
+        ),
+      }
+    : null;
+
   return (
     <>
       <TituloPagina
         titulo="Vendas do dia"
         descricao="Cupons abertos, finalizados e cancelados de hoje."
+        acoes={
+          <ExportarRelatorio
+            servico="vendas"
+            caminho="/relatorio"
+            titulo="Exportar vendas"
+            descricao="Escolha o período e o formato da planilha."
+            modelo={{
+              nome: "agrupar",
+              rotulo: "Formato",
+              opcoes: [
+                { valor: "", rotulo: "Um cupom por linha" },
+                { valor: "produto", rotulo: "Total por produto" },
+              ],
+            }}
+          />
+        }
       />
 
       <Card>
@@ -157,6 +187,7 @@ export function Vendas() {
               },
             ]}
             linhas={dados.vendas}
+            totais={totais}
             chave={(venda) => venda.id}
             vazio={
               <EstadoVazio

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { PERFIS } from "@arkos/shared-types";
-import { api, gravarToken, lerToken } from "./api.js";
+import { CHAVE_TOKEN_ORIGINAL, api, gravarToken, lerToken } from "./api.js";
 
 const AutenticacaoContexto = createContext(null);
 
@@ -46,8 +46,32 @@ export function ProvedorAutenticacao({ children }) {
   }, []);
 
   const sair = useCallback(() => {
+    localStorage.removeItem(CHAVE_TOKEN_ORIGINAL);
     gravarToken(null);
     definirUsuario(null);
+  }, []);
+
+  /**
+   * Simulação de perfil (só administrador): guarda o token real, passa a usar o
+   * token do perfil simulado e volta atrás em encerrarSimulacao.
+   */
+  const simular = useCallback(async (perfil) => {
+    const original = lerToken();
+    const dados = await api.auth.post("/simular", { perfil });
+    localStorage.setItem(CHAVE_TOKEN_ORIGINAL, original);
+    gravarToken(dados.token);
+    definirUsuario(dados.usuario);
+    return dados.usuario;
+  }, []);
+
+  const encerrarSimulacao = useCallback(async () => {
+    const original = localStorage.getItem(CHAVE_TOKEN_ORIGINAL);
+    if (!original) return null;
+    gravarToken(original);
+    localStorage.removeItem(CHAVE_TOKEN_ORIGINAL);
+    const dados = await api.auth.get("/me");
+    definirUsuario(dados.usuario);
+    return dados.usuario;
   }, []);
 
   const valor = useMemo(
@@ -56,9 +80,14 @@ export function ProvedorAutenticacao({ children }) {
       carregando,
       entrar,
       sair,
+      simular,
+      encerrarSimulacao,
       autenticado: Boolean(usuario),
+      simulando: usuario?.simulando === true,
+      // Perfil de verdade de quem está logado, mesmo durante uma simulação.
+      perfilReal: usuario?.perfil_real ?? usuario?.perfil ?? null,
     }),
-    [usuario, carregando, entrar, sair]
+    [usuario, carregando, entrar, sair, simular, encerrarSimulacao]
   );
 
   return <AutenticacaoContexto.Provider value={valor}>{children}</AutenticacaoContexto.Provider>;

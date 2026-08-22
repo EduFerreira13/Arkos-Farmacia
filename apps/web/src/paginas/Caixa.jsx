@@ -5,6 +5,7 @@ import { api } from "../lib/api.js";
 import { usarBusca } from "../lib/usarBusca.js";
 import { formatarDataHora, formatarMoeda } from "../lib/formato.js";
 import { Botao } from "../componentes/Botao.jsx";
+import { ExportarRelatorio } from "../componentes/ExportarRelatorio.jsx";
 import { CampoSelect, CampoTexto } from "../componentes/Campos.jsx";
 import { Modal } from "../componentes/Modal.jsx";
 import { Tabela } from "../componentes/Tabela.jsx";
@@ -90,7 +91,7 @@ function ModalFechamento({ caixa, esperado, aoFechar, aoConcluir }) {
       ) : (
         <div className="space-y-4">
           <div className="rounded-card bg-borda/40 px-4 py-3">
-            <p className="text-rotulo text-secundario">Valor esperado no caixa</p>
+            <p className="text-rotulo text-secundario">Total que deveria estar na gaveta</p>
             <p className="text-h2 text-texto">{formatarMoeda(esperado)}</p>
           </div>
           <CampoTexto
@@ -167,11 +168,19 @@ export function Caixa() {
         titulo="Caixa"
         descricao="Abertura, lançamentos do turno e fechamento com conferência."
         acoes={
-          caixa ? (
-            <Botao icone={Lock} onClick={() => definirFechando(true)}>
-              Fechar caixa
-            </Botao>
-          ) : null
+          <>
+            <ExportarRelatorio
+              servico="financeiro"
+              caminho="/relatorios/caixa"
+              titulo="Exportar movimento de caixa"
+              descricao="Lançamentos de venda e manuais do período, com totais e divergências."
+            />
+            {caixa ? (
+              <Botao icone={Lock} onClick={() => definirFechando(true)}>
+                Fechar caixa
+              </Botao>
+            ) : null}
+          </>
         }
       />
 
@@ -205,9 +214,9 @@ export function Caixa() {
           <div className="grid grid-cols-4 gap-4">
             {[
               ["Abertura", formatarMoeda(caixa.valor_abertura), Wallet],
-              ["Entradas", formatarMoeda(totais?.entradas), ArrowUpCircle],
-              ["Saídas", formatarMoeda(totais?.saidas), ArrowDownCircle],
-              ["Esperado agora", formatarMoeda(totais?.valor_esperado), Wallet],
+              ["Entradas deste caixa", formatarMoeda(totais?.entradas), ArrowUpCircle],
+              ["Saídas deste caixa", formatarMoeda(totais?.saidas), ArrowDownCircle],
+              ["Total atual", formatarMoeda(totais?.valor_esperado), Wallet],
             ].map(([rotulo, valor, Icone]) => (
               <Card key={rotulo}>
                 <CardCorpo>
@@ -308,8 +317,8 @@ export function Caixa() {
               {fluxo.dados?.vendas ? (
                 <Card>
                   <CardCabecalho
-                    titulo="Vendas de hoje"
-                    descricao="Soma automática do ponto de venda por forma de pagamento."
+                    titulo="Vendas de hoje na loja"
+                    descricao="Todos os operadores somados — o caixa acima mostra apenas o seu turno."
                   />
                   <CardCorpo>
                     <dl className="space-y-2 text-corpo">
