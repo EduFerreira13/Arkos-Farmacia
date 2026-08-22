@@ -15,6 +15,22 @@
 | observacao | text | YES | - |
 | ativo | boolean | NO | true |
 | criado_em | timestamp with time zone | NO | now() |
+| aceita_contato | boolean | NO | true |
+| data_nascimento | date | YES | - |
+
+## contatos_cliente
+
+| Coluna | Tipo | Nulo? | Default |
+|---|---|---|---|
+| id | uuid | NO | gen_random_uuid() |
+| cliente_id | uuid | NO | - |
+| usuario_id | uuid | NO | - |
+| canal | USER-DEFINED | NO | - |
+| motivo | character varying | NO | - |
+| oferta | character varying | YES | - |
+| observacao | text | YES | - |
+| resultado | USER-DEFINED | NO | 'aguardando'::vendas.resultado_contato |
+| criado_em | timestamp with time zone | NO | now() |
 
 ## itens_venda
 
