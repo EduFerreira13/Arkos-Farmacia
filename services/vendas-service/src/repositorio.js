@@ -155,10 +155,6 @@ export async function inserirPagamento({ vendaId, formaPagamento, valor }) {
   return rows[0];
 }
 
-export async function removerPagamentos(vendaId) {
-  await consultar(`DELETE FROM vendas.pagamentos WHERE venda_id = $1`, [vendaId]);
-}
-
 export async function marcarFinalizada(vendaId) {
   const { rows } = await consultar(
     `UPDATE vendas.vendas SET status = 'finalizada'
@@ -182,19 +178,6 @@ export async function marcarCancelada({ vendaId, motivo }) {
 /** Atualiza o lote de referência do item para o primeiro lote realmente baixado. */
 export async function atualizarLoteDoItem({ itemId, loteId }) {
   await consultar(`UPDATE vendas.itens_venda SET lote_id = $2 WHERE id = $1`, [itemId, loteId]);
-}
-
-export async function listarVendasDoDia() {
-  const { rows } = await consultar(
-    `SELECT v.id, v.usuario_id, v.status, v.valor_total, v.desconto, v.criado_em,
-            (SELECT COUNT(*) FROM vendas.itens_venda i WHERE i.venda_id = v.id)::int AS total_itens,
-            (SELECT string_agg(DISTINCT p.forma_pagamento, ', ')
-               FROM vendas.pagamentos p WHERE p.venda_id = v.id) AS formas_pagamento
-       FROM vendas.vendas v
-      WHERE v.criado_em::date = current_date
-      ORDER BY v.criado_em DESC`
-  );
-  return rows;
 }
 
 /**

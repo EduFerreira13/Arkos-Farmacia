@@ -41,7 +41,6 @@ import {
   inserirPagamento,
   listarItens,
   listarItensNoPeriodo,
-  listarVendasDoDia,
   listarVendasNoPeriodo,
   marcarCancelada,
   marcarFinalizada,
