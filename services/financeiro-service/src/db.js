@@ -12,6 +12,10 @@ pg.types.setTypeParser(1082, (valor) => valor);
 
 export const pool = new pg.Pool({
   connectionString: env.DATABASE_URL,
+  // O dia do negócio é o dia local da farmácia, não o dia UTC do servidor: sem
+  // isso, uma venda das 21h entraria no movimento do dia seguinte (current_date
+  // e criado_em::date são resolvidos no fuso da sessão).
+  options: `-c timezone=${env.TZ_NEGOCIO}`,
   max: 5,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 15_000,
