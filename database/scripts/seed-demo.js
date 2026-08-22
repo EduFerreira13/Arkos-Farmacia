@@ -631,6 +631,56 @@ const CLIENTES = [
   },
 ];
 
+/**
+ * Pedidos de compra em três momentos do ciclo: um rascunho a conferir, um já
+ * enviado esperando a mercadoria e um recebido com falta de duas unidades.
+ */
+const PEDIDOS = [
+  {
+    fornecedor: "panvel",
+    status: "rascunho",
+    dias: 0,
+    hora: "08:40",
+    observacao: "Reposicao sugerida pelo estoque baixo",
+    itens: [
+      { produto: "azitromicina", quantidade: 12, preco: 21.5 },
+      { produto: "amoxicilina", quantidade: 20, preco: 17.4 },
+    ],
+  },
+  {
+    fornecedor: "medsupply",
+    status: "enviado",
+    dias: 2,
+    hora: "14:20",
+    observacao: "Confirmado por telefone com o vendedor",
+    itens: [
+      { produto: "termometro", quantidade: 10, preco: 18.4 },
+      { produto: "fralda", quantidade: 15, preco: 21.0 },
+    ],
+  },
+  {
+    fornecedor: "farmalog",
+    status: "recebido",
+    dias: 6,
+    hora: "09:10",
+    observacao: "Entrega semanal",
+    recebimento: {
+      dias: 5,
+      hora: "10:35",
+      observacao: "Faltaram duas caixas de omeprazol",
+      // recebido menor que pedido: divergencia registrada, entrada feita
+      itens: [
+        { produto: "omeprazol", quantidade: 18, lote: "OME-2611", validade: 300 },
+        { produto: "losartana", quantidade: 24, lote: "LOS-2611", validade: 420 },
+      ],
+    },
+    itens: [
+      { produto: "omeprazol", quantidade: 20, preco: 6.6 },
+      { produto: "losartana", quantidade: 24, preco: 7.2 },
+    ],
+  },
+];
+
 const CONTAS_PAGAR = [
   { descricao: "Nota fiscal 4521 - Distribuidora Panvel Norte", valor: 4820.75, vencimento: 12, fornecedor: "panvel", status: "pendente" },
   { descricao: "Nota fiscal 4487 - Farmalog Distribuicao", valor: 2310.4, vencimento: -5, fornecedor: "farmalog", status: "pendente" },
@@ -1032,6 +1082,91 @@ async function main() {
       [caixaHojeId.gerente]
     );
 
+    // ------------------------------------------------------------ compras
+    for (const pedido of PEDIDOS) {
+      const itens = pedido.itens.map((item) => ({
+        ...item,
+        produtoRegistro: produtoPorChave[item.produto],
+      }));
+      const total = itens.reduce((soma, item) => soma + item.quantidade * item.preco, 0);
+
+      const { rows: criado } = await client.query(
+        `INSERT INTO compras.pedidos
+           (fornecedor_id, fornecedor_nome, status, observacao, valor_total, usuario_id,
+            criado_em, enviado_em, recebido_em)
+         VALUES ($1, $2, $3, $4, $5, $6, ${instante(pedido.dias, pedido.hora)},
+                 ${pedido.status === "rascunho" ? "NULL" : instante(pedido.dias, pedido.hora)},
+                 ${pedido.recebimento ? instante(pedido.recebimento.dias, pedido.recebimento.hora) : "NULL"})
+         RETURNING id`,
+        [
+          fornecedorId[pedido.fornecedor],
+          FORNECEDORES.find((f) => f.chave === pedido.fornecedor).nome,
+          pedido.status,
+          pedido.observacao,
+          dinheiro(total),
+          usuarioId.gerente,
+        ]
+      );
+      const pedidoId = criado[0].id;
+
+      const itensCriados = [];
+      for (const item of itens) {
+        const { rows } = await client.query(
+          `INSERT INTO compras.itens_pedido
+             (pedido_id, produto_id, produto_nome, quantidade, preco_unitario)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id`,
+          [
+            pedidoId,
+            item.produtoRegistro.id,
+            item.produtoRegistro.nome,
+            item.quantidade,
+            item.preco,
+          ]
+        );
+        itensCriados.push({ ...item, itemId: rows[0].id });
+      }
+
+      if (!pedido.recebimento) continue;
+
+      const conferidos = pedido.recebimento.itens.map((recebido) => {
+        const original = itensCriados.find((item) => item.produto === recebido.produto);
+        return {
+          ...recebido,
+          original,
+          divergencia: recebido.quantidade - original.quantidade,
+        };
+      });
+      const temDivergencia = conferidos.some((item) => item.divergencia !== 0);
+
+      const { rows: recebimento } = await client.query(
+        `INSERT INTO compras.recebimentos
+           (pedido_id, usuario_id, observacao, tem_divergencia, recebido_em)
+         VALUES ($1, $2, $3, $4, ${instante(pedido.recebimento.dias, pedido.recebimento.hora)})
+         RETURNING id`,
+        [pedidoId, usuarioId.gerente, pedido.recebimento.observacao, temDivergencia]
+      );
+
+      for (const item of conferidos) {
+        await client.query(
+          `INSERT INTO compras.itens_recebimento
+             (recebimento_id, item_pedido_id, produto_id, produto_nome, quantidade_pedida,
+              quantidade_recebida, numero_lote, data_validade, divergencia)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, ${dataRelativa(item.validade)}, $8)`,
+          [
+            recebimento[0].id,
+            item.original.itemId,
+            item.original.produtoRegistro.id,
+            item.original.produtoRegistro.nome,
+            item.original.quantidade,
+            item.quantidade,
+            item.lote,
+            item.divergencia,
+          ]
+        );
+      }
+    }
+
     // -------------------------------------------------------------- contas
     for (const conta of CONTAS_PAGAR) {
       await client.query(
@@ -1082,6 +1217,11 @@ async function main() {
       `SELECT COUNT(*)::int AS lotes FROM estoque.vw_produtos_a_vencer WHERE dias_para_vencer <= 30`
     );
     await resumo("Clientes", `SELECT COUNT(*)::int AS total FROM vendas.clientes`);
+    await resumo(
+      "Pedidos de compra",
+      `SELECT jsonb_object_agg(status, quantidade) AS por_status
+         FROM (SELECT status, COUNT(*)::int AS quantidade FROM compras.pedidos GROUP BY status) t`
+    );
     await resumo("Notas fiscais", `SELECT COUNT(*)::int AS total FROM fiscal.notas_fiscais`);
     await resumo("Registros SNGPC", `SELECT COUNT(*)::int AS total FROM fiscal.controlados_sngpc`);
     await resumo(
