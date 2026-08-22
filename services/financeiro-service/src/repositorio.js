@@ -244,28 +244,29 @@ export async function correlacaoContas() {
       ELSE 'depois_de_30_dias'
     END`;
 
-  const { rows: pagar } = await consultar(
-    `SELECT ${faixas} AS faixa, COUNT(*)::int AS quantidade, SUM(valor) AS valor
-       FROM financeiro.contas_pagar
-      WHERE status <> 'pago'
-      GROUP BY 1`
-  );
-
-  const { rows: receber } = await consultar(
-    `SELECT ${faixas} AS faixa, COUNT(*)::int AS quantidade, SUM(valor) AS valor
-       FROM financeiro.contas_receber
-      WHERE status <> 'recebido'
-      GROUP BY 1`
-  );
-
-  const { rows: quitado } = await consultar(
+  // Em série, cada consulta paga a ida e volta até o banco: aqui vão juntas.
+  const [{ rows: pagar }, { rows: receber }, { rows: quitado }] = await Promise.all([
+    consultar(
+      `SELECT ${faixas} AS faixa, COUNT(*)::int AS quantidade, SUM(valor) AS valor
+         FROM financeiro.contas_pagar
+        WHERE status <> 'pago'
+        GROUP BY 1`
+    ),
+    consultar(
+      `SELECT ${faixas} AS faixa, COUNT(*)::int AS quantidade, SUM(valor) AS valor
+         FROM financeiro.contas_receber
+        WHERE status <> 'recebido'
+        GROUP BY 1`
+    ),
+    consultar(
     `SELECT
        (SELECT COALESCE(SUM(valor), 0) FROM financeiro.contas_pagar
          WHERE status = 'pago' AND pago_em::date >= date_trunc('month', current_date)) AS pago_no_mes,
        (SELECT COALESCE(SUM(valor), 0) FROM financeiro.contas_receber
          WHERE status = 'recebido' AND recebido_em::date >= date_trunc('month', current_date))
          AS recebido_no_mes`
-  );
+    ),
+  ]);
 
   return { pagar, receber, mes: quitado[0] };
 }
