@@ -34,6 +34,7 @@ export function Dashboard() {
   const { usuario } = usarAutenticacao();
 
   const vendas = usarBusca(() => api.vendas.get("/resumo/hoje"), []);
+  const relacionamento = usarBusca(() => api.vendas.get("/crm/resumo"), []);
   const vencimento = usarBusca(() => api.estoque.get("/alertas/vencimento?dias=30"), []);
   const estoqueBaixo = usarBusca(() => api.estoque.get("/alertas/estoque-baixo"), []);
 
@@ -127,6 +128,22 @@ export function Dashboard() {
                 }
               />
               <CardCorpo>
+                {/* Puxa a fila do relacionamento para o dia começar sabendo
+                    quem precisa de uma ligação. */}
+                {relacionamento.dados ? (
+                  <Link
+                    to="/relacionamento"
+                    className="mb-3 flex items-center justify-between gap-2 rounded-botao bg-fundo px-3 py-2 text-corpo transition-colors hover:bg-borda/60"
+                  >
+                    <span className="text-secundario">Clientes para ligar hoje</span>
+                    <span className="font-semibold text-texto">
+                      {relacionamento.dados.situacoes.recompra_atrasada +
+                        relacionamento.dados.situacoes.em_risco +
+                        relacionamento.dados.situacoes.inativo}
+                    </span>
+                  </Link>
+                ) : null}
+
                 {resumo?.por_forma_pagamento?.length ? (
                   <dl className="space-y-1.5 text-corpo">
                     {resumo.por_forma_pagamento.map((linha) => (

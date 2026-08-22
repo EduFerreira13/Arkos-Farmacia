@@ -146,6 +146,13 @@ export function PDV() {
   const produtos = usarBusca(() => api.estoque.get("/produtos"), []);
   const clientes = usarBusca(() => api.vendas.get("/clientes"), []);
 
+  // Com o cliente identificado, o balcão passa a saber o que ele costuma levar.
+  const clienteId = venda?.cliente_id ?? null;
+  const fichaCliente = usarBusca(
+    () => (clienteId ? api.vendas.get(`/crm/clientes/${clienteId}`) : Promise.resolve(null)),
+    [clienteId]
+  );
+
   const encontrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
     const lista = produtos.dados?.produtos ?? [];
@@ -418,22 +425,74 @@ export function PDV() {
             />
             <CardCorpo className="space-y-2">
               {venda?.cliente_id ? (
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-corpo font-medium text-texto">{venda.cliente_nome}</p>
-                    <p className="text-rotulo text-secundario">
-                      {venda.cliente_convenio
-                        ? `Convênio ${venda.cliente_convenio}`
-                        : "Cliente particular"}
-                      {venda.cliente_telefone ? ` — ${venda.cliente_telefone}` : ""}
-                    </p>
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-corpo font-medium text-texto">{venda.cliente_nome}</p>
+                      <p className="text-rotulo text-secundario">
+                        {venda.cliente_convenio
+                          ? `Convênio ${venda.cliente_convenio}`
+                          : "Cliente particular"}
+                        {venda.cliente_telefone ? ` — ${venda.cliente_telefone}` : ""}
+                      </p>
+                    </div>
+                    <BotaoIcone
+                      icone={X}
+                      rotulo="Tirar cliente da venda"
+                      onClick={() => vincularCliente(null)}
+                    />
                   </div>
-                  <BotaoIcone
-                    icone={X}
-                    rotulo="Tirar cliente da venda"
-                    onClick={() => vincularCliente(null)}
-                  />
-                </div>
+
+                  {/* O que este cliente costuma levar, para oferecer no balcão. */}
+                  {fichaCliente.dados?.cliente?.preferidos?.length ? (
+                    <div className="rounded-botao bg-fundo px-3 py-2">
+                      <p className="text-rotulo text-secundario">
+                        {fichaCliente.dados.cliente.intervalo_medio_dias
+                          ? `Costuma comprar a cada ${fichaCliente.dados.cliente.intervalo_medio_dias} dias — última há ${fichaCliente.dados.cliente.dias_sem_comprar}`
+                          : "Primeira vez que compra identificado"}
+                      </p>
+                      <ul className="mt-1 space-y-1">
+                        {fichaCliente.dados.cliente.preferidos.slice(0, 3).map((preferido) => {
+                          const doCatalogo = (produtos.dados?.produtos ?? []).find(
+                            (produto) => produto.id === preferido.produto_id
+                          );
+                          const semEstoque =
+                            doCatalogo && doCatalogo.quantidade_atual <= 0 &&
+                            !doCatalogo.venda_sob_encomenda;
+
+                          return (
+                            <li
+                              key={preferido.produto_id}
+                              className="flex items-center justify-between gap-2 text-corpo"
+                            >
+                              <span className="min-w-0 truncate text-texto">
+                                {preferido.produto_nome}
+                                <span className="text-secundario"> — {preferido.vezes}x</span>
+                              </span>
+                              {doCatalogo ? (
+                                <Botao
+                                  tamanho="pequeno"
+                                  variante="secundario"
+                                  icone={Plus}
+                                  disabled={ocupado || semEstoque}
+                                  onClick={() => adicionarItem(doCatalogo)}
+                                >
+                                  {semEstoque ? "Sem estoque" : "Levar"}
+                                </Botao>
+                              ) : null}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      {fichaCliente.dados.cliente.situacao === "recompra_atrasada" ? (
+                        <p className="mt-2 text-rotulo text-alerta">
+                          Reposição atrasada {fichaCliente.dados.cliente.atraso_recompra_dias}{" "}
+                          dia(s) — vale confirmar se ficou sem o medicamento.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </>
               ) : (
                 <CampoSelect
                   rotulo="Buscar cliente cadastrado"
