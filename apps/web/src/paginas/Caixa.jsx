@@ -186,6 +186,13 @@ export function Caixa() {
 
       {status.carregando ? <Carregando texto="Consultando caixa" /> : null}
 
+      {/* Sem isto a tela ficava só com o título quando o serviço não respondia. */}
+      {status.erro ? (
+        <Aviso tom="erro" titulo="Não foi possível consultar o caixa">
+          {status.erro.message} — confira se o financeiro-service está rodando.
+        </Aviso>
+      ) : null}
+
       {status.dados && !caixa ? (
         <Card className="max-w-md">
           <CardCabecalho titulo="Abrir caixa" icone={Unlock} />

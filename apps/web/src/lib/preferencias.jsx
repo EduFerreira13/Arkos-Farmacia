@@ -1,12 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 /**
- * Preferências do usuário guardadas no navegador: tema claro/escuro (§6) e
- * densidade de tabela — denso (padrão) ou confortável (§4).
+ * Preferências do usuário guardadas no navegador: tema claro/escuro (§6).
+ * A densidade de tabela é sempre densa — a operação é em tela grande e com
+ * muita linha, e o modo confortável só tirava informação de vista.
  */
 
 const CHAVE_TEMA = "arkos.tema";
-const CHAVE_DENSIDADE = "arkos.densidade";
 
 const PreferenciasContexto = createContext(null);
 
@@ -16,29 +16,17 @@ function lerInicial(chave, padrao) {
 
 export function ProvedorPreferencias({ children }) {
   const [tema, definirTema] = useState(() => lerInicial(CHAVE_TEMA, "claro"));
-  const [densidade, definirDensidade] = useState(() => lerInicial(CHAVE_DENSIDADE, "denso"));
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", tema === "escuro");
     localStorage.setItem(CHAVE_TEMA, tema);
   }, [tema]);
 
-  useEffect(() => {
-    localStorage.setItem(CHAVE_DENSIDADE, densidade);
-  }, [densidade]);
-
   const alternarTema = useCallback(() => {
     definirTema((atual) => (atual === "claro" ? "escuro" : "claro"));
   }, []);
 
-  const alternarDensidade = useCallback(() => {
-    definirDensidade((atual) => (atual === "denso" ? "confortavel" : "denso"));
-  }, []);
-
-  const valor = useMemo(
-    () => ({ tema, densidade, alternarTema, alternarDensidade, definirDensidade }),
-    [tema, densidade, alternarTema, alternarDensidade]
-  );
+  const valor = useMemo(() => ({ tema, alternarTema }), [tema, alternarTema]);
 
   return <PreferenciasContexto.Provider value={valor}>{children}</PreferenciasContexto.Provider>;
 }

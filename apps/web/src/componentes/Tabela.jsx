@@ -1,14 +1,11 @@
-import { usarPreferencias } from "../lib/preferencias.jsx";
-
 /**
- * Tabela que respeita a densidade escolhida pelo usuário (§4):
- * denso = linha ~36px / padding 8px; confortável = linha ~48px / padding 14px.
+ * Tabela em densidade densa: linha ~36px, padding 8px (§4). A operação roda em
+ * tela grande com muita linha por página, então essa é a densidade padrão e
+ * única.
  */
 export function Tabela({ colunas, linhas, chave, aoClicarLinha, vazio, totais }) {
-  const { densidade } = usarPreferencias();
-  const denso = densidade === "denso";
-  const paddingCelula = denso ? "px-3 py-2" : "px-4 py-3.5";
-  const alturaLinha = denso ? "h-9" : "h-12";
+  const paddingCelula = "px-3 py-2";
+  const alturaLinha = "h-9";
 
   if (!linhas?.length) {
     return vazio ?? null;

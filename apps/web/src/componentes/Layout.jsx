@@ -13,7 +13,6 @@ import {
   Package,
   PackagePlus,
   Receipt,
-  Rows3,
   Search,
   ShoppingCart,
   Sun,
@@ -167,7 +166,7 @@ function SeletorDeVisao({ usuario, perfilReal, simulando, aoSimular, ocupado }) 
 }
 
 function Topbar({ usuario, perfilReal, simulando, aoSair, aoSimular, ocupado }) {
-  const { tema, densidade, alternarTema, alternarDensidade } = usarPreferencias();
+  const { tema, alternarTema } = usarPreferencias();
   const [busca, definirBusca] = useState("");
   const navegar = useNavigate();
   const podeVerProdutos = temPermissao(usuario, "consultar_estoque");
@@ -209,11 +208,6 @@ function Topbar({ usuario, perfilReal, simulando, aoSair, aoSimular, ocupado }) 
 
         <div className="mx-2 h-8 w-px bg-borda" aria-hidden="true" />
 
-        <BotaoIcone
-          icone={Rows3}
-          rotulo={`Densidade da tabela: ${densidade === "denso" ? "densa" : "confortável"}`}
-          onClick={alternarDensidade}
-        />
         <BotaoIcone icone={Bell} rotulo="Notificações" />
         <BotaoIcone
           icone={tema === "claro" ? Moon : Sun}

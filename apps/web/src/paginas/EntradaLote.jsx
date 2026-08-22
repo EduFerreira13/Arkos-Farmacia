@@ -89,6 +89,7 @@ export function EntradaLote() {
           <CardCabecalho titulo="Nova entrada" icone={PackagePlus} />
           <CardCorpo>
             {produtos.carregando ? <Carregando texto="Carregando produtos" /> : null}
+            {produtos.erro ? <Aviso tom="erro">{produtos.erro.message}</Aviso> : null}
             {produtos.dados ? (
               <form onSubmit={submeter} className="space-y-4">
                 <CampoSelect

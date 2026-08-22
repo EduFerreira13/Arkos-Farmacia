@@ -272,6 +272,11 @@ export function PDV() {
               />
 
               {produtos.carregando ? <Carregando texto="Carregando catálogo" /> : null}
+              {produtos.erro ? (
+                <Aviso tom="erro" titulo="Não foi possível carregar o catálogo">
+                  {produtos.erro.message}
+                </Aviso>
+              ) : null}
 
               <ul className="mt-4 divide-y divide-borda">
                 {encontrados.map((produto) => {

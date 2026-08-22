@@ -122,7 +122,10 @@ function ListaContas({ tipo, titulo, descricao, podeLancar }) {
   const [formularioAberto, definirFormularioAberto] = useState(false);
   const [erro, definirErro] = useState(null);
 
-  const { dados, carregando, recarregar } = usarBusca(() => api.financeiro.get(rota), [rota]);
+  const { dados, carregando, erro: erroBusca, recarregar } = usarBusca(
+    () => api.financeiro.get(rota),
+    [rota]
+  );
 
   const contas = dados?.contas ?? [];
   const quitado = pagar ? "pago" : "recebido";
@@ -175,6 +178,11 @@ function ListaContas({ tipo, titulo, descricao, podeLancar }) {
         </div>
       ) : null}
       {carregando ? <Carregando /> : null}
+      {erroBusca ? (
+        <div className="px-5 py-4">
+          <Aviso tom="erro">{erroBusca.message}</Aviso>
+        </div>
+      ) : null}
       {dados ? (
         <Tabela
           colunas={[
