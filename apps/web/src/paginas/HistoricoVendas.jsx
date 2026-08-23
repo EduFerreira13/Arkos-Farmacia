@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { History, Receipt } from "lucide-react";
+import { Receipt } from "lucide-react";
 import { FORMA_PAGAMENTO_LABEL, STATUS_VENDA } from "@arkos/shared-types";
 import { api } from "../lib/api.js";
 import { usarBusca } from "../lib/usarBusca.js";
@@ -12,7 +12,6 @@ import {
   Aviso,
   Badge,
   Card,
-  CardCabecalho,
   Carregando,
   EstadoVazio,
   TituloPagina,
@@ -79,6 +78,25 @@ export function HistoricoVendas() {
           />
         }
       />
+
+      {/* O resumo vem antes da lista: é o que a pessoa quer saber primeiro. */}
+      {totais ? (
+        <Card className="mb-4">
+          <div className="grid grid-cols-4 divide-x divide-borda">
+            {[
+              ["Cupons finalizados", formatarNumero(totais.cupons_finalizados)],
+              ["Valor finalizado", formatarMoeda(totais.valor_finalizado)],
+              ["Ticket médio", formatarMoeda(totais.ticket_medio)],
+              ["Descontos concedidos", formatarMoeda(totais.descontos)],
+            ].map(([rotulo, valor]) => (
+              <div key={rotulo} className="px-5 py-3">
+                <p className="text-rotulo text-secundario">{rotulo}</p>
+                <p className="mt-0.5 text-h3 text-texto">{valor}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
 
       <Card>
         <div className="flex flex-wrap items-end gap-3 border-b border-borda px-5 py-4">
@@ -208,24 +226,6 @@ export function HistoricoVendas() {
         ) : null}
       </Card>
 
-      {totais ? (
-        <Card className="mt-4">
-          <CardCabecalho titulo="Resumo do período" icone={History} />
-          <div className="grid grid-cols-4 divide-x divide-borda">
-            {[
-              ["Cupons finalizados", formatarNumero(totais.cupons_finalizados)],
-              ["Valor finalizado", formatarMoeda(totais.valor_finalizado)],
-              ["Ticket médio", formatarMoeda(totais.ticket_medio)],
-              ["Descontos concedidos", formatarMoeda(totais.descontos)],
-            ].map(([rotulo, valor]) => (
-              <div key={rotulo} className="px-5 py-4">
-                <p className="text-rotulo text-secundario">{rotulo}</p>
-                <p className="mt-1 text-h3 text-texto">{valor}</p>
-              </div>
-            ))}
-          </div>
-        </Card>
-      ) : null}
     </>
   );
 }

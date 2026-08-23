@@ -1,16 +1,18 @@
-import { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowLeftRight,
-  Bell,
   BarChart3,
+  Bell,
+  ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   CircleHelp,
   ClipboardList,
   Eye,
   FileText,
+  HeartHandshake,
   History,
   LayoutDashboard,
   LogOut,
@@ -23,7 +25,6 @@ import {
   ShoppingCart,
   Stethoscope,
   Sun,
-  HeartHandshake,
   Truck,
   Users,
   Wallet,
@@ -36,21 +37,24 @@ import { usarPreferencias } from "../lib/preferencias.jsx";
 import { temPermissao, usarAutenticacao } from "../lib/autenticacao.jsx";
 
 /**
- * Cada item declara a permissão que o perfil precisa ter. Sem ela, o item nem
- * aparece no menu — o perfil não descobre a existência de uma tela que não pode
- * usar (as rotas também barram o acesso direto pela URL, em App.jsx).
+ * Menu em grupos: o primeiro nível são as áreas da farmácia, as telas ficam
+ * dentro delas. Com quase vinte telas, a lista corrida virava uma parede de
+ * links — assim a pessoa vê seis entradas e abre só a que interessa.
+ *
+ * Cada item declara a permissão necessária. Sem ela, o item não aparece; se
+ * nenhum item de um grupo aparecer, o grupo some junto (as rotas em App.jsx
+ * barram o acesso direto pela URL).
  */
 export const SECOES = [
+  { id: "dashboard", rotulo: "Dashboard", icone: LayoutDashboard, para: "/", fim: true },
   {
-    titulo: null,
-    itens: [{ para: "/", rotulo: "Dashboard", icone: LayoutDashboard, fim: true }],
-  },
-  {
-    titulo: "Vendas",
+    id: "vendas",
+    rotulo: "Vendas",
+    icone: ShoppingCart,
     itens: [
       { para: "/pdv", rotulo: "Ponto de venda", icone: ShoppingCart, permissao: "vender" },
       { para: "/vendas", rotulo: "Vendas do dia", icone: Receipt, permissao: "vender" },
-      { para: "/vendas/historico", rotulo: "Histórico de vendas", icone: History, permissao: "vender" },
+      { para: "/vendas/historico", rotulo: "Histórico", icone: History, permissao: "vender" },
       {
         para: "/relacionamento",
         rotulo: "Relacionamento",
@@ -60,7 +64,9 @@ export const SECOES = [
     ],
   },
   {
-    titulo: "Estoque",
+    id: "estoque",
+    rotulo: "Estoque",
+    icone: Package,
     itens: [
       { para: "/produtos", rotulo: "Produtos", icone: Package, permissao: "consultar_estoque" },
       {
@@ -79,9 +85,11 @@ export const SECOES = [
     ],
   },
   {
-    titulo: "Compras",
+    id: "compras",
+    rotulo: "Compras",
+    icone: Truck,
     itens: [
-      { para: "/compras", rotulo: "Pedidos de compra", icone: Truck, permissao: "ajustar_estoque" },
+      { para: "/compras", rotulo: "Pedidos", icone: Truck, permissao: "ajustar_estoque" },
       {
         para: "/compras/sugestao",
         rotulo: "Sugestão de compra",
@@ -91,7 +99,9 @@ export const SECOES = [
     ],
   },
   {
-    titulo: "Financeiro",
+    id: "financeiro",
+    rotulo: "Financeiro",
+    icone: Wallet,
     itens: [
       { para: "/financeiro", rotulo: "Visão geral", icone: PieChart, permissao: "ver_financeiro" },
       { para: "/caixa", rotulo: "Caixa", icone: Wallet, permissao: "vender" },
@@ -99,7 +109,9 @@ export const SECOES = [
     ],
   },
   {
-    titulo: "Fiscal e regulatório",
+    id: "fiscal",
+    rotulo: "Fiscal",
+    icone: ScrollText,
     itens: [
       { para: "/fiscal/notas", rotulo: "Notas fiscais", icone: ScrollText, permissao: "vender" },
       {
@@ -117,18 +129,16 @@ export const SECOES = [
     ],
   },
   {
-    titulo: "Relatórios",
-    itens: [
-      {
-        para: "/relatorios",
-        rotulo: "Relatórios e indicadores",
-        icone: BarChart3,
-        permissao: "ver_financeiro",
-      },
-    ],
+    id: "relatorios",
+    rotulo: "Relatórios",
+    icone: BarChart3,
+    para: "/relatorios",
+    permissao: "ver_financeiro",
   },
   {
-    titulo: "Cadastros",
+    id: "cadastros",
+    rotulo: "Cadastros",
+    icone: Users,
     itens: [
       {
         para: "/cadastros/fornecedores",
@@ -147,33 +157,46 @@ export const SECOES = [
   },
 ];
 
-function ItemMenu({ item, recolhida }) {
-  const Icone = item.icone;
-  return (
-    <NavLink
-      to={item.para}
-      end={item.fim}
-      data-tour={`menu-${item.para}`}
-      title={recolhida ? item.rotulo : undefined}
-      className={({ isActive }) =>
-        [
-          "flex items-center gap-3 rounded-botao px-3 py-2 text-corpo transition-colors",
-          recolhida ? "justify-center px-0" : "",
-          isActive
-            ? "bg-primario text-white"
-            : "text-secundario hover:bg-borda/60 hover:text-texto",
-        ].join(" ")
-      }
-    >
-      <Icone size={18} strokeWidth={2} aria-hidden="true" className="shrink-0" />
-      {recolhida ? null : <span className="truncate">{item.rotulo}</span>}
-    </NavLink>
-  );
+/** Grupos e itens que o perfil pode ver. */
+function filtrarMenu(usuario) {
+  return SECOES.map((secao) => {
+    if (!secao.itens) {
+      return !secao.permissao || temPermissao(usuario, secao.permissao) ? secao : null;
+    }
+    const itens = secao.itens.filter(
+      (item) => !item.permissao || temPermissao(usuario, item.permissao)
+    );
+    return itens.length ? { ...secao, itens } : null;
+  }).filter(Boolean);
 }
 
-function Sidebar({ recolhida, aoAlternar, usuario }) {
+const estiloLink = ({ isActive }) =>
+  [
+    "flex items-center gap-3 rounded-botao px-3 py-2 text-corpo transition-colors",
+    isActive ? "bg-primario text-white" : "text-secundario hover:bg-borda/60 hover:text-texto",
+  ].join(" ");
+
+function Sidebar({ recolhida, aoAlternar, usuario, aoExpandir }) {
+  const local = useLocation();
+  const menu = useMemo(() => filtrarMenu(usuario), [usuario]);
+
+  // Abre sozinho o grupo da tela em que a pessoa está.
+  const grupoDaRota = useMemo(() => {
+    const encontrado = menu.find((secao) =>
+      secao.itens?.some((item) => local.pathname.startsWith(item.para))
+    );
+    return encontrado?.id ?? null;
+  }, [menu, local.pathname]);
+
+  const [aberto, definirAberto] = useState(grupoDaRota);
+
+  useEffect(() => {
+    if (grupoDaRota) definirAberto(grupoDaRota);
+  }, [grupoDaRota]);
+
   return (
     <aside
+      data-tour="menu"
       className={[
         "flex shrink-0 flex-col border-r border-borda bg-card transition-all duration-200",
         recolhida ? "w-sidebar-recolhida" : "w-sidebar",
@@ -187,22 +210,90 @@ function Sidebar({ recolhida, aoAlternar, usuario }) {
         {recolhida ? <Simbolo tamanho={28} /> : <Logo tamanho={28} />}
       </div>
 
-      <nav className="flex-1 space-y-5 overflow-y-auto px-2 py-4">
-        {SECOES.map((secao, indice) => {
-          const itens = secao.itens.filter(
-            (item) => !item.permissao || temPermissao(usuario, item.permissao)
-          );
-          if (!itens.length) return null;
+      <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
+        {menu.map((secao) => {
+          const Icone = secao.icone;
+
+          // Grupo com uma tela só vira link direto: não faz sentido abrir nada.
+          if (!secao.itens) {
+            return (
+              <NavLink
+                key={secao.id}
+                to={secao.para}
+                end={secao.fim}
+                data-tour={`menu-${secao.id}`}
+                title={recolhida ? secao.rotulo : undefined}
+                className={({ isActive }) =>
+                  `${estiloLink({ isActive })} ${recolhida ? "justify-center px-0" : ""}`
+                }
+              >
+                <Icone size={18} strokeWidth={2} aria-hidden="true" className="shrink-0" />
+                {recolhida ? null : <span className="truncate">{secao.rotulo}</span>}
+              </NavLink>
+            );
+          }
+
+          const expandido = aberto === secao.id;
+          const temTelaAtiva = secao.itens.some((item) => local.pathname.startsWith(item.para));
+
           return (
-            <div key={secao.titulo ?? indice} className="space-y-1">
-              {secao.titulo && !recolhida ? (
-                <p className="px-3 pb-1 text-rotulo uppercase tracking-wide text-secundario">
-                  {secao.titulo}
-                </p>
+            <div key={secao.id}>
+              <button
+                type="button"
+                data-tour={`menu-${secao.id}`}
+                title={recolhida ? secao.rotulo : undefined}
+                aria-expanded={recolhida ? undefined : expandido}
+                onClick={() => {
+                  // Recolhida, o clique abre a barra e o grupo junto: sem isso a
+                  // pessoa clicaria no ícone e nada apareceria.
+                  if (recolhida) aoExpandir();
+                  definirAberto(expandido && !recolhida ? null : secao.id);
+                }}
+                className={[
+                  "flex w-full items-center gap-3 rounded-botao px-3 py-2 text-corpo transition-colors",
+                  recolhida ? "justify-center px-0" : "",
+                  temTelaAtiva
+                    ? "text-texto"
+                    : "text-secundario hover:bg-borda/60 hover:text-texto",
+                ].join(" ")}
+              >
+                <Icone size={18} strokeWidth={2} aria-hidden="true" className="shrink-0" />
+                {recolhida ? null : (
+                  <>
+                    <span className="flex-1 truncate text-left">{secao.rotulo}</span>
+                    {temTelaAtiva && !expandido ? (
+                      <span className="h-1.5 w-1.5 rounded-full bg-primario" aria-hidden="true" />
+                    ) : null}
+                    <ChevronDown
+                      size={16}
+                      aria-hidden="true"
+                      className={`shrink-0 transition-transform ${expandido ? "rotate-180" : ""}`}
+                    />
+                  </>
+                )}
+              </button>
+
+              {expandido && !recolhida ? (
+                <div className="mt-0.5 space-y-0.5 border-l border-borda pb-1 pl-3 ml-4">
+                  {secao.itens.map((item) => (
+                    <NavLink
+                      key={item.para}
+                      to={item.para}
+                      end={item.fim}
+                      data-tour={`menu-${item.para}`}
+                      className={({ isActive }) => `${estiloLink({ isActive })} py-1.5`}
+                    >
+                      <item.icone
+                        size={16}
+                        strokeWidth={2}
+                        aria-hidden="true"
+                        className="shrink-0"
+                      />
+                      <span className="truncate">{item.rotulo}</span>
+                    </NavLink>
+                  ))}
+                </div>
               ) : null}
-              {itens.map((item) => (
-                <ItemMenu key={item.para} item={item} recolhida={recolhida} />
-              ))}
             </div>
           );
         })}
@@ -294,7 +385,7 @@ function Topbar({ usuario, perfilReal, simulando, aoSair, aoSimular, aoVerTour, 
         <div className="mx-2 h-8 w-px bg-borda" aria-hidden="true" />
 
         <BotaoIcone icone={Bell} rotulo="Notificações" />
-        <span data-tour="tema" className="flex items-center gap-1">
+        <span data-tour="ajuda" className="flex items-center gap-1">
           <BotaoIcone
             icone={tema === "claro" ? Moon : Sun}
             rotulo={tema === "claro" ? "Ativar modo escuro" : "Ativar modo claro"}
@@ -328,14 +419,16 @@ export function Layout() {
   const navegar = useNavigate();
 
   /**
-   * Primeiro acesso de cada usuário abre o tour. Ao simular outro perfil o tour
-   * também aparece, porque o roteiro muda conforme o que o perfil pode ver.
+   * Primeiro acesso de cada usuário abre o tour. Ao simular outro perfil ele
+   * também aparece, porque o roteiro muda conforme o que o perfil enxerga.
    */
   useEffect(() => {
     if (!usuario?.id) return;
     let visto = null;
     try {
-      visto = localStorage.getItem(chaveDoTour(simulando ? `${usuario.id}.${usuario.perfil}` : usuario.id));
+      visto = localStorage.getItem(
+        chaveDoTour(simulando ? `${usuario.id}.${usuario.perfil}` : usuario.id)
+      );
     } catch {
       visto = "sim"; // Sem armazenamento, não insiste.
     }
@@ -360,11 +453,19 @@ export function Layout() {
     }
   }
 
+  function abrirTour() {
+    // O roteiro fala dos números do dia: começa no dashboard, com a barra aberta.
+    definirRecolhida(false);
+    navegar("/");
+    definirTourAberto(true);
+  }
+
   return (
     <div className="flex h-full bg-fundo">
       <Sidebar
         recolhida={recolhida}
         aoAlternar={() => definirRecolhida((atual) => !atual)}
+        aoExpandir={() => definirRecolhida(false)}
         usuario={usuario}
       />
       <div className="flex min-w-0 flex-1 flex-col">
@@ -374,7 +475,7 @@ export function Layout() {
           simulando={simulando}
           aoSair={sair}
           aoSimular={trocarVisao}
-          aoVerTour={() => definirTourAberto(true)}
+          aoVerTour={abrirTour}
           ocupado={ocupado}
         />
 

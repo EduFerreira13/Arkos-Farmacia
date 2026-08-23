@@ -29,6 +29,8 @@ globalThis.Element = dom.window.Element;
 globalThis.Node = dom.window.Node;
 globalThis.CustomEvent = dom.window.CustomEvent;
 globalThis.getComputedStyle = dom.window.getComputedStyle;
+globalThis.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window);
+globalThis.cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.window);
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const { default: React } = await import("react");
@@ -860,9 +862,32 @@ async function textoDaRota(perfil, caminho) {
   return texto;
 }
 
+// -------------------------------------------------- menu em grupos
+
 console.log("");
 localStorage.clear();
 localStorage.setItem("arkos.token", "token-de-teste");
+localStorage.setItem(`arkos.tour.visto.${USUARIO.id}`, "sim");
+
+const menuGerente = await textoDaRota("gerente", "/");
+for (const grupo of ["Vendas", "Estoque", "Compras", "Financeiro", "Fiscal", "Cadastros"]) {
+  ok2(`menu mostra o grupo ${grupo}`, menuGerente.includes(grupo));
+}
+ok2(
+  "as telas ficam escondidas até abrir o grupo",
+  !menuGerente.includes("Ponto de venda") && !menuGerente.includes("Sugestão de compra")
+);
+
+const menuNoPdv = await textoDaRota("gerente", "/pdv");
+ok2("o grupo da tela aberta vem expandido", menuNoPdv.includes("Ponto de venda"));
+
+const menuOperador = await textoDaRota("operador_caixa", "/");
+ok2(
+  "grupo sem tela permitida nao aparece para o perfil",
+  !menuOperador.includes("Compras") && !menuOperador.includes("Relatórios")
+);
+
+localStorage.removeItem(`arkos.tour.visto.${USUARIO.id}`);
 
 const primeiroAcesso = await textoDaRota("operador_caixa", "/");
 ok2("tour abre no primeiro acesso", primeiroAcesso.includes("Bem-vindo ao Arkos"));
