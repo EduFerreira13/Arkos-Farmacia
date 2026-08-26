@@ -55,6 +55,7 @@ export function BotaoIcone({ icone: Icone, rotulo, className = "", ...resto }) {
       className={[
         "inline-flex h-9 w-9 items-center justify-center rounded-botao text-texto",
         "transition-colors hover:bg-borda/60 focus-visible:foco-arkos",
+        "disabled:cursor-not-allowed disabled:text-secundario disabled:hover:bg-transparent",
         className,
       ].join(" ")}
       {...resto}

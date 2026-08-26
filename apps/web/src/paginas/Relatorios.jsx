@@ -115,7 +115,7 @@ export function Relatorios() {
                 rotulo: "Formato",
                 opcoes: [
                   { valor: "produto", rotulo: "Total por produto" },
-                  { valor: "", rotulo: "Um cupom por linha" },
+                  { valor: "", rotulo: "Uma venda por linha" },
                 ],
               }}
             />
@@ -145,7 +145,7 @@ export function Relatorios() {
             <CardIndicador
               rotulo="Vendas no período"
               valor={formatarMoeda(totais.valor)}
-              detalhe={`${formatarNumero(totais.cupons)} cupons finalizados`}
+              detalhe={`${formatarNumero(totais.vendas)} vendas finalizadas`}
               icone={TrendingUp}
             />
             <CardIndicador
@@ -194,10 +194,10 @@ export function Relatorios() {
                     renderizar: (item) => formatarNumero(item.unidades),
                   },
                   {
-                    chave: "cupons",
-                    titulo: "Cupons",
+                    chave: "vendas",
+                    titulo: "Vendas",
                     alinhamento: "direita",
-                    renderizar: (item) => formatarNumero(item.cupons),
+                    renderizar: (item) => formatarNumero(item.vendas),
                   },
                   {
                     chave: "receita",
@@ -263,7 +263,7 @@ export function Relatorios() {
                       <li key={dia.dia} className="flex items-center justify-between text-rotulo">
                         <span className="text-secundario">{formatarData(dia.dia)}</span>
                         <span className="text-texto">
-                          {formatarMoeda(dia.valor)} — {dia.cupons} cupom(ns)
+                          {formatarMoeda(dia.valor)} — {dia.vendas} venda(s)
                         </span>
                       </li>
                     ))}

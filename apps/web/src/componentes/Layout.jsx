@@ -19,9 +19,7 @@ import {
   Moon,
   Package,
   PieChart,
-  Receipt,
   ScrollText,
-  Search,
   ShoppingCart,
   Stethoscope,
   Sun,
@@ -53,7 +51,6 @@ export const SECOES = [
     icone: ShoppingCart,
     itens: [
       { para: "/pdv", rotulo: "Ponto de venda", icone: ShoppingCart, permissao: "vender" },
-      { para: "/vendas", rotulo: "Vendas do dia", icone: Receipt, permissao: "vender" },
       { para: "/vendas/historico", rotulo: "Histórico", icone: History, permissao: "vender" },
       {
         para: "/relacionamento",
@@ -157,17 +154,27 @@ export const SECOES = [
   },
 ];
 
-/** Grupos e itens que o perfil pode ver. */
+const emOrdem = (lista) =>
+  [...lista].sort((a, b) => a.rotulo.localeCompare(b.rotulo, "pt-BR"));
+
+/**
+ * Grupos e itens que o perfil pode ver, em ordem alfabética. O Dashboard fica
+ * fora da ordenação: é a tela inicial e por isso vem sempre em primeiro.
+ */
 function filtrarMenu(usuario) {
-  return SECOES.map((secao) => {
+  const visiveis = SECOES.map((secao) => {
     if (!secao.itens) {
       return !secao.permissao || temPermissao(usuario, secao.permissao) ? secao : null;
     }
     const itens = secao.itens.filter(
       (item) => !item.permissao || temPermissao(usuario, item.permissao)
     );
-    return itens.length ? { ...secao, itens } : null;
+    return itens.length ? { ...secao, itens: emOrdem(itens) } : null;
   }).filter(Boolean);
+
+  const dashboard = visiveis.filter((secao) => secao.id === "dashboard");
+  const demais = visiveis.filter((secao) => secao.id !== "dashboard");
+  return [...dashboard, ...emOrdem(demais)];
 }
 
 const estiloLink = ({ isActive }) =>
@@ -204,11 +211,22 @@ function Sidebar({ recolhida, aoAlternar, usuario, aoExpandir }) {
     >
       <div
         className={`flex h-16 items-center border-b border-borda ${
-          recolhida ? "justify-center px-2" : "justify-between px-4"
+          recolhida ? "justify-center px-2" : "justify-between px-3 pl-4"
         }`}
       >
         {recolhida ? <Simbolo tamanho={28} /> : <Logo tamanho={28} />}
+        {/* O controle de recolher fica junto da marca, no alto: é onde a pessoa
+            procura, e não some no rodapé de uma lista longa. */}
+        {recolhida ? null : (
+          <BotaoIcone icone={ChevronsLeft} rotulo="Recolher menu" onClick={aoAlternar} />
+        )}
       </div>
+
+      {recolhida ? (
+        <div className="flex justify-center border-b border-borda py-2">
+          <BotaoIcone icone={ChevronsRight} rotulo="Expandir menu" onClick={aoAlternar} />
+        </div>
+      ) : null}
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
         {menu.map((secao) => {
@@ -299,13 +317,6 @@ function Sidebar({ recolhida, aoAlternar, usuario, aoExpandir }) {
         })}
       </nav>
 
-      <div className={`border-t border-borda p-2 ${recolhida ? "flex justify-center" : ""}`}>
-        <BotaoIcone
-          icone={recolhida ? ChevronsRight : ChevronsLeft}
-          rotulo={recolhida ? "Expandir menu" : "Recolher menu"}
-          onClick={aoAlternar}
-        />
-      </div>
     </aside>
   );
 }
@@ -343,36 +354,9 @@ function SeletorDeVisao({ usuario, perfilReal, simulando, aoSimular, ocupado }) 
 
 function Topbar({ usuario, perfilReal, simulando, aoSair, aoSimular, aoVerTour, ocupado }) {
   const { tema, alternarTema } = usarPreferencias();
-  const [busca, definirBusca] = useState("");
-  const navegar = useNavigate();
-  const podeVerProdutos = temPermissao(usuario, "consultar_estoque");
-
-  function submeterBusca(evento) {
-    evento.preventDefault();
-    const termo = busca.trim();
-    if (termo && podeVerProdutos) navegar(`/produtos?busca=${encodeURIComponent(termo)}`);
-  }
 
   return (
     <header className="flex h-16 shrink-0 items-center gap-4 border-b border-borda bg-card px-5">
-      {podeVerProdutos ? (
-        <form onSubmit={submeterBusca} className="relative w-80">
-          <Search
-            size={16}
-            strokeWidth={2}
-            aria-hidden="true"
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-secundario"
-          />
-          <input
-            value={busca}
-            onChange={(evento) => definirBusca(evento.target.value)}
-            placeholder="Buscar produto, lote ou venda"
-            aria-label="Busca global"
-            className="h-10 w-full rounded-botao border border-borda bg-fundo pl-9 pr-3 text-corpo text-texto placeholder:text-secundario focus-visible:foco-arkos"
-          />
-        </form>
-      ) : null}
-
       <div className="ml-auto flex items-center gap-1">
         <SeletorDeVisao
           usuario={usuario}

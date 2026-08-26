@@ -6,7 +6,15 @@ import { formatarPorcentagem } from "../lib/formato.js";
  * label pequena, ícone Lucide e variação colorida. Sem barra lateral colorida —
  * o destaque vem do ícone e da tipografia.
  */
-export function CardIndicador({ rotulo, valor, detalhe, icone: Icone, variacao, tom = "marca" }) {
+export function CardIndicador({
+  rotulo,
+  valor,
+  detalhe,
+  icone: Icone,
+  variacao,
+  tom = "marca",
+  compacto = false,
+}) {
   const positiva = variacao !== null && variacao !== undefined && variacao >= 0;
   const corIcone = {
     marca: "text-primario",
@@ -16,15 +24,21 @@ export function CardIndicador({ rotulo, valor, detalhe, icone: Icone, variacao, 
   }[tom];
 
   return (
-    <section className="rounded-card border border-borda bg-card p-5 shadow-card">
+    <section
+      className={`rounded-card border border-borda bg-card shadow-card ${
+        compacto ? "px-4 py-3" : "p-5"
+      }`}
+    >
       <div className="flex items-start justify-between">
         <p className="text-rotulo uppercase tracking-wide text-secundario">{rotulo}</p>
-        {Icone ? <Icone size={20} strokeWidth={2} aria-hidden="true" className={corIcone} /> : null}
+        {Icone ? (
+          <Icone size={compacto ? 16 : 20} strokeWidth={2} aria-hidden="true" className={corIcone} />
+        ) : null}
       </div>
 
-      <p className="mt-3 text-indicador text-texto">{valor}</p>
+      <p className={`text-texto ${compacto ? "mt-1 text-h2" : "mt-3 text-indicador"}`}>{valor}</p>
 
-      <div className="mt-2 flex items-center gap-2">
+      <div className={`flex items-center gap-2 ${compacto ? "mt-0.5" : "mt-2"}`}>
         {variacao === null || variacao === undefined ? (
           <span className="text-rotulo text-secundario">{detalhe}</span>
         ) : (

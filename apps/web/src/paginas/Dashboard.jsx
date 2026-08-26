@@ -48,13 +48,8 @@ export function Dashboard() {
   return (
     <>
       {/* Faixa de boas-vindas com o gradiente da marca (REGRAS-VISUAIS §2) */}
-      <section className="mb-4 flex items-center justify-between gap-6 rounded-card bg-marca px-6 py-4 text-white">
-        <div>
-          <h1 className="text-h2">Bom trabalho, {usuario?.nome?.split(" ")[0]}</h1>
-          <p className="mt-0.5 text-rotulo text-white/80">
-            Indicadores do dia com dados reais do banco
-          </p>
-        </div>
+      <section className="mb-4 flex items-center justify-between gap-6 rounded-card bg-marca px-6 py-3.5 text-white">
+        <h1 className="text-h2">Bem-vindo, {usuario?.nome?.split(" ")[0]}</h1>
         <p className="text-rotulo capitalize text-white/80">{dataDeHoje}</p>
       </section>
 
@@ -72,7 +67,7 @@ export function Dashboard() {
             <CardIndicador
               rotulo="Vendas do dia"
               valor={formatarMoeda(resumo?.valor_total_dia)}
-              detalhe={`${formatarNumero(resumo?.total_vendas ?? 0)} cupons na loja`}
+              detalhe={`${formatarNumero(resumo?.total_vendas ?? 0)} vendas na loja`}
               icone={ShoppingCart}
               variacao={resumo?.variacao_pct?.valor_total_dia ?? null}
             />
@@ -93,7 +88,7 @@ export function Dashboard() {
             <CardIndicador
               rotulo="Ticket médio"
               valor={formatarMoeda(resumo?.ticket_medio)}
-              detalhe="por cupom de hoje"
+              detalhe="por venda de hoje"
               icone={Receipt}
               variacao={resumo?.variacao_pct?.ticket_medio ?? null}
             />

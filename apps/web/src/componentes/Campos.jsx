@@ -40,6 +40,28 @@ export function CampoTexto({ rotulo, erro, ajuda, className, ...resto }) {
   );
 }
 
+/**
+ * Caixa de seleção com o rótulo ao lado — a única do design system em que o
+ * texto vem depois do controle, porque é assim que se lê uma afirmação.
+ */
+export function CampoCheckbox({ rotulo, ajuda, className = "", ...resto }) {
+  const id = useId();
+  return (
+    <div className={`flex items-start gap-2 ${className}`}>
+      <input
+        id={id}
+        type="checkbox"
+        className="mt-0.5 h-4 w-4 rounded border-borda text-primario focus-visible:foco-arkos"
+        {...resto}
+      />
+      <label htmlFor={id} className="text-corpo text-texto">
+        {rotulo}
+        {ajuda ? <span className="block text-rotulo text-secundario">{ajuda}</span> : null}
+      </label>
+    </div>
+  );
+}
+
 export function CampoSelect({ rotulo, erro, ajuda, opcoes = [], className, ...resto }) {
   const id = useId();
   return (

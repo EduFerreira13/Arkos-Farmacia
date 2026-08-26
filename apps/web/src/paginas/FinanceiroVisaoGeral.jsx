@@ -203,7 +203,7 @@ export function FinanceiroVisaoGeral() {
                   <CardCorpo>
                     <dl className="space-y-1.5 text-corpo">
                       <div className="flex justify-between">
-                        <dt className="text-secundario">Cupons finalizados</dt>
+                        <dt className="text-secundario">Vendas finalizadas</dt>
                         <dd className="text-texto">{dados.vendas_hoje.total_vendas}</dd>
                       </div>
                       <div className="flex justify-between font-semibold">
