@@ -1,4 +1,4 @@
-import { consultar } from "./db.js";
+import { consultar, emTransacao } from "./db.js";
 
 /** Acesso ao schema `auth` — nenhum outro serviço toca nessas tabelas. */
 
@@ -87,4 +87,52 @@ export async function listarUsuarios() {
       ORDER BY u.nome`
   );
   return rows;
+}
+
+// ------------------------------------------------------- recuperação de senha
+
+/**
+ * Guarda só o hash do token: quem tiver acesso ao banco não consegue usar o
+ * link de recuperação de ninguém.
+ */
+export async function criarTokenRecuperacao({ usuarioId, tokenHash, minutosDeValidade }) {
+  // Pedido novo invalida os anteriores do mesmo usuário.
+  await consultar(
+    `UPDATE auth.tokens_recuperacao SET usado_em = now()
+      WHERE usuario_id = $1 AND usado_em IS NULL`,
+    [usuarioId]
+  );
+
+  const { rows } = await consultar(
+    `INSERT INTO auth.tokens_recuperacao (usuario_id, token_hash, expira_em)
+          VALUES ($1, $2, now() + ($3 || ' minutes')::interval)
+       RETURNING id, expira_em`,
+    [usuarioId, tokenHash, String(minutosDeValidade)]
+  );
+  return rows[0];
+}
+
+export async function buscarTokenValido(tokenHash) {
+  const { rows } = await consultar(
+    `SELECT t.id, t.usuario_id, t.expira_em, u.email, u.ativo
+       FROM auth.tokens_recuperacao t
+       JOIN auth.usuarios u ON u.id = t.usuario_id
+      WHERE t.token_hash = $1
+        AND t.usado_em IS NULL
+        AND t.expira_em > now()`,
+    [tokenHash]
+  );
+  return rows[0] ?? null;
+}
+
+export async function trocarSenha({ usuarioId, senhaHash, tokenId }) {
+  return emTransacao(async (cliente) => {
+    await cliente.query(`UPDATE auth.usuarios SET senha_hash = $2 WHERE id = $1`, [
+      usuarioId,
+      senhaHash,
+    ]);
+    await cliente.query(`UPDATE auth.tokens_recuperacao SET usado_em = now() WHERE id = $1`, [
+      tokenId,
+    ]);
+  });
 }

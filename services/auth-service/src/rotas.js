@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { ERROS, PERFIS, PERFIS_LISTA } from "@arkos/shared-types";
 import { assinarToken, criarAutenticacao } from "@arkos/auth-middleware";
@@ -5,14 +6,23 @@ import { env } from "./env.js";
 import {
   atualizarUsuario,
   buscarPerfilPorNome,
+  buscarTokenValido,
+  criarTokenRecuperacao,
   buscarUsuarioPorEmail,
   buscarUsuarioPorId,
   criarUsuario,
   listarPerfis,
   listarUsuarios,
+  trocarSenha,
 } from "./repositorio.js";
 
 const auth = criarAutenticacao({ secret: env.JWT_SECRET });
+
+/** Minutos que o link de redefinição continua valendo. */
+const VALIDADE_RECUPERACAO_MIN = 30;
+
+/** O token viaja em claro para o usuário; no banco fica só o hash. */
+const hashDoToken = (token) => createHash("sha256").update(token).digest("hex");
 
 /** Nunca devolver senha_hash para fora do serviço. */
 function usuarioPublico(registro) {
@@ -68,6 +78,84 @@ export async function registrarRotas(app) {
     });
 
     return { token, usuario: publico };
+  });
+
+  /**
+   * Esqueci minha senha. Responde igual existindo ou não o email — senão a tela
+   * viraria um jeito de descobrir quem tem conta.
+   *
+   * No MVP não há serviço de email configurado: em desenvolvimento o link volta
+   * na resposta para dar para testar; em produção ele só sai pelo canal de envio
+   * (ver docs/PENDENCIAS.md).
+   */
+  app.post("/recuperar-senha", async (requisicao, resposta) => {
+    const email = requisicao.body?.email;
+    if (!email) {
+      return resposta
+        .code(400)
+        .send({ erro: ERROS.DADOS_INVALIDOS, mensagem: "Informe o email da conta." });
+    }
+
+    const usuario = await buscarUsuarioPorEmail(email);
+    const respostaNeutra = {
+      mensagem:
+        "Se existir uma conta com esse email, o link de redefinição foi gerado e vale por " +
+        `${VALIDADE_RECUPERACAO_MIN} minutos.`,
+    };
+
+    if (!usuario || !usuario.ativo) return respostaNeutra;
+
+    const token = randomBytes(32).toString("hex");
+    await criarTokenRecuperacao({
+      usuarioId: usuario.id,
+      tokenHash: hashDoToken(token),
+      minutosDeValidade: VALIDADE_RECUPERACAO_MIN,
+    });
+
+    requisicao.log.info({ usuario: usuario.email }, "link de redefinicao de senha gerado");
+
+    if (env.NODE_ENV === "development") {
+      return {
+        ...respostaNeutra,
+        // Só em desenvolvimento: sem serviço de email, é assim que se testa.
+        token_de_desenvolvimento: token,
+        aviso: "Sem serviço de email no MVP: use este token para redefinir.",
+      };
+    }
+
+    return respostaNeutra;
+  });
+
+  app.post("/redefinir-senha", async (requisicao, resposta) => {
+    const { token, senha } = requisicao.body ?? {};
+
+    if (!token || !senha) {
+      return resposta
+        .code(400)
+        .send({ erro: ERROS.DADOS_INVALIDOS, mensagem: "Informe o token e a nova senha." });
+    }
+    if (String(senha).length < 6) {
+      return resposta.code(400).send({
+        erro: ERROS.DADOS_INVALIDOS,
+        mensagem: "A senha precisa ter ao menos 6 caracteres.",
+      });
+    }
+
+    const registro = await buscarTokenValido(hashDoToken(String(token)));
+    if (!registro || !registro.ativo) {
+      return resposta.code(422).send({
+        erro: ERROS.DADOS_INVALIDOS,
+        mensagem: "Link inválido ou expirado. Peça um novo na tela de entrada.",
+      });
+    }
+
+    await trocarSenha({
+      usuarioId: registro.usuario_id,
+      senhaHash: await bcrypt.hash(String(senha), 10),
+      tokenId: registro.id,
+    });
+
+    return { mensagem: "Senha redefinida. Já dá para entrar com ela." };
   });
 
   /**
