@@ -11,6 +11,17 @@
 | permissoes | jsonb | NO | '{}'::jsonb |
 | criado_em | timestamp with time zone | NO | now() |
 
+## tokens_recuperacao
+
+| Coluna | Tipo | Nulo? | Default |
+|---|---|---|---|
+| id | uuid | NO | gen_random_uuid() |
+| usuario_id | uuid | NO | - |
+| token_hash | text | NO | - |
+| expira_em | timestamp with time zone | NO | - |
+| usado_em | timestamp with time zone | YES | - |
+| criado_em | timestamp with time zone | NO | now() |
+
 ## usuarios
 
 | Coluna | Tipo | Nulo? | Default |

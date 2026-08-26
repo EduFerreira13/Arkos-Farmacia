@@ -44,6 +44,7 @@
 | preco_unitario | numeric | NO | - |
 | produto_nome | character varying | YES | - |
 | tipo_controle | character varying | YES | - |
+| desconto | numeric | NO | 0 |
 
 ## pagamentos
 
@@ -77,6 +78,8 @@
 | motivo_cancelamento | text | YES | - |
 | criado_em | timestamp with time zone | NO | now() |
 | cliente_id | uuid | YES | - |
+| numero | bigint | YES | nextval('vendas.numero_venda_seq'::regclass) |
+| categoria_cancelamento | character varying | YES | - |
 
 ## vw_vendas_hoje
 
