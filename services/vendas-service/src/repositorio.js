@@ -5,7 +5,7 @@ import { consultar, emTransacao } from "./db.js";
 export async function criarVenda(usuarioId) {
   const { rows } = await consultar(
     `INSERT INTO vendas.vendas (usuario_id) VALUES ($1)
-       RETURNING id, usuario_id, status, valor_total, desconto, criado_em`,
+       RETURNING id, numero, usuario_id, status, valor_total, desconto, criado_em`,
     [usuarioId]
   );
   return rows[0];
@@ -13,8 +13,8 @@ export async function criarVenda(usuarioId) {
 
 export async function buscarVenda(id) {
   const { rows } = await consultar(
-    `SELECT v.id, v.usuario_id, v.status, v.valor_total, v.desconto, v.motivo_cancelamento,
-            v.criado_em, v.cliente_id,
+    `SELECT v.id, v.numero, v.usuario_id, v.status, v.valor_total, v.desconto,
+            v.motivo_cancelamento, v.categoria_cancelamento, v.criado_em, v.cliente_id,
             c.nome AS cliente_nome, c.convenio AS cliente_convenio, c.telefone AS cliente_telefone
        FROM vendas.vendas v
        LEFT JOIN vendas.clientes c ON c.id = v.cliente_id
@@ -26,7 +26,7 @@ export async function buscarVenda(id) {
 
 export async function listarItens(vendaId) {
   const { rows } = await consultar(
-    `SELECT id, venda_id, produto_id, lote_id, quantidade, preco_unitario,
+    `SELECT id, venda_id, produto_id, lote_id, quantidade, preco_unitario, desconto,
             produto_nome, tipo_controle
        FROM vendas.itens_venda
       WHERE venda_id = $1
@@ -81,18 +81,71 @@ export function inserirItem({
   tipoControle,
 }) {
   return emTransacao(async (cliente) => {
-    const { rows } = await cliente.query(
-      `INSERT INTO vendas.itens_venda
-         (venda_id, produto_id, lote_id, quantidade, preco_unitario, produto_nome, tipo_controle)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, venda_id, produto_id, lote_id, quantidade, preco_unitario,
-                 produto_nome, tipo_controle`,
-      [vendaId, produtoId, loteId, quantidade, precoUnitario, produtoNome, tipoControle]
+    // Mesmo produto lido duas vezes soma na linha que já existe: o carrinho
+    // mostra "Dipirona x2" em vez de repetir o item.
+    const { rows: existentes } = await cliente.query(
+      `SELECT id, quantidade FROM vendas.itens_venda
+        WHERE venda_id = $1 AND produto_id = $2
+        ORDER BY id
+        LIMIT 1
+        FOR UPDATE`,
+      [vendaId, produtoId]
     );
+
+    const { rows } = existentes.length
+      ? await cliente.query(
+          `UPDATE vendas.itens_venda
+              SET quantidade = quantidade + $2
+            WHERE id = $1
+            RETURNING id, venda_id, produto_id, lote_id, quantidade, preco_unitario, desconto,
+                      produto_nome, tipo_controle`,
+          [existentes[0].id, quantidade]
+        )
+      : await cliente.query(
+          `INSERT INTO vendas.itens_venda
+             (venda_id, produto_id, lote_id, quantidade, preco_unitario, produto_nome, tipo_controle)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING id, venda_id, produto_id, lote_id, quantidade, preco_unitario, desconto,
+                     produto_nome, tipo_controle`,
+          [vendaId, produtoId, loteId, quantidade, precoUnitario, produtoNome, tipoControle]
+        );
 
     await recalcularTotal(cliente, vendaId);
     return rows[0];
   });
+}
+
+/** Ajusta a quantidade de um item (o carrinho tem os botões de mais e menos). */
+export function alterarQuantidadeDoItem({ vendaId, itemId, quantidade }) {
+  return emTransacao(async (cliente) => {
+    const { rowCount } = await cliente.query(
+      `UPDATE vendas.itens_venda SET quantidade = $3
+        WHERE id = $1 AND venda_id = $2`,
+      [itemId, vendaId, quantidade]
+    );
+    if (!rowCount) return false;
+    await recalcularTotal(cliente, vendaId);
+    return true;
+  });
+}
+
+/** Desconto negociado em uma linha do carrinho. */
+export function definirDescontoDoItem({ vendaId, itemId, desconto }) {
+  return emTransacao(async (cliente) => {
+    const { rowCount } = await cliente.query(
+      `UPDATE vendas.itens_venda SET desconto = $3
+        WHERE id = $1 AND venda_id = $2`,
+      [itemId, vendaId, desconto]
+    );
+    if (!rowCount) return false;
+    await recalcularTotal(cliente, vendaId);
+    return true;
+  });
+}
+
+export async function removerReceita(vendaId) {
+  const { rowCount } = await consultar(`DELETE FROM vendas.receitas WHERE venda_id = $1`, [vendaId]);
+  return rowCount > 0;
 }
 
 export function removerItem({ vendaId, itemId }) {
@@ -107,12 +160,15 @@ export function removerItem({ vendaId, itemId }) {
   });
 }
 
-/** valor_total = soma dos itens - desconto (nunca negativo). */
+/**
+ * valor_total = soma dos itens, menos o desconto de cada linha, menos o
+ * desconto geral da venda. Nunca negativo.
+ */
 async function recalcularTotal(cliente, vendaId) {
   await cliente.query(
     `UPDATE vendas.vendas v
         SET valor_total = GREATEST(COALESCE((
-              SELECT SUM(i.quantidade * i.preco_unitario)
+              SELECT SUM(i.quantidade * i.preco_unitario - i.desconto)
                 FROM vendas.itens_venda i WHERE i.venda_id = v.id
             ), 0) - v.desconto, 0)
       WHERE v.id = $1`,
@@ -159,18 +215,19 @@ export async function marcarFinalizada(vendaId) {
   const { rows } = await consultar(
     `UPDATE vendas.vendas SET status = 'finalizada'
       WHERE id = $1 AND status = 'aberta'
-      RETURNING id, status, valor_total, desconto, criado_em`,
+      RETURNING id, numero, status, valor_total, desconto, criado_em`,
     [vendaId]
   );
   return rows[0] ?? null;
 }
 
-export async function marcarCancelada({ vendaId, motivo }) {
+export async function marcarCancelada({ vendaId, motivo, categoria }) {
   const { rows } = await consultar(
-    `UPDATE vendas.vendas SET status = 'cancelada', motivo_cancelamento = $2
+    `UPDATE vendas.vendas
+        SET status = 'cancelada', motivo_cancelamento = $2, categoria_cancelamento = $3
       WHERE id = $1 AND status = 'aberta'
-      RETURNING id, status, motivo_cancelamento`,
-    [vendaId, motivo]
+      RETURNING id, numero, status, motivo_cancelamento, categoria_cancelamento`,
+    [vendaId, motivo, categoria ?? null]
   );
   return rows[0] ?? null;
 }
@@ -241,8 +298,8 @@ export async function resumoDoDia() {
  */
 export async function listarVendasNoPeriodo({ de, ate }) {
   const { rows } = await consultar(
-    `SELECT v.id, v.usuario_id, v.status, v.valor_total, v.desconto, v.criado_em,
-            v.motivo_cancelamento,
+    `SELECT v.id, v.numero, v.usuario_id, v.status, v.valor_total, v.desconto, v.criado_em,
+            v.motivo_cancelamento, v.categoria_cancelamento, cl.nome AS cliente_nome,
             (SELECT COUNT(*) FROM vendas.itens_venda i WHERE i.venda_id = v.id)::int AS total_itens,
             (SELECT SUM(i.quantidade) FROM vendas.itens_venda i WHERE i.venda_id = v.id)::int AS total_unidades,
             (SELECT string_agg(DISTINCT p.forma_pagamento, ' + ')
@@ -254,6 +311,7 @@ export async function listarVendasNoPeriodo({ de, ate }) {
             r.paciente_nome, r.medico_nome, r.medico_crm
        FROM vendas.vendas v
        LEFT JOIN vendas.receitas r ON r.venda_id = v.id
+       LEFT JOIN vendas.clientes cl ON cl.id = v.cliente_id
       WHERE v.criado_em::date BETWEEN $1::date AND $2::date
       ORDER BY v.criado_em`,
     [de, ate]

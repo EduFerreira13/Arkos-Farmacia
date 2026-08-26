@@ -399,10 +399,55 @@ ok(
   descontoAlto.status === 422 && descontoAlto.dados.erro === "desconto_acima_do_limite"
 );
 
+// Item repetido soma na linha que ja existe em vez de duplicar o produto.
+const itemRepetido = await req(`${S.vendas}/vendas/${vendaId}/itens`, {
+  metodo: "POST", token: farmaceutico, corpo: { produto_id: produtoId, quantidade: 1 },
+});
+const linhasDoProduto = itemRepetido.dados.venda.itens.filter((i) => i.produto_id === produtoId);
+ok(
+  "item repetido soma na mesma linha do carrinho",
+  itemRepetido.status === 201 && linhasDoProduto.length === 1 && linhasDoProduto[0].quantidade === 3,
+  `linhas=${linhasDoProduto.length} qtd=${linhasDoProduto[0]?.quantidade}`
+);
+
+const linhaDoProduto = linhasDoProduto[0];
+const quantidadeAjustada = await req(`${S.vendas}/vendas/${vendaId}/itens/${linhaDoProduto.id}`, {
+  metodo: "PATCH", token: farmaceutico, corpo: { quantidade: 2 },
+});
+ok(
+  "quantidade da linha do carrinho pode ser corrigida",
+  quantidadeAjustada.status === 200 &&
+    quantidadeAjustada.dados.venda.itens.find((i) => i.id === linhaDoProduto.id).quantidade === 2
+);
+
+const quantidadeZero = await req(`${S.vendas}/vendas/${vendaId}/itens/${linhaDoProduto.id}`, {
+  metodo: "PATCH", token: farmaceutico, corpo: { quantidade: 0 },
+});
+ok("quantidade zero e recusada", quantidadeZero.status === 400);
+
+const descontoNoItem = await req(`${S.vendas}/vendas/${vendaId}/itens/${linhaDoProduto.id}/desconto`, {
+  metodo: "POST", token: farmaceutico, corpo: { desconto: 1.5 },
+});
+ok(
+  "desconto por item entra no total da venda",
+  descontoNoItem.status === 200 &&
+    Number(descontoNoItem.dados.venda.itens.find((i) => i.id === linhaDoProduto.id).desconto) === 1.5
+);
+
+const descontoMaiorQueOItem = await req(`${S.vendas}/vendas/${vendaId}/itens/${linhaDoProduto.id}/desconto`, {
+  metodo: "POST", token: farmaceutico, corpo: { desconto: 9999 },
+});
+ok("desconto maior que o item e recusado", descontoMaiorQueOItem.status === 400);
+
+// Volta o item a zero de desconto para as contas seguintes continuarem redondas.
+await req(`${S.vendas}/vendas/${vendaId}/itens/${linhaDoProduto.id}/desconto`, {
+  metodo: "POST", token: farmaceutico, corpo: { desconto: 0 },
+});
+
 const descontoOk = await req(`${S.vendas}/vendas/${vendaId}/desconto`, {
   metodo: "POST", token: farmaceutico, corpo: { desconto_pct: 5 },
 });
-const brutoEsperado = 13.5 * 2 + 25;
+const brutoEsperado = 13.5 * 2 + 25; // 2 do livre + 1 controlado
 ok(
   "desconto em percentual converte para reais",
   descontoOk.status === 200 && Math.abs(descontoOk.dados.venda.desconto - brutoEsperado * 0.05) < 0.02,
@@ -439,6 +484,28 @@ const receita = await req(`${S.vendas}/vendas/${vendaId}/receita`, {
 });
 ok("registra receita", receita.status === 201);
 
+// Receita trocada ou digitada errada: da para desfazer enquanto a venda esta aberta.
+const receitaRemovida = await req(`${S.vendas}/vendas/${vendaId}/receita`, {
+  metodo: "DELETE", token: farmaceutico,
+});
+ok(
+  "receita pode ser desvinculada antes de finalizar",
+  receitaRemovida.status === 200 && !receitaRemovida.dados.venda.receita
+);
+
+const semReceitaDeNovo = await req(`${S.vendas}/vendas/${vendaId}/finalizar`, {
+  metodo: "POST", token: farmaceutico,
+});
+ok(
+  "tirar a receita volta a bloquear a venda do controlado",
+  semReceitaDeNovo.status === 422 && semReceitaDeNovo.dados.erro === "receita_obrigatoria"
+);
+
+await req(`${S.vendas}/vendas/${vendaId}/receita`, {
+  metodo: "POST", token: farmaceutico,
+  corpo: { medico_nome: "Dra. Integracao", medico_crm: "CRM-SP 000000", paciente_nome: `Cliente Integracao ${sufixo}`, data_emissao: diasAtras(3) },
+});
+
 const vendaAtual = await req(`${S.vendas}/vendas/${vendaId}`, { token: farmaceutico });
 const totalDaVenda = vendaAtual.dados.venda.valor_total;
 
@@ -469,9 +536,36 @@ const jaFinalizada = await req(`${S.vendas}/vendas/${vendaId}/itens`, {
 ok("venda finalizada não aceita item novo", jaFinalizada.status === 422);
 
 const cancelarComoCaixa = await req(`${S.vendas}/vendas/${vendaId}/cancelar`, {
-  metodo: "POST", token: caixa, corpo: { motivo: "teste" },
+  metodo: "POST", token: caixa, corpo: { categoria: "orcamento", motivo: "teste" },
 });
 ok("operador de caixa não cancela venda", cancelarComoCaixa.status === 403);
+
+// Cancelamento com motivo em lista fechada: e o que o relatorio consegue agrupar.
+// Quem cancela e o gerente — o farmaceutico nao tem essa permissao.
+const vendaParaCancelar = await req(`${S.vendas}/vendas`, { metodo: "POST", token: gerente, corpo: {} });
+const idParaCancelar = vendaParaCancelar.dados.venda.id;
+await req(`${S.vendas}/vendas/${idParaCancelar}/itens`, {
+  metodo: "POST", token: gerente, corpo: { produto_id: produtoId, quantidade: 1 },
+});
+
+const cancelarSemCategoria = await req(`${S.vendas}/vendas/${idParaCancelar}/cancelar`, {
+  metodo: "POST", token: gerente, corpo: { motivo: "cliente desistiu" },
+});
+ok("cancelamento sem motivo da lista e recusado", cancelarSemCategoria.status === 400);
+
+const cancelado = await req(`${S.vendas}/vendas/${idParaCancelar}/cancelar`, {
+  metodo: "POST", token: gerente, corpo: { categoria: "orcamento", motivo: "so queria saber o preco" },
+});
+ok(
+  "cancelamento guarda a categoria escolhida",
+  cancelado.status === 200 && cancelado.dados.venda.categoria_cancelamento === "orcamento"
+);
+
+ok(
+  "venda recebe numero sequencial legivel",
+  Number.isInteger(vendaParaCancelar.dados.venda.numero) && vendaParaCancelar.dados.venda.numero > 0,
+  `numero=${vendaParaCancelar.dados?.venda?.numero}`
+);
 
 secao("vendas-service — histórico, análise e CRM");
 const historico = await req(`${S.vendas}/vendas?de=${diasAtras(30)}&ate=${hoje}&controlado=sim`, { token: gerente });
@@ -490,7 +584,7 @@ const analise = await req(`${S.vendas}/vendas/analise?de=${diasAtras(30)}&ate=${
 ok(
   "análise devolve por produto, por dia e totais",
   analise.status === 200 && analise.dados.por_produto.length > 0 && analise.dados.por_dia.length > 0 &&
-    analise.dados.totais.cupons > 0
+    analise.dados.totais.vendas > 0
 );
 
 const receitasRetidas = await req(`${S.vendas}/vendas/receitas?de=${diasAtras(30)}&ate=${hoje}`, { token: farmaceutico });

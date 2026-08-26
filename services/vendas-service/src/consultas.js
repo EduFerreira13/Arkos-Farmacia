@@ -51,12 +51,12 @@ export async function listarVendas({ de, ate, status, controlado, busca, limite 
   valores.push(Math.min(Number(limite) || 300, 1000));
 
   const { rows } = await consultar(
-    `SELECT v.id, v.usuario_id, v.status, v.valor_total, v.desconto, v.criado_em,
-            v.motivo_cancelamento, v.cliente_id, c.nome AS cliente_nome,
+    `SELECT v.id, v.numero, v.usuario_id, v.status, v.valor_total, v.desconto, v.criado_em,
+            v.motivo_cancelamento, v.categoria_cancelamento, v.cliente_id, c.nome AS cliente_nome,
             (SELECT COUNT(*) FROM vendas.itens_venda i WHERE i.venda_id = v.id)::int AS total_itens,
             (SELECT SUM(i.quantidade) FROM vendas.itens_venda i WHERE i.venda_id = v.id)::int
               AS total_unidades,
-            (SELECT string_agg(DISTINCT p.forma_pagamento, ', ')
+            (SELECT string_agg(DISTINCT p.forma_pagamento, ' + ')
                FROM vendas.pagamentos p WHERE p.venda_id = v.id) AS formas_pagamento,
             EXISTS (SELECT 1 FROM vendas.itens_venda i
                      WHERE i.venda_id = v.id AND i.tipo_controle <> 'livre') AS tem_controlado,
@@ -226,7 +226,7 @@ export async function analisarVendas({ de, ate }) {
       consultar(
     `SELECT i.produto_id, i.produto_nome, i.tipo_controle,
             SUM(i.quantidade)::int AS unidades,
-            COUNT(DISTINCT i.venda_id)::int AS cupons,
+            COUNT(DISTINCT i.venda_id)::int AS vendas,
             SUM(i.quantidade * i.preco_unitario) AS receita,
             AVG(i.preco_unitario) AS preco_medio
        FROM vendas.itens_venda i
@@ -239,7 +239,7 @@ export async function analisarVendas({ de, ate }) {
       ),
       consultar(
     `SELECT v.criado_em::date AS dia,
-            COUNT(*)::int AS cupons,
+            COUNT(*)::int AS vendas,
             COALESCE(SUM(v.valor_total), 0) AS valor,
             COALESCE(AVG(v.valor_total), 0) AS ticket_medio
        FROM vendas.vendas v
@@ -260,7 +260,7 @@ export async function analisarVendas({ de, ate }) {
         [de, ate]
       ),
       consultar(
-    `SELECT COUNT(*)::int AS cupons,
+    `SELECT COUNT(*)::int AS vendas,
             COALESCE(SUM(valor_total), 0) AS valor,
             COALESCE(SUM(desconto), 0) AS descontos,
             COALESCE(AVG(valor_total), 0) AS ticket_medio

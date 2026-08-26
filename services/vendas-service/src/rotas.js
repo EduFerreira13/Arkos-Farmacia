@@ -1,4 +1,5 @@
 import {
+  CATEGORIA_CANCELAMENTO_LISTA,
   ERROS,
   FORMA_PAGAMENTO_LISTA,
   STATUS_VENDA,
@@ -10,9 +11,11 @@ import { ErroServico, estoque, financeiro, fiscal } from "./servicos.js";
 import {
   formatarDataHora,
   gerarCsv,
+  hojeNoFuso,
   nomeArquivo,
   periodo,
 } from "./relatorios.js";
+import { gerarXlsx } from "./planilha.js";
 import {
   analisarClientes,
   atualizarResultadoContato,
@@ -32,6 +35,7 @@ import {
   vincularCliente,
 } from "./consultas.js";
 import {
+  alterarQuantidadeDoItem,
   atualizarLoteDoItem,
   buscarVenda,
   buscarVendaCompleta,
@@ -42,9 +46,11 @@ import {
   listarItens,
   listarItensNoPeriodo,
   listarVendasNoPeriodo,
+  definirDescontoDoItem,
   marcarCancelada,
   marcarFinalizada,
   removerItem,
+  removerReceita,
   resumoDoDia,
   salvarReceita,
 } from "./repositorio.js";
@@ -106,7 +112,7 @@ export async function registrarRotas(app) {
 
   /**
    * Histórico de vendas. Sem filtro de data, responde o movimento de hoje —
-   * é o que a tela "Vendas do dia" usa. Aceita `de`, `ate`, `status`,
+   * sem período informado, responde o movimento de hoje. Aceita `de`, `ate`, `status`,
    * `controlado=sim|nao`, `busca` (produto, paciente ou cliente) e `limite`.
    */
   app.get("/", async (requisicao, resposta) => {
@@ -125,8 +131,8 @@ export async function registrarRotas(app) {
     return {
       vendas,
       totais: {
-        cupons: vendas.length,
-        cupons_finalizados: finalizadas.length,
+        vendas: vendas.length,
+        vendas_finalizados: finalizadas.length,
         valor_finalizado: Number(somaFinalizadas.toFixed(2)),
         ticket_medio: finalizadas.length
           ? Number((somaFinalizadas / finalizadas.length).toFixed(2))
@@ -143,7 +149,7 @@ export async function registrarRotas(app) {
   /**
    * Relatório de vendas do período em planilha (CSV que o Excel abre direto).
    * `?de=AAAA-MM-DD&ate=AAAA-MM-DD`; sem parâmetros, traz o dia de hoje.
-   * `?agrupar=produto` troca a lista de cupons pelo total por produto.
+   * `?agrupar=produto` troca a lista de vendas pelo total por produto.
    */
   /** Números para os relatórios e o BI: por produto, por dia e por forma. */
   app.get("/analise", async (requisicao, resposta) => {
@@ -185,6 +191,159 @@ export async function registrarRotas(app) {
 
   app.get("/crm/resumo", async () => await resumoCrm());
 
+  /**
+   * Planilha do relacionamento: a fila de contato como está na tela, ou os
+   * contatos já registrados. Serve para levar a lista de ligações para fora do
+   * sistema (imprimir, dividir entre os atendentes).
+   */
+  app.get("/crm/relatorio", async (requisicao, resposta) => {
+    const contatos = requisicao.query?.tipo === "contatos";
+
+    // A planilha sai com os mesmos filtros que estao na tela: o relatorio precisa
+    // bater com o que a pessoa esta vendo, senao nao serve de conferencia.
+    const emXlsx = requisicao.query?.formato === "xlsx";
+
+    if (contatos) {
+      const registros = await listarContatos({
+        de: requisicao.query?.de,
+        ate: requisicao.query?.ate,
+        resultado: requisicao.query?.resultado,
+        canal: requisicao.query?.canal,
+        busca: requisicao.query?.busca,
+      });
+
+      const colunasContatos = [
+        { titulo: "Data e hora", valor: (l) => formatarDataHora(l.criado_em) },
+        { titulo: "Cliente", valor: (l) => l.cliente_nome },
+        { titulo: "Telefone", valor: (l) => l.telefone ?? "" },
+        { titulo: "Canal", valor: (l) => l.canal },
+        { titulo: "Motivo", valor: (l) => l.motivo },
+        { titulo: "Oferta", valor: (l) => l.oferta ?? "" },
+        { titulo: "Resultado", valor: (l) => l.resultado },
+        { titulo: "Observacao", valor: (l) => l.observacao ?? "" },
+      ];
+
+      const comResultado = (valor) => registros.filter((l) => l.resultado === valor).length;
+      const resumoContatos = [
+        { indicador: "Contatos no periodo", valor: registros.length },
+        { indicador: "Viraram compra", valor: comResultado("convertido") },
+        { indicador: "Interessados", valor: comResultado("interessado") },
+        { indicador: "Aguardando resposta", valor: comResultado("aguardando") },
+        { indicador: "Nao atenderam", valor: comResultado("nao_atendeu") },
+        { indicador: "Sem interesse", valor: comResultado("sem_interesse") },
+        {
+          indicador: "Conversao (%)",
+          valor: registros.length
+            ? Number(((comResultado("convertido") / registros.length) * 100).toFixed(1))
+            : 0,
+        },
+      ];
+
+      if (emXlsx) {
+        const arquivo = gerarXlsx([
+          { nome: "Contatos", colunas: colunasContatos, linhas: registros },
+          {
+            nome: "Resumo",
+            colunas: [
+              { titulo: "Indicador", valor: (l) => l.indicador },
+              { titulo: "Valor", valor: (l) => l.valor },
+            ],
+            linhas: resumoContatos,
+          },
+        ]);
+
+        return resposta
+          .header(
+            "Content-Type",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          )
+          .header("Content-Disposition", `attachment; filename="contatos_${hojeNoFuso()}.xlsx"`)
+          .send(arquivo);
+      }
+
+      const csv = gerarCsv(
+        colunasContatos,
+        registros,
+        resumoContatos.map((linha) => ({ titulo: linha.indicador, valor: linha.valor }))
+      );
+
+      return resposta
+        .header("Content-Type", "text/csv; charset=utf-8")
+        .header("Content-Disposition", `attachment; filename="contatos_${hojeNoFuso()}.csv"`)
+        .send(csv);
+    }
+
+    const clientes = (await analisarClientes({ situacao: requisicao.query?.situacao })).filter(
+      (cliente) => cliente.aceita_contato
+    );
+
+    const colunasFila = [
+        { titulo: "Cliente", valor: (l) => l.nome },
+        { titulo: "Telefone", valor: (l) => l.telefone ?? "" },
+        { titulo: "Convenio", valor: (l) => l.convenio ?? "Particular" },
+        { titulo: "Situacao", valor: (l) => l.situacao },
+        { titulo: "Motivo do contato", valor: (l) => l.motivo },
+        { titulo: "Oferta sugerida", valor: (l) => l.oferta },
+        { titulo: "Compras", valor: (l) => l.total_compras },
+        { titulo: "Ritmo (dias)", valor: (l) => l.intervalo_medio_dias ?? "" },
+        { titulo: "Parado ha (dias)", valor: (l) => l.dias_sem_comprar ?? "" },
+        { titulo: "Atraso na recompra (dias)", valor: (l) => l.atraso_recompra_dias },
+        { titulo: "Produto de uso continuo", valor: (l) => l.uso_continuo?.produto_nome ?? "" },
+        { titulo: "Ja gastou (R$)", valor: (l) => l.valor_total },
+        { titulo: "Ticket medio (R$)", valor: (l) => l.ticket_medio },
+        { titulo: "Ultimo contato", valor: (l) => formatarDataHora(l.ultimo_contato_em) },
+    ];
+
+    const naSituacao = (valor) => clientes.filter((l) => l.situacao === valor).length;
+    const resumoFila = [
+      { indicador: "Clientes na lista", valor: clientes.length },
+      { indicador: "Com recompra atrasada", valor: naSituacao("recompra_atrasada") },
+      { indicador: "Em risco", valor: naSituacao("em_risco") },
+      { indicador: "Inativos", valor: naSituacao("inativo") },
+      { indicador: "Em dia", valor: naSituacao("ativo") },
+      { indicador: "Novos", valor: naSituacao("novo") },
+      {
+        indicador: "Ja gastaram no total (R$)",
+        valor: Number(
+          clientes.reduce((total, l) => total + Number(l.valor_total ?? 0), 0).toFixed(2)
+        ),
+      },
+    ];
+
+    if (emXlsx) {
+      const arquivo = gerarXlsx([
+        { nome: "Fila de contato", colunas: colunasFila, linhas: clientes },
+        {
+          nome: "Resumo",
+          colunas: [
+            { titulo: "Indicador", valor: (l) => l.indicador },
+            { titulo: "Valor", valor: (l) => l.valor },
+          ],
+          linhas: resumoFila,
+        },
+      ]);
+
+      return resposta
+        .header(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        .header("Content-Disposition", `attachment; filename="relacionamento_${hojeNoFuso()}.xlsx"`)
+        .send(arquivo);
+    }
+
+    const csv = gerarCsv(
+      colunasFila,
+      clientes,
+      resumoFila.map((linha) => ({ titulo: linha.indicador, valor: linha.valor }))
+    );
+
+    return resposta
+      .header("Content-Type", "text/csv; charset=utf-8")
+      .header("Content-Disposition", `attachment; filename="relacionamento_${hojeNoFuso()}.csv"`)
+      .send(csv);
+  });
+
   app.get("/crm/clientes/:id", async (requisicao, resposta) => {
     const [analise] = await analisarClientes({ incluirSemCompra: true }).then((lista) =>
       lista.filter((cliente) => cliente.id === requisicao.params.id)
@@ -195,8 +354,8 @@ export async function registrarRotas(app) {
   });
 
   app.get("/crm/contatos", async (requisicao) => {
-    const { de, ate, resultado } = requisicao.query ?? {};
-    return { contatos: await listarContatos({ de, ate, resultado }) };
+    const { de, ate, resultado, canal, busca } = requisicao.query ?? {};
+    return { contatos: await listarContatos({ de, ate, resultado, canal, busca }) };
   });
 
   app.post("/crm/contatos", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
@@ -296,7 +455,7 @@ export async function registrarRotas(app) {
           { titulo: "Produto", valor: (l) => l.produto_nome },
           { titulo: "Tipo de controle", valor: (l) => l.tipo_controle },
           { titulo: "Unidades vendidas", valor: (l) => l.unidades },
-          { titulo: "Cupons", valor: (l) => l.vendas },
+          { titulo: "Vendas", valor: (l) => l.vendas },
           { titulo: "Receita (R$)", valor: (l) => Number(l.receita) },
         ],
         itens,
@@ -320,45 +479,109 @@ export async function registrarRotas(app) {
     const vendas = await listarVendasNoPeriodo(intervalo);
     const finalizadas = vendas.filter((venda) => venda.status === STATUS_VENDA.FINALIZADA);
 
+    const somaFinalizado = finalizadas.reduce((total, venda) => total + Number(venda.valor_total), 0);
+    const unidades = vendas.reduce((total, venda) => total + Number(venda.total_unidades ?? 0), 0);
+
+    /**
+     * O resumo é o mesmo nos dois formatos. Em planilha ele vira uma aba
+     * separada; em CSV, que não tem aba, continua no rodapé do arquivo.
+     */
+    const resumo = [
+      { indicador: "Periodo", valor: `${intervalo.de} a ${intervalo.ate}` },
+      { indicador: "Vendas registradas", valor: vendas.length },
+      { indicador: "Vendas finalizadas", valor: finalizadas.length },
+      {
+        indicador: "Vendas canceladas",
+        valor: vendas.filter((venda) => venda.status === STATUS_VENDA.CANCELADA).length,
+      },
+      {
+        indicador: "Vendas em aberto",
+        valor: vendas.filter((venda) => venda.status === STATUS_VENDA.ABERTA).length,
+      },
+      // Linha é o item do carrinho; unidade é quanto saiu de cada um.
+      {
+        indicador: "Itens (linhas do carrinho)",
+        valor: vendas.reduce((total, venda) => total + Number(venda.total_itens ?? 0), 0),
+      },
+      { indicador: "Unidades vendidas", valor: unidades },
+      { indicador: "Total finalizado (R$)", valor: Number(somaFinalizado.toFixed(2)) },
+      {
+        indicador: "Descontos concedidos (R$)",
+        valor: Number(
+          finalizadas.reduce((total, venda) => total + Number(venda.desconto), 0).toFixed(2)
+        ),
+      },
+      {
+        indicador: "Ticket medio (R$)",
+        valor: finalizadas.length
+          ? Number((somaFinalizado / finalizadas.length).toFixed(2))
+          : 0,
+      },
+      {
+        indicador: "Vendas com controlado",
+        valor: vendas.filter((venda) => venda.tem_controlado).length,
+      },
+      {
+        indicador: "Vendas com cliente identificado",
+        valor: vendas.filter((venda) => venda.cliente_nome).length,
+      },
+    ];
+
+    const colunasVendas = [
+      { titulo: "Data e hora", valor: (v) => formatarDataHora(v.criado_em) },
+      { titulo: "Venda", valor: (v) => Number(v.numero) },
+      { titulo: "Status", valor: (v) => v.status },
+      { titulo: "Cliente", valor: (v) => v.cliente_nome ?? "Balcao" },
+      { titulo: "Itens (linhas)", valor: (v) => Number(v.total_itens) },
+      { titulo: "Unidades", valor: (v) => Number(v.total_unidades ?? 0) },
+      { titulo: "Produtos", valor: (v) => v.produtos ?? "" },
+      { titulo: "Tem controlado", valor: (v) => (v.tem_controlado ? "Sim" : "Nao") },
+      { titulo: "Paciente da receita", valor: (v) => v.paciente_nome ?? "" },
+      { titulo: "Medico", valor: (v) => v.medico_nome ?? "" },
+      {
+        titulo: "Registro no Conselho Regional de Medicina",
+        valor: (v) => v.medico_crm ?? "",
+      },
+      { titulo: "Formas de pagamento", valor: (v) => v.formas_pagamento ?? "" },
+      { titulo: "Desconto (R$)", valor: (v) => Number(v.desconto) },
+      { titulo: "Total (R$)", valor: (v) => Number(v.valor_total) },
+      { titulo: "Motivo do cancelamento", valor: (v) => v.categoria_cancelamento ?? "" },
+      { titulo: "Observacao do cancelamento", valor: (v) => v.motivo_cancelamento ?? "" },
+    ];
+
+    // Planilha de verdade quando pedida: aba de vendas e aba de resumo.
+    if (requisicao.query?.formato === "xlsx") {
+      const arquivo = gerarXlsx([
+        { nome: "Vendas", colunas: colunasVendas, linhas: vendas },
+        {
+          nome: "Resumo",
+          colunas: [
+            { titulo: "Indicador", valor: (l) => l.indicador },
+            { titulo: "Valor", valor: (l) => l.valor },
+          ],
+          linhas: resumo,
+        },
+      ]);
+
+      return resposta
+        .header(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        .header(
+          "Content-Disposition",
+          `attachment; filename="${nomeArquivo("vendas", intervalo.de, intervalo.ate).replace(
+            ".csv",
+            ".xlsx"
+          )}"`
+        )
+        .send(arquivo);
+    }
+
     const csv = gerarCsv(
-      [
-        { titulo: "Data e hora", valor: (v) => formatarDataHora(v.criado_em) },
-        { titulo: "Venda", valor: (v) => v.id.slice(0, 8) },
-        { titulo: "Status", valor: (v) => v.status },
-        { titulo: "Itens", valor: (v) => v.total_itens },
-        { titulo: "Unidades", valor: (v) => v.total_unidades ?? 0 },
-        { titulo: "Produtos", valor: (v) => v.produtos ?? "" },
-        { titulo: "Tem controlado", valor: (v) => (v.tem_controlado ? "Sim" : "Nao") },
-        { titulo: "Paciente da receita", valor: (v) => v.paciente_nome ?? "" },
-        { titulo: "Medico", valor: (v) => v.medico_nome ?? "" },
-        {
-          titulo: "Registro no Conselho Regional de Medicina",
-          valor: (v) => v.medico_crm ?? "",
-        },
-        { titulo: "Formas de pagamento", valor: (v) => v.formas_pagamento ?? "" },
-        { titulo: "Desconto (R$)", valor: (v) => Number(v.desconto) },
-        { titulo: "Total (R$)", valor: (v) => Number(v.valor_total) },
-        { titulo: "Motivo do cancelamento", valor: (v) => v.motivo_cancelamento ?? "" },
-      ],
+      colunasVendas,
       vendas,
-      [
-        { titulo: "Cupons no periodo", valor: vendas.length },
-        { titulo: "Cupons finalizados", valor: finalizadas.length },
-        {
-          titulo: "Total finalizado (R$)",
-          valor: finalizadas.reduce((t, v) => t + Number(v.valor_total), 0),
-        },
-        {
-          titulo: "Descontos concedidos (R$)",
-          valor: finalizadas.reduce((t, v) => t + Number(v.desconto), 0),
-        },
-        {
-          titulo: "Ticket medio (R$)",
-          valor: finalizadas.length
-            ? finalizadas.reduce((t, v) => t + Number(v.valor_total), 0) / finalizadas.length
-            : 0,
-        },
-      ]
+      resumo.map((linha) => ({ titulo: linha.indicador, valor: linha.valor }))
     );
 
     return resposta
@@ -445,6 +668,98 @@ export async function registrarRotas(app) {
     return { venda: await buscarVendaCompleta(venda.id) };
   });
 
+  /** Ajusta a quantidade da linha do carrinho, conferindo o saldo disponível. */
+  app.patch("/:id/itens/:itemId", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
+    const venda = await carregarVendaAberta(requisicao.params.id, resposta);
+    if (!venda) return resposta;
+
+    const quantidade = Number(requisicao.body?.quantidade);
+    if (!Number.isInteger(quantidade) || quantidade <= 0) {
+      return invalido(resposta, "quantidade precisa ser um inteiro maior que zero.");
+    }
+
+    const itens = await listarItens(venda.id);
+    const item = itens.find((registro) => registro.id === requisicao.params.itemId);
+    if (!item) return naoEncontrado(resposta, "Item não encontrado nesta venda.");
+
+    // Aumentar quantidade tem de caber no estoque, igual a incluir o item.
+    if (quantidade > item.quantidade) {
+      try {
+        const { produto } = await estoque.buscarProduto(
+          item.produto_id,
+          requisicao.headers.authorization
+        );
+        const disponivel = (produto.lotes ?? [])
+          .filter((lote) => !lote.vencido && lote.quantidade > 0)
+          .reduce((soma, lote) => soma + lote.quantidade, 0);
+
+        if (!produto.venda_sob_encomenda && quantidade > disponivel) {
+          return bloqueado(
+            resposta,
+            ERROS.ESTOQUE_INSUFICIENTE,
+            `Estoque insuficiente para ${produto.nome}: disponível ${disponivel}.`
+          );
+        }
+      } catch (erro) {
+        if (erro instanceof ErroServico) return responderErroServico(resposta, erro);
+        throw erro;
+      }
+    }
+
+    await alterarQuantidadeDoItem({ vendaId: venda.id, itemId: item.id, quantidade });
+    return { venda: await buscarVendaCompleta(venda.id) };
+  });
+
+  /** Desconto em uma linha só — o teto do perfil considera a venda inteira. */
+  app.post("/:id/itens/:itemId/desconto", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
+    const venda = await carregarVendaAberta(requisicao.params.id, resposta);
+    if (!venda) return resposta;
+
+    const itens = await listarItens(venda.id);
+    const item = itens.find((registro) => registro.id === requisicao.params.itemId);
+    if (!item) return naoEncontrado(resposta, "Item não encontrado nesta venda.");
+
+    const corpo = requisicao.body ?? {};
+    const brutoDoItem = item.quantidade * item.preco_unitario;
+
+    let desconto;
+    if (corpo.desconto_pct !== undefined) {
+      const percentual = Number(corpo.desconto_pct);
+      if (!Number.isFinite(percentual) || percentual < 0 || percentual > 100) {
+        return invalido(resposta, "desconto_pct deve estar entre 0 e 100.");
+      }
+      desconto = Number(((brutoDoItem * percentual) / 100).toFixed(2));
+    } else {
+      desconto = Number(corpo.desconto);
+      if (!Number.isFinite(desconto) || desconto < 0) {
+        return invalido(resposta, "desconto inválido.");
+      }
+    }
+
+    if (desconto > brutoDoItem) {
+      return invalido(resposta, "O desconto não pode ser maior que o valor do item.");
+    }
+
+    const bruto = itens.reduce((soma, linha) => soma + linha.quantidade * linha.preco_unitario, 0);
+    const outrosDescontos = itens
+      .filter((linha) => linha.id !== item.id)
+      .reduce((soma, linha) => soma + Number(linha.desconto ?? 0), 0);
+    const totalDescontado = desconto + outrosDescontos + Number(venda.desconto ?? 0);
+
+    const limitePct = descontoMaximoPct(requisicao.usuario);
+    const pctPedido = bruto > 0 ? (totalDescontado / bruto) * 100 : 0;
+    if (pctPedido - limitePct > 0.01) {
+      return bloqueado(
+        resposta,
+        ERROS.DESCONTO_ACIMA_DO_LIMITE,
+        `Somando os descontos da venda dá ${pctPedido.toFixed(1)}%, e seu perfil vai até ${limitePct}%.`
+      );
+    }
+
+    await definirDescontoDoItem({ vendaId: venda.id, itemId: item.id, desconto });
+    return { venda: await buscarVendaCompleta(venda.id) };
+  });
+
   /** Desconto respeita o limite percentual do perfil (§3). */
   app.post("/:id/desconto", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
     const venda = await carregarVendaAberta(requisicao.params.id, resposta);
@@ -452,6 +767,7 @@ export async function registrarRotas(app) {
 
     const itens = await listarItens(venda.id);
     const bruto = itens.reduce((soma, item) => soma + item.quantidade * item.preco_unitario, 0);
+    const descontoNosItens = itens.reduce((soma, item) => soma + Number(item.desconto ?? 0), 0);
 
     // Aceita desconto em reais (`desconto`) ou em percentual (`desconto_pct`) —
     // o caixa às vezes combina "10%", às vezes "5 reais".
@@ -471,12 +787,14 @@ export async function registrarRotas(app) {
       }
     }
 
-    if (desconto > bruto) {
+    if (desconto + descontoNosItens > bruto) {
       return invalido(resposta, "O desconto não pode ser maior que o valor dos itens.");
     }
 
+    // O limite do perfil vale para tudo que foi descontado na venda, não só
+    // para este campo: senão daria para furar o teto dando desconto item a item.
     const limitePct = descontoMaximoPct(requisicao.usuario);
-    const pctPedido = bruto > 0 ? (desconto / bruto) * 100 : 0;
+    const pctPedido = bruto > 0 ? ((desconto + descontoNosItens) / bruto) * 100 : 0;
     if (pctPedido - limitePct > 0.01) {
       return bloqueado(
         resposta,
@@ -517,6 +835,20 @@ export async function registrarRotas(app) {
     });
 
     return resposta.code(201).send({ receita });
+  });
+
+  /**
+   * Tira a receita da venda. Se ainda houver item controlado, a finalização
+   * volta a ser bloqueada — a trava do §3 não depende de quem apagou o quê.
+   */
+  app.delete("/:id/receita", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
+    const venda = await carregarVendaAberta(requisicao.params.id, resposta);
+    if (!venda) return resposta;
+
+    const removida = await removerReceita(venda.id);
+    if (!removida) return naoEncontrado(resposta, "Esta venda não tem receita registrada.");
+
+    return { venda: await buscarVendaCompleta(venda.id) };
   });
 
   app.post("/:id/pagamentos", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
@@ -700,9 +1032,12 @@ export async function registrarRotas(app) {
     "/:id/cancelar",
     { preHandler: auth.exigirPermissao("cancelar_venda") },
     async (requisicao, resposta) => {
-      const { motivo } = requisicao.body ?? {};
-      if (!motivo || !String(motivo).trim()) {
-        return invalido(resposta, "motivo do cancelamento é obrigatório.");
+      const { motivo, categoria } = requisicao.body ?? {};
+      if (!categoria || !CATEGORIA_CANCELAMENTO_LISTA.includes(categoria)) {
+        return invalido(
+          resposta,
+          `Escolha o motivo do cancelamento. Use um de: ${CATEGORIA_CANCELAMENTO_LISTA.join(", ")}.`
+        );
       }
 
       const venda = await buscarVenda(requisicao.params.id);
@@ -723,7 +1058,9 @@ export async function registrarRotas(app) {
 
       const cancelada = await marcarCancelada({
         vendaId: venda.id,
-        motivo: String(motivo).trim(),
+        // O texto livre é opcional: a categoria já diz o essencial.
+        motivo: motivo ? String(motivo).trim() : null,
+        categoria,
       });
       return { venda: cancelada };
     }

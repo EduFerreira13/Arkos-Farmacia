@@ -346,7 +346,7 @@ export async function historicoDoCliente(clienteId) {
     `SELECT v.id, v.criado_em, v.valor_total, v.desconto,
             (SELECT string_agg(i.produto_nome || ' x' || i.quantidade, ' | ' ORDER BY i.produto_nome)
                FROM vendas.itens_venda i WHERE i.venda_id = v.id) AS itens,
-            (SELECT string_agg(DISTINCT p.forma_pagamento, ', ')
+            (SELECT string_agg(DISTINCT p.forma_pagamento, ' + ')
                FROM vendas.pagamentos p WHERE p.venda_id = v.id) AS formas_pagamento
        FROM vendas.vendas v
       WHERE v.cliente_id = $1 AND v.status = 'finalizada'
@@ -399,7 +399,7 @@ export async function atualizarResultadoContato({ contatoId, resultado, observac
 }
 
 /** Contatos recentes de todos os clientes — agenda do balcão. */
-export async function listarContatos({ de, ate, resultado } = {}) {
+export async function listarContatos({ de, ate, resultado, canal, busca } = {}) {
   const condicoes = [];
   const valores = [];
 
@@ -414,6 +414,17 @@ export async function listarContatos({ de, ate, resultado } = {}) {
   if (resultado) {
     valores.push(resultado);
     condicoes.push(`ct.resultado = $${valores.length}::vendas.resultado_contato`);
+  }
+  if (canal) {
+    valores.push(canal);
+    condicoes.push(`ct.canal = $${valores.length}::vendas.canal_contato`);
+  }
+  if (busca) {
+    valores.push(`%${busca}%`);
+    const parametro = `$${valores.length}`;
+    condicoes.push(
+      `(cl.nome ILIKE ${parametro} OR ct.motivo ILIKE ${parametro} OR ct.oferta ILIKE ${parametro})`
+    );
   }
 
   const onde = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";
