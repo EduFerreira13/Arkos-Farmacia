@@ -1,11 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   CheckCircle2,
   CreditCard,
+  Minus,
   Plus,
   Search,
   ShieldAlert,
   ShoppingCart,
+  Tag,
   Trash2,
   UserPlus,
   X,
@@ -21,7 +24,7 @@ import { usarBusca } from "../lib/usarBusca.js";
 import { formatarData, formatarMoeda, formatarNumero, hojeISO } from "../lib/formato.js";
 import { descontoMaximoPct, usarAutenticacao } from "../lib/autenticacao.jsx";
 import { Botao, BotaoIcone } from "../componentes/Botao.jsx";
-import { CampoSelect, CampoTexto } from "../componentes/Campos.jsx";
+import { CampoCheckbox, CampoSelect, CampoTexto } from "../componentes/Campos.jsx";
 import { Modal } from "../componentes/Modal.jsx";
 import { Tabela } from "../componentes/Tabela.jsx";
 import {
@@ -41,13 +44,314 @@ const RECEITA_VAZIA = {
   data_emissao: hojeISO(),
 };
 
-function CupomVenda({ resultado, aoFechar }) {
+const numeroDaVenda = (venda) =>
+  venda?.numero ? `#${String(venda.numero).padStart(4, "0")}` : venda?.id?.slice(0, 8) ?? "";
+
+/** Só os dígitos, para comparar CPF digitado com e sem pontuação. */
+const somenteDigitos = (texto) => String(texto ?? "").replace(/\D/g, "");
+
+// ------------------------------------------------------------------- cliente
+
+/** Cadastro rápido: o mínimo para identificar quem está no balcão agora. */
+function ModalNovoCliente({ aoFechar, aoCriar }) {
+  const [formulario, definirFormulario] = useState({
+    nome: "",
+    cpf: "",
+    telefone: "",
+    data_nascimento: "",
+    convenio: "",
+    aceita_contato: true,
+  });
+  const [erro, definirErro] = useState(null);
+  const [enviando, definirEnviando] = useState(false);
+
+  const campo = (nome) => ({
+    value: formulario[nome],
+    onChange: (evento) => definirFormulario({ ...formulario, [nome]: evento.target.value }),
+  });
+
+  async function salvar(evento) {
+    evento.preventDefault();
+    definirErro(null);
+    definirEnviando(true);
+    try {
+      const { cliente } = await api.vendas.post("/clientes", {
+        ...formulario,
+        cpf: somenteDigitos(formulario.cpf) || null,
+        data_nascimento: formulario.data_nascimento || null,
+        convenio: formulario.convenio.trim() || null,
+        telefone: formulario.telefone.trim() || null,
+      });
+      aoCriar(cliente);
+    } catch (falha) {
+      definirErro(falha.message);
+    } finally {
+      definirEnviando(false);
+    }
+  }
+
+  return (
+    <Modal
+      aberto
+      titulo="Cadastrar cliente"
+      descricao="Só o nome é obrigatório. O resto pode ser completado depois em Cadastros."
+      aoFechar={aoFechar}
+      rodape={
+        <>
+          <Botao variante="secundario" onClick={aoFechar}>
+            Cancelar
+          </Botao>
+          <Botao form="form-novo-cliente" type="submit" disabled={enviando}>
+            {enviando ? "Salvando" : "Cadastrar e usar na venda"}
+          </Botao>
+        </>
+      }
+    >
+      <form id="form-novo-cliente" onSubmit={salvar} className="grid grid-cols-2 gap-4">
+        <div className="col-span-2">
+          <CampoTexto rotulo="Nome" required autoFocus {...campo("nome")} />
+        </div>
+        <CampoTexto rotulo="CPF" inputMode="numeric" placeholder="Só números" {...campo("cpf")} />
+        <CampoTexto rotulo="Telefone" placeholder="(11) 90000-0000" {...campo("telefone")} />
+        <CampoTexto rotulo="Data de nascimento" type="date" max={hojeISO()} {...campo("data_nascimento")} />
+        <CampoTexto rotulo="Convênio" placeholder="Particular, se não tiver" {...campo("convenio")} />
+        <div className="col-span-2">
+          <CampoCheckbox
+            rotulo="Aceita receber contato sobre reposição e promoções"
+            checked={formulario.aceita_contato}
+            onChange={(evento) =>
+              definirFormulario({ ...formulario, aceita_contato: evento.target.checked })
+            }
+          />
+        </div>
+        {erro ? (
+          <div className="col-span-2">
+            <Aviso tom="erro">{erro}</Aviso>
+          </div>
+        ) : null}
+      </form>
+    </Modal>
+  );
+}
+
+/**
+ * Busca de cliente por nome ou CPF. É um campo de texto e não uma lista suspensa
+ * porque com algumas centenas de cadastros a lista deixa de ser navegável — e no
+ * balcão o que a pessoa tem em mãos costuma ser o CPF.
+ */
+function BuscaCliente({ clientes, ocupado, aoEscolher, aoCadastrar }) {
+  const [termo, definirTermo] = useState("");
+
+  const encontrados = useMemo(() => {
+    const lista = clientes ?? [];
+    const texto = termo.trim().toLowerCase();
+    if (!texto) return [];
+    const digitos = somenteDigitos(texto);
+    return lista
+      .filter(
+        (cliente) =>
+          cliente.nome.toLowerCase().includes(texto) ||
+          (digitos.length >= 3 && somenteDigitos(cliente.cpf).includes(digitos))
+      )
+      .slice(0, 6);
+  }, [clientes, termo]);
+
+  return (
+    <div className="space-y-2">
+      <CampoTexto
+        rotulo="Buscar por nome ou CPF"
+        value={termo}
+        onChange={(evento) => definirTermo(evento.target.value)}
+        placeholder="Ex: Maria ou 12345678900"
+        disabled={ocupado}
+      />
+
+      {termo.trim() ? (
+        <ul className="divide-y divide-borda rounded-botao border border-borda">
+          {encontrados.map((cliente) => (
+            <li key={cliente.id}>
+              <button
+                type="button"
+                disabled={ocupado}
+                onClick={() => {
+                  definirTermo("");
+                  aoEscolher(cliente.id);
+                }}
+                className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-borda/50 focus-visible:foco-arkos"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-corpo text-texto">{cliente.nome}</span>
+                  <span className="block text-rotulo text-secundario">
+                    {cliente.cpf ? `CPF ${cliente.cpf}` : "sem CPF"}
+                    {cliente.convenio ? ` — ${cliente.convenio}` : ""}
+                  </span>
+                </span>
+                <span className="shrink-0 text-rotulo text-secundario">
+                  {cliente.total_compras ?? 0} compra(s)
+                </span>
+              </button>
+            </li>
+          ))}
+          {!encontrados.length ? (
+            <li className="px-3 py-2 text-corpo text-secundario">
+              Nenhum cliente com esse nome ou CPF.
+            </li>
+          ) : null}
+        </ul>
+      ) : null}
+
+      <div className="flex items-center gap-2">
+        <Botao tamanho="pequeno" variante="secundario" icone={UserPlus} onClick={aoCadastrar}>
+          Cadastrar cliente
+        </Botao>
+        <span className="text-rotulo text-secundario">
+          Sem identificar, a venda entra como balcão.
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ carrinho
+
+/**
+ * Linha do carrinho: quantidade multiplicada no lugar (não repete o produto) e
+ * desconto do próprio item, que às vezes é o que resolve — abater só o genérico
+ * em vez de dar percentual na venda inteira.
+ */
+function LinhaCarrinho({ item, ocupado, aoAlterarQuantidade, aoDescontar, aoRemover }) {
+  const [abertoDesconto, definirAbertoDesconto] = useState(false);
+  const [valor, definirValor] = useState("");
+  const [tipo, definirTipo] = useState("reais");
+
+  const bruto = item.quantidade * item.preco_unitario;
+  const descontoDoItem = Number(item.desconto ?? 0);
+
+  return (
+    <li className="px-5 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-corpo text-texto">{item.produto_nome}</p>
+          <p className="text-rotulo text-secundario">
+            {formatarMoeda(item.preco_unitario)} cada
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-corpo text-texto">{formatarMoeda(bruto - descontoDoItem)}</p>
+          {descontoDoItem > 0 ? (
+            <p className="text-rotulo text-sucesso">- {formatarMoeda(descontoDoItem)}</p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-2 flex items-center gap-2">
+        <div className="flex items-center rounded-botao border border-borda">
+          <BotaoIcone
+            icone={Minus}
+            rotulo={`Diminuir ${item.produto_nome}`}
+            disabled={ocupado || item.quantidade <= 1}
+            onClick={() => aoAlterarQuantidade(item, item.quantidade - 1)}
+          />
+          <span className="w-8 text-center text-corpo tabular-nums text-texto">
+            {formatarNumero(item.quantidade)}
+          </span>
+          <BotaoIcone
+            icone={Plus}
+            rotulo={`Aumentar ${item.produto_nome}`}
+            disabled={ocupado}
+            onClick={() => aoAlterarQuantidade(item, item.quantidade + 1)}
+          />
+        </div>
+
+        <Botao
+          tamanho="pequeno"
+          variante="secundario"
+          icone={Tag}
+          disabled={ocupado}
+          onClick={() => definirAbertoDesconto((valorAtual) => !valorAtual)}
+        >
+          Desconto
+        </Botao>
+
+        <div className="ml-auto">
+          <BotaoIcone
+            icone={Trash2}
+            rotulo={`Remover ${item.produto_nome}`}
+            disabled={ocupado}
+            onClick={() => aoRemover(item)}
+          />
+        </div>
+      </div>
+
+      {abertoDesconto ? (
+        <form
+          className="mt-2 flex items-end gap-2"
+          onSubmit={async (evento) => {
+            evento.preventDefault();
+            await aoDescontar(item, Number(valor || 0), tipo);
+            definirValor("");
+            definirAbertoDesconto(false);
+          }}
+        >
+          <CampoTexto
+            rotulo={`Desconto neste item (máx. ${formatarMoeda(bruto)})`}
+            type="number"
+            step={tipo === "pct" ? "0.1" : "0.01"}
+            min="0"
+            max={tipo === "pct" ? "100" : String(bruto)}
+            className="flex-1"
+            value={valor}
+            onChange={(evento) => definirValor(evento.target.value)}
+          />
+          <div className="flex items-center gap-1 rounded-botao border border-borda p-1">
+            {[
+              ["reais", "R$"],
+              ["pct", "%"],
+            ].map(([opcao, rotulo]) => (
+              <button
+                key={opcao}
+                type="button"
+                onClick={() => definirTipo(opcao)}
+                className={[
+                  "h-8 w-9 rounded-botao text-rotulo transition-colors",
+                  tipo === opcao ? "bg-primario text-white" : "text-secundario hover:bg-borda/60",
+                ].join(" ")}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
+          <Botao tamanho="pequeno" type="submit" disabled={ocupado}>
+            Aplicar
+          </Botao>
+          {descontoDoItem > 0 ? (
+            <Botao
+              tamanho="pequeno"
+              variante="secundario"
+              disabled={ocupado}
+              onClick={async () => {
+                await aoDescontar(item, 0, "reais");
+                definirAbertoDesconto(false);
+              }}
+            >
+              Tirar
+            </Botao>
+          ) : null}
+        </form>
+      ) : null}
+    </li>
+  );
+}
+
+// --------------------------------------------------------------- comprovante
+
+function ComprovanteVenda({ resultado, aoFechar }) {
   const venda = resultado.venda;
   return (
     <Modal
       aberto
       titulo="Venda concluída"
-      descricao={`Cupom da venda ${venda.id.slice(0, 8)}`}
+      descricao={`Comprovante da venda ${numeroDaVenda(venda)}`}
       aoFechar={aoFechar}
       rodape={<Botao onClick={aoFechar}>Nova venda</Botao>}
     >
@@ -76,7 +380,8 @@ function CupomVenda({ resultado, aoFechar }) {
               chave: "total",
               titulo: "Total",
               alinhamento: "direita",
-              renderizar: (item) => formatarMoeda(item.quantidade * item.preco_unitario),
+              renderizar: (item) =>
+                formatarMoeda(item.quantidade * item.preco_unitario - Number(item.desconto ?? 0)),
             },
           ]}
           linhas={venda.itens}
@@ -127,24 +432,48 @@ function CupomVenda({ resultado, aoFechar }) {
   );
 }
 
+// ---------------------------------------------------------------------- tela
+
 export function PDV() {
   const { usuario } = usarAutenticacao();
   const limiteDesconto = descontoMaximoPct(usuario);
+  const [parametros, definirParametros] = useSearchParams();
 
   const [busca, definirBusca] = useState("");
   const [venda, definirVenda] = useState(null);
   const [erro, definirErro] = useState(null);
   const [ocupado, definirOcupado] = useState(false);
   const [receita, definirReceita] = useState(RECEITA_VAZIA);
+  const [receitaAberta, definirReceitaAberta] = useState(false);
   const [desconto, definirDesconto] = useState("");
   const [tipoDesconto, definirTipoDesconto] = useState("reais");
   const [formaPagamento, definirFormaPagamento] = useState(FORMA_PAGAMENTO.DINHEIRO);
   const [valorPagamento, definirValorPagamento] = useState("");
   const [resultado, definirResultado] = useState(null);
-  const [buscaCliente, definirBuscaCliente] = useState("");
+  const [cadastrandoCliente, definirCadastrandoCliente] = useState(false);
 
   const produtos = usarBusca(() => api.estoque.get("/produtos"), []);
   const clientes = usarBusca(() => api.vendas.get("/clientes"), []);
+
+  // Venda em aberto retomada pelo histórico (?venda=...). Carrega uma vez e
+  // limpa o parâmetro, para um F5 não trazer de volta algo já finalizado.
+  const vendaParaRetomar = parametros.get("venda");
+  useEffect(() => {
+    if (!vendaParaRetomar) return;
+    let cancelado = false;
+    definirParametros({}, { replace: true });
+    api.vendas
+      .get(`/${vendaParaRetomar}`)
+      .then((resposta) => {
+        if (!cancelado) definirVenda(resposta.venda);
+      })
+      .catch((falha) => {
+        if (!cancelado) definirErro(falha.message);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [vendaParaRetomar, definirParametros]);
 
   // Com o cliente identificado, o balcão passa a saber o que ele costuma levar.
   const clienteId = venda?.cliente_id ?? null;
@@ -170,11 +499,17 @@ export function PDV() {
   const itens = venda?.itens ?? [];
   const pagamentos = venda?.pagamentos ?? [];
   const bruto = itens.reduce((soma, item) => soma + item.quantidade * item.preco_unitario, 0);
+  const descontoDosItens = itens.reduce((soma, item) => soma + Number(item.desconto ?? 0), 0);
+  const descontoTotal = descontoDosItens + Number(venda?.desconto ?? 0);
   const total = venda?.valor_total ?? 0;
   const pago = pagamentos.reduce((soma, pagamento) => soma + pagamento.valor, 0);
-  const faltante = Math.max(total - pago, 0);
+  const faltante = Math.max(Number((total - pago).toFixed(2)), 0);
   const temControlado = itens.some((item) => exigeReceita(item.tipo_controle));
   const receitaPendente = temControlado && !venda?.receita;
+
+  // O campo de pagamento já vem com o que falta — é o valor certo em quase toda
+  // venda. Digitar por cima continua valendo (pagamento dividido, troco).
+  const valorSugerido = valorPagamento === "" ? faltante.toFixed(2) : valorPagamento;
 
   async function executar(acao) {
     definirErro(null);
@@ -189,17 +524,37 @@ export function PDV() {
     }
   }
 
+  /** Garante uma venda aberta antes de qualquer operação que precise de uma. */
+  async function garantirVenda() {
+    if (venda) return venda;
+    const criada = await api.vendas.post("", {});
+    definirVenda(criada.venda);
+    return criada.venda;
+  }
+
   async function adicionarItem(produto) {
     await executar(async () => {
-      let atual = venda;
-      if (!atual) {
-        const criada = await api.vendas.post("", {});
-        atual = criada.venda;
-      }
+      const atual = await garantirVenda();
       const resposta = await api.vendas.post(`/${atual.id}/itens`, {
         produto_id: produto.id,
         quantidade: 1,
       });
+      definirVenda(resposta.venda);
+    });
+  }
+
+  async function alterarQuantidade(item, quantidade) {
+    if (quantidade < 1) return;
+    await executar(async () => {
+      const resposta = await api.vendas.patch(`/${venda.id}/itens/${item.id}`, { quantidade });
+      definirVenda(resposta.venda);
+    });
+  }
+
+  async function descontarItem(item, valor, tipo) {
+    await executar(async () => {
+      const corpo = tipo === "pct" ? { desconto_pct: valor } : { desconto: valor };
+      const resposta = await api.vendas.post(`/${venda.id}/itens/${item.id}/desconto`, corpo);
       definirVenda(resposta.venda);
     });
   }
@@ -227,15 +582,11 @@ export function PDV() {
    * Identificar o cliente é o que alimenta o relacionamento: sem isso a venda
    * entra como balcão e não conta no histórico de recompra de ninguém.
    */
-  async function vincularCliente(clienteId) {
+  async function vincularCliente(idDoCliente) {
     await executar(async () => {
-      let atual = venda;
-      if (!atual) {
-        const criada = await api.vendas.post("", {});
-        atual = criada.venda;
-      }
+      const atual = await garantirVenda();
       const resposta = await api.vendas.post(`/${atual.id}/cliente`, {
-        cliente_id: clienteId || null,
+        cliente_id: idDoCliente || null,
       });
       definirVenda(resposta.venda);
     });
@@ -251,9 +602,20 @@ export function PDV() {
   async function vincularReceita(evento) {
     evento.preventDefault();
     await executar(async () => {
-      await api.vendas.post(`/${venda.id}/receita`, receita);
-      const atualizada = await api.vendas.get(`/${venda.id}`);
+      const atual = await garantirVenda();
+      await api.vendas.post(`/${atual.id}/receita`, receita);
+      const atualizada = await api.vendas.get(`/${atual.id}`);
       definirVenda(atualizada.venda);
+      definirReceitaAberta(false);
+    });
+  }
+
+  /** Desfaz a receita vinculada — receita trocada, dados digitados errados. */
+  async function cancelarReceita() {
+    await executar(async () => {
+      const resposta = await api.vendas.del(`/${venda.id}/receita`);
+      definirVenda(resposta.venda);
+      definirReceita(RECEITA_VAZIA);
     });
   }
 
@@ -262,7 +624,7 @@ export function PDV() {
     await executar(async () => {
       const resposta = await api.vendas.post(`/${venda.id}/pagamentos`, {
         forma_pagamento: formaPagamento,
-        valor: Number(valorPagamento),
+        valor: Number(valorSugerido),
       });
       definirVenda(resposta.venda);
       definirValorPagamento("");
@@ -274,6 +636,7 @@ export function PDV() {
     if (resposta) {
       definirResultado(resposta);
       produtos.recarregar();
+      clientes.recarregar();
     }
   }
 
@@ -281,10 +644,15 @@ export function PDV() {
     definirVenda(null);
     definirResultado(null);
     definirReceita(RECEITA_VAZIA);
+    definirReceitaAberta(false);
     definirDesconto("");
     definirValorPagamento("");
     definirErro(null);
   }
+
+  // O formulário de receita aparece quando é obrigatório, quando já existe uma
+  // vinculada, ou quando a pessoa escolhe registrar mesmo sem ser controlado.
+  const mostrarReceita = Boolean(receitaPendente || receitaAberta || venda?.receita);
 
   return (
     <>
@@ -292,7 +660,7 @@ export function PDV() {
         titulo="PDV — ponto de venda"
         descricao={
           venda
-            ? `Venda ${venda.id.slice(0, 8)} em andamento`
+            ? `Venda ${numeroDaVenda(venda)} em andamento`
             : "Busque o produto para iniciar uma venda."
         }
         acoes={
@@ -362,58 +730,104 @@ export function PDV() {
             </CardCorpo>
           </Card>
 
-          {receitaPendente ? (
+          {mostrarReceita ? (
             <Card>
               <CardCabecalho
-                titulo="Receita obrigatória"
-                descricao="Há item controlado no carrinho — sem estes dados a venda não é concluída."
+                titulo={receitaPendente ? "Receita obrigatória" : "Receita"}
+                descricao={
+                  receitaPendente
+                    ? "Há item controlado no carrinho — sem estes dados a venda não é concluída."
+                    : "Registro da receita apresentada, mesmo sem item controlado."
+                }
                 icone={ShieldAlert}
+                acoes={
+                  !receitaPendente && !venda?.receita ? (
+                    <Botao
+                      tamanho="pequeno"
+                      variante="secundario"
+                      icone={X}
+                      onClick={() => definirReceitaAberta(false)}
+                    >
+                      Cancelar inclusão
+                    </Botao>
+                  ) : null
+                }
               />
               <CardCorpo>
-                <form onSubmit={vincularReceita} className="grid grid-cols-2 gap-4">
-                  <CampoTexto
-                    rotulo="Nome do médico"
-                    required
-                    value={receita.medico_nome}
-                    onChange={(evento) =>
-                      definirReceita({ ...receita, medico_nome: evento.target.value })
-                    }
-                  />
-                  <CampoTexto
-                    rotulo="CRM (Conselho Regional de Medicina)"
-                    required
-                    value={receita.medico_crm}
-                    onChange={(evento) =>
-                      definirReceita({ ...receita, medico_crm: evento.target.value })
-                    }
-                  />
-                  <CampoTexto
-                    rotulo="Nome do paciente"
-                    required
-                    value={receita.paciente_nome}
-                    onChange={(evento) =>
-                      definirReceita({ ...receita, paciente_nome: evento.target.value })
-                    }
-                  />
-                  <CampoTexto
-                    rotulo="Data de emissão"
-                    type="date"
-                    required
-                    max={hojeISO()}
-                    value={receita.data_emissao}
-                    onChange={(evento) =>
-                      definirReceita({ ...receita, data_emissao: evento.target.value })
-                    }
-                  />
-                  <div className="col-span-2">
-                    <Botao type="submit" disabled={ocupado}>
-                      Vincular receita à venda
+                {venda?.receita ? (
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="text-corpo text-texto">
+                      <p>{venda.receita.paciente_nome}</p>
+                      <p className="text-rotulo text-secundario">
+                        Dr(a). {venda.receita.medico_nome} — registro no Conselho Regional de
+                        Medicina {venda.receita.medico_crm}, emitida em{" "}
+                        {formatarData(venda.receita.data_emissao)}
+                      </p>
+                    </div>
+                    <Botao
+                      tamanho="pequeno"
+                      variante="secundario"
+                      icone={X}
+                      disabled={ocupado}
+                      onClick={cancelarReceita}
+                    >
+                      Cancelar inclusão
                     </Botao>
                   </div>
-                </form>
+                ) : (
+                  <form onSubmit={vincularReceita} className="grid grid-cols-2 gap-4">
+                    <CampoTexto
+                      rotulo="Nome do médico"
+                      required
+                      value={receita.medico_nome}
+                      onChange={(evento) =>
+                        definirReceita({ ...receita, medico_nome: evento.target.value })
+                      }
+                    />
+                    <CampoTexto
+                      rotulo="CRM (Conselho Regional de Medicina)"
+                      required
+                      value={receita.medico_crm}
+                      onChange={(evento) =>
+                        definirReceita({ ...receita, medico_crm: evento.target.value })
+                      }
+                    />
+                    <CampoTexto
+                      rotulo="Nome do paciente"
+                      required
+                      value={receita.paciente_nome}
+                      onChange={(evento) =>
+                        definirReceita({ ...receita, paciente_nome: evento.target.value })
+                      }
+                    />
+                    <CampoTexto
+                      rotulo="Data de emissão"
+                      type="date"
+                      required
+                      max={hojeISO()}
+                      value={receita.data_emissao}
+                      onChange={(evento) =>
+                        definirReceita({ ...receita, data_emissao: evento.target.value })
+                      }
+                    />
+                    <div className="col-span-2">
+                      <Botao type="submit" disabled={ocupado}>
+                        Vincular receita à venda
+                      </Botao>
+                    </div>
+                  </form>
+                )}
               </CardCorpo>
             </Card>
-          ) : null}
+          ) : (
+            <Botao
+              variante="secundario"
+              icone={ShieldAlert}
+              onClick={() => definirReceitaAberta(true)}
+            >
+              Registrar receita manualmente
+            </Botao>
+          )}
         </div>
 
         <div className="space-y-6">
@@ -494,20 +908,11 @@ export function PDV() {
                   ) : null}
                 </>
               ) : (
-                <CampoSelect
-                  rotulo="Buscar cliente cadastrado"
-                  value=""
-                  onChange={(evento) => vincularCliente(evento.target.value)}
-                  disabled={ocupado || clientes.carregando}
-                  opcoes={[
-                    { valor: "", rotulo: "Venda de balcão (sem identificar)" },
-                    ...(clientes.dados?.clientes ?? []).map((cliente) => ({
-                      valor: cliente.id,
-                      rotulo: cliente.convenio
-                        ? `${cliente.nome} — ${cliente.convenio}`
-                        : cliente.nome,
-                    })),
-                  ]}
+                <BuscaCliente
+                  clientes={clientes.dados?.clientes}
+                  ocupado={ocupado || clientes.carregando}
+                  aoEscolher={vincularCliente}
+                  aoCadastrar={() => definirCadastrandoCliente(true)}
                 />
               )}
             </CardCorpo>
@@ -516,42 +921,18 @@ export function PDV() {
           <Card>
             <CardCabecalho titulo="Carrinho" icone={ShoppingCart} />
             {itens.length ? (
-              <Tabela
-                colunas={[
-                  {
-                    chave: "produto_nome",
-                    titulo: "Item",
-                    renderizar: (item) => (
-                      <div>
-                        <p className="text-corpo text-texto">{item.produto_nome}</p>
-                        <p className="text-rotulo text-secundario">
-                          {formatarNumero(item.quantidade)} x {formatarMoeda(item.preco_unitario)}
-                        </p>
-                      </div>
-                    ),
-                  },
-                  {
-                    chave: "total",
-                    titulo: "Total",
-                    alinhamento: "direita",
-                    renderizar: (item) => formatarMoeda(item.quantidade * item.preco_unitario),
-                  },
-                  {
-                    chave: "acoes",
-                    titulo: "",
-                    largura: "48px",
-                    renderizar: (item) => (
-                      <BotaoIcone
-                        icone={Trash2}
-                        rotulo={`Remover ${item.produto_nome}`}
-                        onClick={() => removerItem(item)}
-                      />
-                    ),
-                  },
-                ]}
-                linhas={itens}
-                chave={(item) => item.id}
-              />
+              <ul className="divide-y divide-borda">
+                {itens.map((item) => (
+                  <LinhaCarrinho
+                    key={item.id}
+                    item={item}
+                    ocupado={ocupado}
+                    aoAlterarQuantidade={alterarQuantidade}
+                    aoDescontar={descontarItem}
+                    aoRemover={removerItem}
+                  />
+                ))}
+              </ul>
             ) : (
               <CardCorpo>
                 <p className="text-corpo text-secundario">
@@ -562,25 +943,29 @@ export function PDV() {
 
             {itens.length ? (
               <div className="space-y-3 border-t border-borda px-5 py-4">
+                {/* Subtotal, desconto e só então o total: a conta na ordem em que
+                    a pessoa explica para o cliente. */}
                 <div className="flex justify-between text-corpo text-secundario">
                   <span>Subtotal</span>
                   <span>{formatarMoeda(bruto)}</span>
                 </div>
-                {venda.desconto > 0 ? (
-                  <div className="flex justify-between text-corpo text-secundario">
-                    <span>Desconto</span>
-                    <span>- {formatarMoeda(venda.desconto)}</span>
-                  </div>
-                ) : null}
-                <div className="flex justify-between text-h3 text-texto">
-                  <span>Total</span>
-                  <span>{formatarMoeda(total)}</span>
-                </div>
 
-                <form onSubmit={aplicarDesconto} className="space-y-2">
-                  <div className="flex items-end gap-2">
+                <div className="space-y-2 rounded-botao bg-fundo px-3 py-2">
+                  <div className="flex justify-between text-corpo">
+                    <span className="text-secundario">Desconto</span>
+                    <span className={descontoTotal > 0 ? "text-sucesso" : "text-secundario"}>
+                      {descontoTotal > 0 ? `- ${formatarMoeda(descontoTotal)}` : formatarMoeda(0)}
+                    </span>
+                  </div>
+                  {descontoDosItens > 0 ? (
+                    <p className="text-rotulo text-secundario">
+                      {formatarMoeda(descontoDosItens)} vindo de desconto por item.
+                    </p>
+                  ) : null}
+
+                  <form onSubmit={aplicarDesconto} className="flex items-end gap-2">
                     <CampoTexto
-                      rotulo={`Desconto (seu perfil vai até ${limiteDesconto}%)`}
+                      rotulo={`Na venda toda (seu perfil vai até ${limiteDesconto}%)`}
                       type="number"
                       step={tipoDesconto === "pct" ? "0.1" : "0.01"}
                       min="0"
@@ -629,8 +1014,13 @@ export function PDV() {
                     <Botao variante="secundario" type="submit" disabled={ocupado}>
                       Aplicar
                     </Botao>
-                  </div>
-                </form>
+                  </form>
+                </div>
+
+                <div className="flex justify-between text-h3 text-texto">
+                  <span>Total</span>
+                  <span>{formatarMoeda(total)}</span>
+                </div>
               </div>
             ) : null}
           </Card>
@@ -657,10 +1047,23 @@ export function PDV() {
                       min="0.01"
                       required
                       className="flex-1"
-                      value={valorPagamento}
+                      value={valorSugerido}
                       onChange={(evento) => definirValorPagamento(evento.target.value)}
-                      ajuda={faltante > 0 ? `Falta ${formatarMoeda(faltante)}` : "Valor coberto"}
+                      ajuda={
+                        faltante > 0
+                          ? `Já vem preenchido com o que falta: ${formatarMoeda(faltante)}`
+                          : "Valor coberto"
+                      }
                     />
+                    {faltante > 0 && Number(valorSugerido) !== faltante ? (
+                      <Botao
+                        variante="secundario"
+                        onClick={() => definirValorPagamento("")}
+                        disabled={ocupado}
+                      >
+                        Restante
+                      </Botao>
+                    ) : null}
                     <Botao variante="secundario" type="submit" disabled={ocupado}>
                       Adicionar
                     </Botao>
@@ -718,7 +1121,18 @@ export function PDV() {
         </div>
       </div>
 
-      {resultado ? <CupomVenda resultado={resultado} aoFechar={novaVenda} /> : null}
+      {cadastrandoCliente ? (
+        <ModalNovoCliente
+          aoFechar={() => definirCadastrandoCliente(false)}
+          aoCriar={(cliente) => {
+            definirCadastrandoCliente(false);
+            clientes.recarregar();
+            vincularCliente(cliente.id);
+          }}
+        />
+      ) : null}
+
+      {resultado ? <ComprovanteVenda resultado={resultado} aoFechar={novaVenda} /> : null}
     </>
   );
 }
