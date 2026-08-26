@@ -4,7 +4,6 @@ import { RotaComPermissao, RotaProtegida } from "./componentes/RotaProtegida.jsx
 import { Login } from "./paginas/Login.jsx";
 import { Dashboard } from "./paginas/Dashboard.jsx";
 import { PDV } from "./paginas/PDV.jsx";
-import { Vendas } from "./paginas/Vendas.jsx";
 import { HistoricoVendas } from "./paginas/HistoricoVendas.jsx";
 import { Relacionamento } from "./paginas/Relacionamento.jsx";
 import { Produtos } from "./paginas/Produtos.jsx";
@@ -44,7 +43,9 @@ export default function App() {
         <Route index element={<Dashboard />} />
 
         <Route path="/pdv" element={comPermissao("vender", <PDV />)} />
-        <Route path="/vendas" element={comPermissao("vender", <Vendas />)} />
+        {/* A tela "Vendas do dia" saiu: o histórico já abre no dia de hoje e faz
+            tudo que ela fazia. O redirecionamento evita link salvo quebrado. */}
+        <Route path="/vendas" element={<Navigate to="/vendas/historico" replace />} />
         <Route path="/vendas/historico" element={comPermissao("vender", <HistoricoVendas />)} />
         <Route path="/relacionamento" element={comPermissao("vender", <Relacionamento />)} />
 
