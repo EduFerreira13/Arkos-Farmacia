@@ -65,6 +65,31 @@ export const STATUS_VENDA = {
   CANCELADA: "cancelada",
 };
 
+/**
+ * vendas.vendas.categoria_cancelamento — motivo em lista fechada. O texto livre
+ * continua sendo pedido, mas é a categoria que permite agrupar no relatório
+ * ("quantas vendas viraram orçamento no mês?").
+ */
+export const CATEGORIA_CANCELAMENTO = {
+  COMPRA_ERRADA: "compra_errada",
+  PAGAMENTO_ERRADO: "pagamento_errado",
+  ORCAMENTO: "orcamento",
+  DESISTENCIA: "desistencia",
+  ITEM_ERRADO: "item_errado",
+  OUTRO: "outro",
+};
+
+export const CATEGORIA_CANCELAMENTO_LISTA = Object.values(CATEGORIA_CANCELAMENTO);
+
+export const CATEGORIA_CANCELAMENTO_LABEL = {
+  [CATEGORIA_CANCELAMENTO.COMPRA_ERRADA]: "Compra errada",
+  [CATEGORIA_CANCELAMENTO.PAGAMENTO_ERRADO]: "Pagamento errado",
+  [CATEGORIA_CANCELAMENTO.ORCAMENTO]: "Era só orçamento",
+  [CATEGORIA_CANCELAMENTO.DESISTENCIA]: "Cliente desistiu",
+  [CATEGORIA_CANCELAMENTO.ITEM_ERRADO]: "Item errado no carrinho",
+  [CATEGORIA_CANCELAMENTO.OUTRO]: "Outro motivo",
+};
+
 /** vendas.pagamentos.forma_pagamento. */
 export const FORMA_PAGAMENTO = {
   DINHEIRO: "dinheiro",
