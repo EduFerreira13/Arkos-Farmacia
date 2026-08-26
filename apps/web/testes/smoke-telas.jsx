@@ -42,6 +42,7 @@ const { ProvedorPreferencias } = await import("../src/lib/preferencias.jsx");
 const { ProvedorAutenticacao } = await import("../src/lib/autenticacao.jsx");
 
 const { default: App } = await import("../src/App.jsx");
+const { SECOES } = await import("../src/componentes/Layout.jsx");
 
 const fiscal = await import("../src/paginas/Fiscal.jsx");
 const cadastros = await import("../src/paginas/Cadastros.jsx");
@@ -53,7 +54,6 @@ const paginas = {
   Inventario: (await import("../src/paginas/Inventario.jsx")).Inventario,
   Alertas: (await import("../src/paginas/Alertas.jsx")).Alertas,
   PDV: (await import("../src/paginas/PDV.jsx")).PDV,
-  Vendas: (await import("../src/paginas/Vendas.jsx")).Vendas,
   HistoricoVendas: (await import("../src/paginas/HistoricoVendas.jsx")).HistoricoVendas,
   Relacionamento: (await import("../src/paginas/Relacionamento.jsx")).Relacionamento,
   Compras: (await import("../src/paginas/Compras.jsx")).Compras,
@@ -779,7 +779,7 @@ const TELAS = [
   ["/caixa", "Abertura, lançamentos do turno"],
   ["/pdv", "ponto de venda"],
   ["/produtos", "Cadastro, preços e estoque"],
-  ["/vendas/historico", "Todas as vendas do período"],
+  ["/vendas/historico", "Abre no movimento de hoje"],
   ["/movimentacoes", "Toda movimentação grava usuário"],
   ["/inventario", "Contagem física por lote"],
   ["/compras", "Do rascunho ao recebimento"],
@@ -886,6 +886,48 @@ ok2(
   "grupo sem tela permitida nao aparece para o perfil",
   !menuOperador.includes("Compras") && !menuOperador.includes("Relatórios")
 );
+
+// ------------------------------------- ajustes pedidos na revisao do layout
+
+ok2(
+  "menu em ordem alfabetica, com o Dashboard em primeiro",
+  (() => {
+    const ordem = ["Dashboard", "Cadastros", "Compras", "Estoque", "Financeiro", "Fiscal"];
+    const posicoes = ordem.map((grupo) => menuGerente.indexOf(grupo));
+    return posicoes.every((posicao, indice) => posicao >= 0 && (indice === 0 || posicao > posicoes[indice - 1]));
+  })()
+);
+
+ok2(
+  "header sem barra de pesquisa",
+  !menuGerente.includes("Buscar produto, lote ou venda")
+);
+
+ok2("dashboard diz Bem-vindo, sem subtitulo", menuGerente.includes("Bem-vindo"));
+ok2(
+  "dashboard sem o subtitulo antigo",
+  !menuGerente.includes("Indicadores do dia com dados reais do banco")
+);
+
+ok2(
+  "a tela Vendas do dia saiu do menu",
+  !SECOES.some((secao) => (secao.itens ?? [secao]).some((item) => item.para === "/vendas"))
+);
+
+const historico = await textoDaRota("gerente", "/vendas/historico");
+ok2("historico abre no movimento de hoje", historico.includes("Abre no movimento de hoje"));
+ok2("historico separa itens de unidades", historico.includes("Unidades"));
+
+const pdv = await textoDaRota("gerente", "/pdv");
+ok2("pdv busca cliente por nome ou CPF", pdv.includes("Buscar por nome ou CPF"));
+ok2("pdv oferece cadastro rapido de cliente", pdv.includes("Cadastrar cliente"));
+ok2(
+  "pdv permite registrar receita mesmo sem controlado",
+  pdv.includes("Registrar receita manualmente")
+);
+
+const relacionamento = await textoDaRota("gerente", "/relacionamento");
+ok2("relacionamento tem botao de extrair relatorio", relacionamento.includes("Extrair relatório"));
 
 localStorage.removeItem(`arkos.tour.visto.${USUARIO.id}`);
 
