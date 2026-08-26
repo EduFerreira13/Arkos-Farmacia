@@ -14,6 +14,7 @@ import { formatarData, formatarDataHora, formatarMoeda, formatarNumero } from ".
 import { Botao, BotaoIcone } from "../componentes/Botao.jsx";
 import { CampoSelect, CampoTexto, CampoTextoLongo } from "../componentes/Campos.jsx";
 import { CardIndicador } from "../componentes/CardIndicador.jsx";
+import { ExportarRelatorio } from "../componentes/ExportarRelatorio.jsx";
 import { Modal } from "../componentes/Modal.jsx";
 import { Tabela } from "../componentes/Tabela.jsx";
 import {
@@ -349,11 +350,26 @@ function FichaCliente({ clienteId, catalogo, aoFechar, aoRegistrar }) {
   );
 }
 
-/** Agenda dos contatos já registrados, com atualização do resultado. */
+/** Agenda dos contatos já registrados, com filtro, busca e exportação. */
 function AgendaContatos({ aoAtualizar }) {
+  const [filtroResultado, definirFiltroResultado] = useState("");
+  const [filtroCanal, definirFiltroCanal] = useState("");
+  const [busca, definirBusca] = useState("");
+  const [buscaAplicada, definirBuscaAplicada] = useState("");
+
+  // Os mesmos parâmetros servem a lista e ao relatório — o que sai na planilha
+  // é exatamente o que está na tela.
+  const consulta = useMemo(() => {
+    const query = new URLSearchParams();
+    if (filtroResultado) query.set("resultado", filtroResultado);
+    if (filtroCanal) query.set("canal", filtroCanal);
+    if (buscaAplicada.trim()) query.set("busca", buscaAplicada.trim());
+    return query.toString();
+  }, [filtroResultado, filtroCanal, buscaAplicada]);
+
   const { dados, carregando, erro, recarregar } = usarBusca(
-    () => api.vendas.get("/crm/contatos"),
-    []
+    () => api.vendas.get(`/crm/contatos${consulta ? `?${consulta}` : ""}`),
+    [consulta]
   );
   const [erroEdicao, definirErroEdicao] = useState(null);
 
@@ -374,7 +390,69 @@ function AgendaContatos({ aoAtualizar }) {
         titulo="Contatos registrados"
         descricao="O que já foi falado com cada cliente e no que deu."
         icone={PhoneCall}
+        acoes={
+          <ExportarRelatorio
+            servico="vendas"
+            caminho={`/crm/relatorio?tipo=contatos${consulta ? `&${consulta}` : ""}`}
+            titulo="Exportar contatos"
+            descricao="Sai com os filtros que estão aplicados aqui na tela."
+            comPeriodo={false}
+            comXlsx
+            rotulo="Extrair relatório"
+          />
+        }
       />
+
+      <div className="flex flex-wrap items-end gap-3 border-b border-borda px-5 py-4">
+        <CampoSelect
+          rotulo="Resultado"
+          className="w-52"
+          value={filtroResultado}
+          onChange={(evento) => definirFiltroResultado(evento.target.value)}
+          opcoes={[{ valor: "", rotulo: "Todos os resultados" }, ...RESULTADOS]}
+        />
+        <CampoSelect
+          rotulo="Canal"
+          className="w-40"
+          value={filtroCanal}
+          onChange={(evento) => definirFiltroCanal(evento.target.value)}
+          opcoes={[{ valor: "", rotulo: "Todos os canais" }, ...CANAIS]}
+        />
+        <form
+          className="flex items-end gap-2"
+          onSubmit={(evento) => {
+            evento.preventDefault();
+            definirBuscaAplicada(busca);
+          }}
+        >
+          <CampoTexto
+            rotulo="Cliente, motivo ou oferta"
+            className="w-64"
+            value={busca}
+            onChange={(evento) => definirBusca(evento.target.value)}
+            placeholder="Ex: Maria ou reposição"
+          />
+          <button
+            type="submit"
+            className="h-10 rounded-botao border border-primario px-4 text-corpo text-primario hover:bg-primario/10 focus-visible:foco-arkos"
+          >
+            Buscar
+          </button>
+        </form>
+        {filtroResultado || filtroCanal || buscaAplicada ? (
+          <Botao
+            variante="secundario"
+            onClick={() => {
+              definirFiltroResultado("");
+              definirFiltroCanal("");
+              definirBusca("");
+              definirBuscaAplicada("");
+            }}
+          >
+            Limpar filtros
+          </Botao>
+        ) : null}
+      </div>
       {erroEdicao ? (
         <div className="px-5 pt-4">
           <Aviso tom="erro">{erroEdicao}</Aviso>
@@ -431,8 +509,14 @@ function AgendaContatos({ aoAtualizar }) {
           vazio={
             <EstadoVazio
               icone={PhoneCall}
-              titulo="Nenhum contato registrado"
-              descricao="Ao ligar para um cliente da fila, registre aqui o que foi combinado."
+              titulo={
+                consulta ? "Nenhum contato com esses filtros" : "Nenhum contato registrado"
+              }
+              descricao={
+                consulta
+                  ? "Limpe os filtros para ver todos os contatos registrados."
+                  : "Ao ligar para um cliente da fila, registre aqui o que foi combinado."
+              }
             />
           }
         />
@@ -481,11 +565,23 @@ export function Relacionamento() {
       <TituloPagina
         titulo="Relacionamento com clientes"
         descricao="Quem ligar hoje, por que ligar e o que oferecer — tirado do histórico de compra."
+        acoes={
+          <ExportarRelatorio
+            servico="vendas"
+            caminho={`/crm/relatorio${situacao ? `?situacao=${situacao}` : ""}`}
+            titulo="Exportar fila de contato"
+            descricao="Só quem aceita receber contato, com motivo e oferta sugerida."
+            comPeriodo={false}
+            comXlsx
+            rotulo="Extrair relatório"
+          />
+        }
       />
 
       {indicadores ? (
-        <div className="mb-4 grid grid-cols-4 gap-4">
+        <div className="mb-4 grid grid-cols-4 gap-3">
           <CardIndicador
+            compacto
             rotulo="Para ligar hoje"
             valor={formatarNumero(paraLigarHoje)}
             detalhe="recompra atrasada, em risco ou inativo"
@@ -493,6 +589,7 @@ export function Relacionamento() {
             tom={paraLigarHoje ? "erro" : "sucesso"}
           />
           <CardIndicador
+            compacto
             rotulo="Recompra prevista"
             valor={formatarNumero(indicadores.recompra_prevista_7_dias)}
             detalhe="clientes voltam nos próximos 7 dias"
@@ -500,6 +597,7 @@ export function Relacionamento() {
             tom="marca"
           />
           <CardIndicador
+            compacto
             rotulo="Clientes em dia"
             valor={formatarNumero(indicadores.situacoes.ativo)}
             detalhe={`de ${formatarNumero(indicadores.com_compra)} com compra registrada`}
@@ -507,6 +605,7 @@ export function Relacionamento() {
             tom="sucesso"
           />
           <CardIndicador
+            compacto
             rotulo="Contatos que viraram compra"
             valor={formatarNumero(indicadores.contatos.convertidos)}
             detalhe={`de ${formatarNumero(indicadores.contatos.total)} contatos registrados`}

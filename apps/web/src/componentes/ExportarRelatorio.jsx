@@ -24,6 +24,8 @@ function inicioDoMes() {
  * @param {boolean} [props.comPeriodo] quando falso, exporta a posição atual
  * @param {{ nome: string, rotulo: string, opcoes: {valor: string, rotulo: string}[] }} [props.modelo]
  *   seletor extra virado em parâmetro de query (ex: agrupar, tipo)
+ * @param {boolean} [props.comXlsx] oferece Excel além do CSV (só onde a rota gera)
+ * @param {{de: string, ate: string}} [props.periodoInicial] datas já escolhidas na tela
  * @param {string} [props.rotulo] texto do botão
  */
 export function ExportarRelatorio({
@@ -32,12 +34,17 @@ export function ExportarRelatorio({
   titulo,
   descricao,
   comPeriodo = true,
+  comXlsx = false,
+  periodoInicial,
   modelo,
   rotulo = "Exportar",
 }) {
   const [aberto, definirAberto] = useState(false);
-  const [de, definirDe] = useState(inicioDoMes());
-  const [ate, definirAte] = useState(hojeISO());
+  const [de, definirDe] = useState(periodoInicial?.de ?? inicioDoMes());
+  const [ate, definirAte] = useState(periodoInicial?.ate ?? hojeISO());
+  // O Excel é o padrão onde existe: é o único que separa os dados do resumo em
+  // abas diferentes. O CSV fica para quem vai importar em outro sistema.
+  const [formato, definirFormato] = useState(comXlsx ? "xlsx" : "csv");
   const [escolhaModelo, definirEscolhaModelo] = useState(modelo?.opcoes[0]?.valor ?? "");
   const [erro, definirErro] = useState(null);
   const [baixando, definirBaixando] = useState(false);
@@ -54,6 +61,7 @@ export function ExportarRelatorio({
         parametros.set("ate", ate);
       }
       if (modelo && escolhaModelo) parametros.set(modelo.nome, escolhaModelo);
+      if (comXlsx && formato === "xlsx") parametros.set("formato", "xlsx");
 
       // O caminho pode já trazer query (ex: ?tipo=pagar), então o separador varia.
       const consulta = parametros.toString();
@@ -119,6 +127,18 @@ export function ExportarRelatorio({
                 valor em estoque.
               </p>
             )}
+
+            {comXlsx ? (
+              <CampoSelect
+                rotulo="Tipo de arquivo"
+                value={formato}
+                onChange={(evento) => definirFormato(evento.target.value)}
+                opcoes={[
+                  { valor: "xlsx", rotulo: "Excel (.xlsx) — com aba de resumo" },
+                  { valor: "csv", rotulo: "CSV — texto separado por ponto e vírgula" },
+                ]}
+              />
+            ) : null}
 
             {modelo ? (
               <CampoSelect
