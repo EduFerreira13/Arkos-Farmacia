@@ -13,6 +13,8 @@
 | POST | `/auth/login` | `{ email, senha }` → `{ token, usuario }` |
 | GET | `/auth/me` | Retorna dados do usuário autenticado |
 | GET | `/auth/perfis` | Lista os 4 perfis padrão |
+| POST | `/auth/recuperar-senha` | Gera código de redefinição válido por 30 minutos |
+| POST | `/auth/redefinir-senha` | Troca a senha usando o código (uso único) |
 | GET | `/auth/usuarios` | Lista usuários (admin) |
 | POST | `/auth/simular` | `{ perfil }` → token valendo com o perfil escolhido (só administrador) |
 | POST | `/auth/usuarios` | Cria usuário (admin) |
@@ -82,11 +84,14 @@ pontas da venda, e o estorno automático da finalização usa o token do operado
 | POST | `/vendas/:id/receita` | Registra dados da receita (obrigatório se algum item for controlado) |
 | POST | `/vendas/:id/pagamentos` | Adiciona forma de pagamento (suporta múltiplos, ex: pagamento misto) |
 | POST | `/vendas/:id/finalizar` | Fecha a venda: valida receita se necessário, chama `estoque-service` (saída FEFO) e `financeiro-service` (lançamento no caixa) |
-| POST | `/vendas/:id/cancelar` | Cancela — exige perfil gerente/admin e motivo |
+| POST | `/vendas/:id/cancelar` | Cancela — exige perfil gerente/admin e `categoria` da lista fechada |
+| DELETE | `/vendas/:id/receita` | Desvincula a receita enquanto a venda está aberta |
 | GET | `/vendas/:id` | Detalhe completo |
+| PATCH | `/vendas/:id/itens/:itemId` | Altera a quantidade da linha, reconferindo o saldo |
 | DELETE | `/vendas/:id/itens/:itemId` | Remove item do carrinho e recalcula o total |
+| POST | `/vendas/:id/itens/:itemId/desconto` | Desconto de um item só |
 | POST | `/vendas/:id/desconto` | Aplica desconto, limitado ao percentual do perfil (§3) |
-| GET | `/vendas` | Vendas do dia (status, itens, formas de pagamento) |
+| GET | `/vendas` | Histórico com filtros; sem data, o movimento de hoje |
 | GET | `/vendas/resumo/hoje` | Total, ticket médio, quebra por forma de pagamento e variação vs. ontem |
 | GET | `/vendas/relatorio` | Planilha do período — `?de=&ate=`, `?agrupar=produto` para o total por produto |
 | GET | `/vendas/analise` | Vendas por produto, por dia e por forma no período (base do BI) |
@@ -101,7 +106,30 @@ pontas da venda, e o estorno automático da finalização usa o token do operado
 filtro de data, responde o movimento de hoje.
 
 `POST /vendas/:id/desconto` aceita `desconto` (reais) **ou** `desconto_pct`
-(percentual) — os dois passam pelo mesmo limite do perfil (§3).
+(percentual) — os dois passam pelo mesmo limite do perfil (§3). O desconto por
+item usa o mesmo par de campos, e o teto do perfil é conferido sobre a soma de
+tudo: descontos de item mais o desconto da venda.
+
+`POST /vendas/:id/itens` **soma na linha que já existe** quando o produto já está
+no carrinho, em vez de repetir o produto. Corrigir a quantidade depois é
+`PATCH /vendas/:id/itens/:itemId` com `{ "quantidade": n }`, que reconfere o
+saldo disponível antes de aumentar.
+
+Toda venda recebe um `numero` sequencial (`vendas.numero_venda_seq`) — é o que
+aparece na tela e na planilha, no lugar de um pedaço do identificador.
+
+`POST /vendas/:id/cancelar` exige `categoria` em `CATEGORIA_CANCELAMENTO_LISTA`
+(`compra_errada`, `pagamento_errado`, `orcamento`, `desistencia`, `item_errado`,
+`outro`); o `motivo` em texto livre continua aceito e é opcional. A categoria é o
+que permite agrupar no relatório.
+
+`GET /vendas/relatorio` e `GET /vendas/crm/relatorio` aceitam `formato=xlsx`: a
+planilha sai com os dados numa aba e o resumo em outra. Sem o parâmetro, sai o
+CSV de sempre, com o resumo no rodapé do arquivo — CSV não tem aba.
+
+`GET /vendas/crm/contatos` filtra por `de`, `ate`, `resultado`, `canal` e `busca`
+(nome do cliente, motivo ou oferta). `GET /vendas/crm/relatorio?tipo=contatos`
+aceita os mesmos parâmetros, para a planilha sair igual ao que está na tela.
 
 `POST /vendas/:id/finalizar` também recusa (422) venda sem item, venda com
 pagamentos abaixo do total (`pagamento_insuficiente`) e item acima do estoque
