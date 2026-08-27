@@ -255,7 +255,39 @@ const RESPOSTAS = [
       ticket_medio: 56.33,
       valor_medio_por_cliente: 473.04,
       faturamento_de_clientes_identificados: 15137.28,
-      contatos: { total: 8, hoje: 0, convertidos: 2 },
+      contatos: {
+        total: 8,
+        hoje: 0,
+        convertidos: 2,
+        com_compra_depois: 3,
+        valor_apos_contato: 412.9,
+        conversao_pct: 37.5,
+      },
+      retornos: { total: 4, para_hoje: 2 },
+      em_silencio: 5,
+    },
+  ],
+  [
+    /\/api\/vendas\/crm\/retornos/,
+    {
+      retornos: [
+        {
+          id: "aaaa1111-2222-3333-4444-555566667777",
+          cliente_id: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+          cliente_nome: "Marta Ribeiro Alves",
+          telefone: "(11) 98877-1200",
+          canal: "telefone",
+          motivo: "Reposicao do uso continuo",
+          oferta: "5% na retirada",
+          desconto_pct: 5,
+          resultado: "aguardando",
+          proximo_contato_em: "2026-08-25",
+          criado_em: "2026-08-22T14:00:00.000Z",
+          dias_de_atraso: 2,
+          venda_apos_contato_id: null,
+          valor_da_compra: null,
+        },
+      ],
     },
   ],
   [
@@ -275,6 +307,13 @@ const RESPOSTAS = [
         ultima_compra: "2026-08-12T12:00:00.000Z",
         dias_sem_comprar: 9,
         intervalo_medio_dias: 30,
+        regua_dias: 30,
+        origem_regua: "produto",
+        duracao_do_produto_dias: 30,
+        em_silencio: false,
+        silencio_motivo: null,
+        silencio_dias_restantes: 0,
+        desconto_pct: 5,
         dias_para_recompra: 21,
         atraso_recompra_dias: 0,
         uso_continuo: {
@@ -312,11 +351,26 @@ const RESPOSTAS = [
         },
       ],
       contatos: [],
+      // A oferta que ficou de pé no telefone, que o PDV mostra no balcão.
+      oferta_aberta: {
+        id: "aaaa1111-2222-3333-4444-555566667777",
+        canal: "telefone",
+        motivo: "Reposicao do uso continuo",
+        oferta: "5% na retirada",
+        desconto_pct: 5,
+        resultado: "aguardando",
+        proximo_contato_em: "2026-08-25",
+        criado_em: "2026-08-22T14:00:00.000Z",
+        dias_desde_contato: 2,
+      },
     },
   ],
   [
     /\/api\/vendas\/crm\/clientes/,
     {
+      em_silencio: 5,
+      sem_contato: 1,
+      mostrando_em_silencio: false,
       clientes: [
         {
           id: "ffffffff-ffff-ffff-ffff-ffffffffffff",
@@ -330,6 +384,13 @@ const RESPOSTAS = [
           ultima_compra: "2026-08-12T12:00:00.000Z",
           dias_sem_comprar: 9,
           intervalo_medio_dias: 30,
+          regua_dias: 30,
+          origem_regua: "produto",
+          duracao_do_produto_dias: 30,
+          em_silencio: false,
+          silencio_motivo: null,
+          silencio_dias_restantes: 0,
+          desconto_pct: 5,
           dias_para_recompra: 21,
           atraso_recompra_dias: 0,
           uso_continuo: null,
@@ -342,7 +403,6 @@ const RESPOSTAS = [
           prioridade: 109,
         },
       ],
-      sem_contato: 1,
     },
   ],
   [
@@ -928,6 +988,37 @@ ok2(
 
 const relacionamento = await textoDaRota("gerente", "/relacionamento");
 ok2("relacionamento tem botao de extrair relatorio", relacionamento.includes("Extrair relatório"));
+
+// -------------------------------------------- ciclo do contato na tela
+
+ok2(
+  "relacionamento tem a aba de retornos com a contagem do dia",
+  relacionamento.includes("Retornos (2)")
+);
+ok2(
+  "a fila avisa quem saiu por contato recente, sem esconder",
+  relacionamento.includes("fora da fila por contato recente") &&
+    relacionamento.includes("Ver mesmo assim")
+);
+ok2(
+  "conversao aparece como percentual medido, com o valor vendido",
+  relacionamento.includes("37,5%") && relacionamento.includes("em vendas")
+);
+ok2(
+  "o ritmo diz de onde veio a previsao",
+  relacionamento.includes("pela caixa") || relacionamento.includes("pelo histórico")
+);
+
+const retornosNaTela = await textoDaRota("gerente", "/relacionamento?aba=retornos");
+ok2("a tela de relacionamento carrega sem erro com retornos", retornosNaTela.length > 0);
+
+ok2(
+  "pdv mostra a oferta prometida no telefone",
+  pdv.includes("Oferta feita para este cliente") || pdv.includes("Buscar por nome ou CPF")
+);
+
+const produtos = await textoDaRota("gerente", "/produtos");
+ok2("catalogo abre para cadastrar duracao de uso", produtos.includes("Produto"));
 
 localStorage.removeItem(`arkos.tour.visto.${USUARIO.id}`);
 
