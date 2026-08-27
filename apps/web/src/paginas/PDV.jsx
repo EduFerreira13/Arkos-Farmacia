@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   CheckCircle2,
   CreditCard,
+  Megaphone,
   Minus,
   Plus,
   Search,
@@ -343,6 +344,51 @@ function LinhaCarrinho({ item, ocupado, aoAlterarQuantidade, aoDescontar, aoRemo
   );
 }
 
+/**
+ * A oferta que foi feita no telefone, mostrada quando o cliente aparece.
+ *
+ * Sem isto o ciclo não fecha na ponta que importa: alguém liga oferecendo 10%,
+ * o cliente vem buscar, e quem está no caixa não sabe de nada. O desconto é
+ * aplicado com um clique — e passa pelo mesmo teto de perfil de qualquer outro
+ * desconto, então operador com limite menor recebe a recusa e chama o gerente.
+ */
+function OfertaDoContato({ oferta, ocupado, temItens, aoAplicar }) {
+  const quando =
+    oferta.dias_desde_contato === 0
+      ? "hoje"
+      : `há ${oferta.dias_desde_contato} dia(s)`;
+
+  return (
+    <div className="rounded-botao bg-primario/10 px-3 py-2">
+      <p className="text-rotulo font-medium uppercase tracking-wide text-primario">
+        Oferta feita para este cliente
+      </p>
+      <p className="mt-1 text-corpo text-texto">{oferta.oferta}</p>
+      <p className="mt-0.5 text-rotulo text-secundario">
+        {oferta.motivo} — falamos por {oferta.canal} {quando}
+      </p>
+
+      {oferta.desconto_pct ? (
+        <Botao
+          tamanho="pequeno"
+          className="mt-2"
+          icone={Megaphone}
+          disabled={ocupado || !temItens}
+          onClick={() => aoAplicar(Number(oferta.desconto_pct))}
+        >
+          Aplicar os {Number(oferta.desconto_pct)}% prometidos
+        </Botao>
+      ) : null}
+
+      {oferta.desconto_pct && !temItens ? (
+        <p className="mt-1 text-rotulo text-secundario">
+          Adicione os itens primeiro para aplicar o desconto.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 // --------------------------------------------------------------- comprovante
 
 function ComprovanteVenda({ resultado, aoFechar }) {
@@ -562,6 +608,16 @@ export function PDV() {
   async function removerItem(item) {
     await executar(async () => {
       const resposta = await api.vendas.del(`/${venda.id}/itens/${item.id}`);
+      definirVenda(resposta.venda);
+    });
+  }
+
+  /** Aplica na venda o desconto prometido no contato de relacionamento. */
+  async function aplicarOferta(percentual) {
+    await executar(async () => {
+      const resposta = await api.vendas.post(`/${venda.id}/desconto`, {
+        desconto_pct: percentual,
+      });
       definirVenda(resposta.venda);
     });
   }
@@ -857,12 +913,26 @@ export function PDV() {
                     />
                   </div>
 
+                  {/* A promessa feita no telefone chega ao caixa. */}
+                  {fichaCliente.dados?.oferta_aberta ? (
+                    <OfertaDoContato
+                      oferta={fichaCliente.dados.oferta_aberta}
+                      ocupado={ocupado}
+                      temItens={itens.length > 0}
+                      aoAplicar={aplicarOferta}
+                    />
+                  ) : null}
+
                   {/* O que este cliente costuma levar, para oferecer no balcão. */}
                   {fichaCliente.dados?.cliente?.preferidos?.length ? (
                     <div className="rounded-botao bg-fundo px-3 py-2">
                       <p className="text-rotulo text-secundario">
-                        {fichaCliente.dados.cliente.intervalo_medio_dias
-                          ? `Costuma comprar a cada ${fichaCliente.dados.cliente.intervalo_medio_dias} dias — última há ${fichaCliente.dados.cliente.dias_sem_comprar}`
+                        {fichaCliente.dados.cliente.regua_dias
+                          ? `${
+                              fichaCliente.dados.cliente.origem_regua === "produto"
+                                ? `O que levou dura cerca de ${fichaCliente.dados.cliente.regua_dias} dias`
+                                : `Costuma comprar a cada ${fichaCliente.dados.cliente.regua_dias} dias`
+                            } — última compra há ${fichaCliente.dados.cliente.dias_sem_comprar} dia(s)`
                           : "Primeira vez que compra identificado"}
                       </p>
                       <ul className="mt-1 space-y-1">

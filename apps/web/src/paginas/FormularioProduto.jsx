@@ -20,6 +20,7 @@ const INICIAL = {
   preco_custo: "",
   preco_venda: "",
   estoque_minimo: "0",
+  dias_de_uso: "",
   ncm: "",
   cfop: "",
   venda_sob_encomenda: false,
@@ -42,6 +43,7 @@ export function FormularioProduto({ produto, aoFechar, aoSalvar }) {
           preco_custo: String(produto.preco_custo ?? ""),
           preco_venda: String(produto.preco_venda ?? ""),
           estoque_minimo: String(produto.estoque_minimo ?? "0"),
+          dias_de_uso: produto.dias_de_uso ? String(produto.dias_de_uso) : "",
           venda_sob_encomenda: Boolean(produto.venda_sob_encomenda),
         }
       : INICIAL
@@ -84,6 +86,8 @@ export function FormularioProduto({ produto, aoFechar, aoSalvar }) {
         preco_custo: Number(campos.preco_custo || 0),
         preco_venda: Number(campos.preco_venda || 0),
         estoque_minimo: Number(campos.estoque_minimo || 0),
+        // Vazio significa "não se aplica", e vai como null — não como zero.
+        dias_de_uso: campos.dias_de_uso === "" ? null : Number(campos.dias_de_uso),
       };
 
       if (edicao) await api.estoque.patch(`/produtos/${produto.id}`, corpo);
@@ -214,6 +218,15 @@ export function FormularioProduto({ produto, aoFechar, aoSalvar }) {
               min="0"
               value={campos.estoque_minimo}
               onChange={atualizar("estoque_minimo")}
+            />
+            <CampoTexto
+              rotulo="Dias de uso por unidade"
+              type="number"
+              min="1"
+              placeholder="Deixe vazio se não se aplica"
+              ajuda="Quanto uma unidade dura: caixa de 30 comprimidos ao dia, 30. É o que avisa o relacionamento na hora da reposição."
+              value={campos.dias_de_uso}
+              onChange={atualizar("dias_de_uso")}
             />
             <CampoTexto
               rotulo="NCM"
