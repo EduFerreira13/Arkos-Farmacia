@@ -31,6 +31,9 @@
 | observacao | text | YES | - |
 | resultado | USER-DEFINED | NO | 'aguardando'::vendas.resultado_contato |
 | criado_em | timestamp with time zone | NO | now() |
+| proximo_contato_em | date | YES | - |
+| desconto_pct | numeric | YES | - |
+| venda_id | uuid | YES | - |
 
 ## itens_venda
 
@@ -45,6 +48,7 @@
 | produto_nome | character varying | YES | - |
 | tipo_controle | character varying | YES | - |
 | desconto | numeric | NO | 0 |
+| dias_de_uso | integer | YES | - |
 
 ## pagamentos
 
@@ -80,6 +84,7 @@
 | cliente_id | uuid | YES | - |
 | numero | bigint | YES | nextval('vendas.numero_venda_seq'::regclass) |
 | categoria_cancelamento | character varying | YES | - |
+| finalizado_em | timestamp with time zone | YES | - |
 
 ## vw_vendas_hoje
 

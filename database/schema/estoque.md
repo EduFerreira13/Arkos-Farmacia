@@ -76,6 +76,7 @@
 | ncm | character varying | YES | - |
 | cfop | character varying | YES | - |
 | venda_sob_encomenda | boolean | NO | false |
+| dias_de_uso | integer | YES | - |
 
 ## vw_estoque_baixo
 
