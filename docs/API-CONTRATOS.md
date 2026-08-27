@@ -65,6 +65,12 @@ Permissão por movimentação: `saida` e `devolucao` pedem `vender` (são as dua
 pontas da venda, e o estorno automático da finalização usa o token do operador);
 `entrada`, `ajuste` e `perda` pedem `ajustar_estoque` (§6).
 
+`POST /produtos` e `PATCH /produtos/:id` aceitam `dias_de_uso`: quanto tempo UMA
+unidade de venda costuma durar (caixa de 30 comprimidos de uso diário, 30). É
+opcional — vazio significa "não se aplica" e é gravado como `null`; zero e
+negativo são recusados. O relacionamento usa esse número para prever recompra de
+quem ainda não tem histórico.
+
 **Regra crítica**: `POST /movimentacoes` do tipo `saida` deve escolher automaticamente o lote pela regra **FEFO** (menor `data_validade` com `quantidade > 0`) — não deixar o chamador escolher o lote manualmente, exceto em ajuste/perda.
 
 **Exemplo — saída de estoque:**
@@ -97,6 +103,7 @@ pontas da venda, e o estorno automático da finalização usa o token do operado
 | GET | `/vendas/analise` | Vendas por produto, por dia e por forma no período (base do BI) |
 | GET | `/vendas/receitas` | Receitas retidas — `?de=&ate=&busca=` |
 | GET/POST | `/vendas/clientes` | Cadastro de clientes (`?busca=`) |
+| GET | `/vendas/crm/retornos` | Retornos combinados e ainda não atendidos |
 | PATCH | `/vendas/clientes/:id` | Atualiza cliente |
 | POST | `/vendas/:id/cliente` | Vincula (ou desvincula) o cliente da venda |
 | DELETE | `/vendas/:id/pagamentos/:pagamentoId` | Remove forma de pagamento antes de finalizar |
@@ -130,6 +137,43 @@ CSV de sempre, com o resumo no rodapé do arquivo — CSV não tem aba.
 `GET /vendas/crm/contatos` filtra por `de`, `ate`, `resultado`, `canal` e `busca`
 (nome do cliente, motivo ou oferta). `GET /vendas/crm/relatorio?tipo=contatos`
 aceita os mesmos parâmetros, para a planilha sair igual ao que está na tela.
+
+### Ciclo do contato
+
+`POST /vendas/crm/contatos` aceita, além do que já registrava, `proximo_contato_em`
+(data de hoje em diante — quando voltar a falar) e `desconto_pct` (o que foi
+prometido). `PATCH /vendas/crm/contatos/:id` também aceita `proximo_contato_em`.
+
+`GET /vendas/crm/retornos` lista o que está pendente, com `dias_de_atraso`
+(negativo = ainda vai chegar). Um retorno é considerado **atendido quando existe
+um contato mais novo com o mesmo cliente** — falar de novo é atender o retorno.
+Não há "marcar como concluído": esse tipo de tarefa nunca é feita.
+
+**Conversão é medida, não declarada.** Os contatos devolvem `venda_apos_contato_id`,
+`comprou_em`, `valor_da_compra` e `dias_ate_a_compra`, procurando a venda
+finalizada do cliente até 30 dias depois do contato. O campo `resultado`
+continua existindo para o que a pessoa observou na conversa, mas não é ele que
+alimenta o indicador. `GET /vendas/crm/resumo` traz `contatos.com_compra_depois`,
+`contatos.conversao_pct` e `contatos.valor_apos_contato`.
+
+`GET /vendas/crm/clientes/:id` devolve `oferta_aberta`: o contato recente cuja
+oferta ainda não virou compra. É o que o PDV mostra no balcão. Na finalização,
+se havia oferta em aberto, ela é amarrada à venda (`venda_id`) e marcada como
+convertida — a resposta de `POST /vendas/:id/finalizar` traz `contato_convertido`.
+
+**Janela de silêncio.** `GET /vendas/crm/clientes` esconde quem foi contatado há
+pouco: 90 dias para quem disse `sem_interesse`, 3 para quem `nao_atendeu`, 5 para
+qualquer contato. A resposta traz `em_silencio` (quantos ficaram de fora) e
+`?incluir_silencio=sim` mostra todos, cada um com `silencio_motivo` e
+`silencio_dias_restantes`. `GET /vendas/crm/clientes/:id` ignora a janela de
+propósito — silêncio é regra da fila, não pode esconder alguém que foi aberto na
+mão nem o cliente que está no balcão.
+
+**Régua de recompra.** Cada cliente devolve `regua_dias` (o intervalo usado),
+`origem_regua` (`historico` ou `produto`) e `duracao_do_produto_dias`. Com três
+compras ou mais vale o ritmo observado; abaixo disso, a duração do produto
+(`estoque.produtos.dias_de_uso`, copiada para `vendas.itens_venda.dias_de_uso` no
+momento da venda), que dá sinal já na primeira compra.
 
 `POST /vendas/:id/finalizar` também recusa (422) venda sem item, venda com
 pagamentos abaixo do total (`pagamento_insuficiente`) e item acima do estoque
