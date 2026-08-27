@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
 import {
+  BellRing,
   CalendarClock,
   Check,
   ClipboardCopy,
+  Eye,
   HeartHandshake,
   PhoneCall,
   Repeat,
@@ -10,7 +12,13 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api.js";
 import { usarBusca } from "../lib/usarBusca.js";
-import { formatarData, formatarDataHora, formatarMoeda, formatarNumero } from "../lib/formato.js";
+import {
+  formatarData,
+  formatarDataHora,
+  formatarMoeda,
+  formatarNumero,
+  hojeISO,
+} from "../lib/formato.js";
 import { Botao, BotaoIcone } from "../componentes/Botao.jsx";
 import { CampoSelect, CampoTexto, CampoTextoLongo } from "../componentes/Campos.jsx";
 import { CardIndicador } from "../componentes/CardIndicador.jsx";
@@ -70,6 +78,8 @@ function FichaCliente({ clienteId, catalogo, aoFechar, aoRegistrar }) {
   const [oferta, definirOferta] = useState("");
   const [observacao, definirObservacao] = useState("");
   const [resultado, definirResultado] = useState("aguardando");
+  const [retorno, definirRetorno] = useState("");
+  const [descontoOferta, definirDescontoOferta] = useState("");
   const [mensagemCopiada, definirMensagemCopiada] = useState(false);
   const [erroEnvio, definirErroEnvio] = useState(null);
   const [enviando, definirEnviando] = useState(false);
@@ -79,6 +89,16 @@ function FichaCliente({ clienteId, catalogo, aoFechar, aoRegistrar }) {
   // Preenche o formulário com a sugestão, deixando o operador ajustar.
   const motivoAtual = motivo || cliente?.motivo || "";
   const ofertaAtual = oferta || cliente?.oferta || "";
+  // O percentual sugerido vem junto da oferta e é o que o balcão vai poder
+  // aplicar depois com um clique. Zerar o campo cancela a promessa.
+  const descontoAtual =
+    descontoOferta !== "" ? descontoOferta : cliente?.desconto_pct ? String(cliente.desconto_pct) : "";
+
+  const emDias = (dias) => {
+    const data = new Date();
+    data.setDate(data.getDate() + dias);
+    return data.toISOString().slice(0, 10);
+  };
 
   const saldoDoProduto = (produtoId) =>
     catalogo?.find((produto) => produto.id === produtoId)?.quantidade_atual ?? null;
@@ -105,8 +125,11 @@ function FichaCliente({ clienteId, catalogo, aoFechar, aoRegistrar }) {
         oferta: ofertaAtual,
         observacao: observacao || null,
         resultado,
+        proximo_contato_em: retorno || null,
+        desconto_pct: descontoAtual === "" ? null : Number(descontoAtual),
       });
       definirObservacao("");
+      definirRetorno("");
       recarregar();
       aoRegistrar?.();
     } catch (falha) {
@@ -269,6 +292,52 @@ function FichaCliente({ clienteId, catalogo, aoFechar, aoRegistrar }) {
                 value={ofertaAtual}
                 onChange={(evento) => definirOferta(evento.target.value)}
               />
+              <CampoTexto
+                rotulo="Desconto prometido (%)"
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={descontoAtual}
+                onChange={(evento) => definirDescontoOferta(evento.target.value)}
+                ajuda="Aparece no ponto de venda quando o cliente chegar, com um botão para aplicar."
+              />
+              <div>
+                <CampoTexto
+                  rotulo="Voltar a falar em"
+                  type="date"
+                  min={hojeISO()}
+                  value={retorno}
+                  onChange={(evento) => definirRetorno(evento.target.value)}
+                  ajuda="Deixe vazio se não precisa retorno."
+                />
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {[
+                    ["Amanhã", 1],
+                    ["3 dias", 3],
+                    ["1 semana", 7],
+                    ["15 dias", 15],
+                  ].map(([rotulo, dias]) => (
+                    <button
+                      key={dias}
+                      type="button"
+                      onClick={() => definirRetorno(emDias(dias))}
+                      className="rounded-botao border border-borda px-2 py-1 text-rotulo text-secundario hover:bg-borda/60 focus-visible:foco-arkos"
+                    >
+                      {rotulo}
+                    </button>
+                  ))}
+                  {retorno ? (
+                    <button
+                      type="button"
+                      onClick={() => definirRetorno("")}
+                      className="rounded-botao px-2 py-1 text-rotulo text-primario hover:bg-borda/60 focus-visible:foco-arkos"
+                    >
+                      Sem retorno
+                    </button>
+                  ) : null}
+                </div>
+              </div>
               <CampoTextoLongo
                 rotulo="Observação"
                 className="col-span-2"
@@ -347,6 +416,134 @@ function FichaCliente({ clienteId, catalogo, aoFechar, aoRegistrar }) {
         </div>
       ) : null}
     </Modal>
+  );
+}
+
+/**
+ * Retornos combinados e ainda não atendidos.
+ *
+ * Prometer "te ligo quinta" e não ligar é pior do que não ter ligado, e era
+ * exatamente o que acontecia: o retorno ficava numa observação em texto livre
+ * que ninguém relia. O retorno some da lista quando alguém fala de novo com o
+ * cliente — não é preciso marcar "concluído", que é o tipo de tarefa que fica
+ * eternamente pendente.
+ */
+function Retornos({ aoAbrirFicha }) {
+  const { dados, carregando, erro } = usarBusca(() => api.vendas.get("/crm/retornos"), []);
+
+  const retornos = dados?.retornos ?? [];
+  const vencidos = retornos.filter((retorno) => retorno.dias_de_atraso > 0);
+  const paraHoje = retornos.filter((retorno) => retorno.dias_de_atraso === 0);
+  const proximos = retornos.filter((retorno) => retorno.dias_de_atraso < 0);
+
+  const quando = (retorno) => {
+    if (retorno.dias_de_atraso > 0) {
+      return <Badge tom="erro">{retorno.dias_de_atraso} dia(s) atrasado</Badge>;
+    }
+    if (retorno.dias_de_atraso === 0) return <Badge tom="alerta">Hoje</Badge>;
+    return <Badge>em {Math.abs(retorno.dias_de_atraso)} dia(s)</Badge>;
+  };
+
+  return (
+    <Card>
+      <CardCabecalho
+        titulo="Retornos combinados"
+        descricao="Quem ficou de receber uma resposta e ainda não recebeu."
+        icone={BellRing}
+      />
+
+      {carregando ? <Carregando /> : null}
+      {erro ? (
+        <div className="px-5 py-4">
+          <Aviso tom="erro">{erro.message}</Aviso>
+        </div>
+      ) : null}
+
+      {dados ? (
+        <>
+          {vencidos.length || paraHoje.length ? (
+            <div className="px-5 pt-4">
+              <Aviso tom={vencidos.length ? "erro" : "alerta"}>
+                {vencidos.length
+                  ? `${vencidos.length} retorno(s) atrasado(s)`
+                  : `${paraHoje.length} retorno(s) para hoje`}
+                {vencidos.length && paraHoje.length ? ` e ${paraHoje.length} para hoje` : ""}.
+              </Aviso>
+            </div>
+          ) : null}
+
+          <Tabela
+            colunas={[
+              {
+                chave: "proximo_contato_em",
+                titulo: "Combinado para",
+                renderizar: (retorno) => (
+                  <div>
+                    <p className="text-corpo text-texto">
+                      {formatarData(retorno.proximo_contato_em)}
+                    </p>
+                    <p className="mt-0.5">{quando(retorno)}</p>
+                  </div>
+                ),
+              },
+              { chave: "cliente_nome", titulo: "Cliente" },
+              {
+                chave: "telefone",
+                titulo: "Telefone",
+                renderizar: (retorno) => retorno.telefone ?? "—",
+              },
+              { chave: "motivo", titulo: "Motivo do contato" },
+              {
+                chave: "oferta",
+                titulo: "O que foi oferecido",
+                renderizar: (retorno) => (
+                  <div>
+                    <p className="text-corpo text-texto">{retorno.oferta ?? "—"}</p>
+                    {retorno.desconto_pct ? (
+                      <p className="mt-0.5 text-rotulo text-secundario">
+                        {Number(retorno.desconto_pct)}% prometidos
+                      </p>
+                    ) : null}
+                  </div>
+                ),
+              },
+              {
+                chave: "situacao",
+                titulo: "Já comprou?",
+                renderizar: (retorno) =>
+                  retorno.venda_apos_contato_id ? (
+                    <Badge tom="sucesso">Comprou {formatarMoeda(retorno.valor_da_compra)}</Badge>
+                  ) : (
+                    <Badge tom="neutro">Ainda não</Badge>
+                  ),
+              },
+              {
+                chave: "acoes",
+                titulo: "",
+                renderizar: (retorno) => (
+                  <Botao
+                    tamanho="pequeno"
+                    variante="secundario"
+                    onClick={() => aoAbrirFicha(retorno.cliente_id)}
+                  >
+                    Abrir ficha
+                  </Botao>
+                ),
+              },
+            ]}
+            linhas={[...vencidos, ...paraHoje, ...proximos]}
+            chave={(retorno) => retorno.id}
+            vazio={
+              <EstadoVazio
+                icone={BellRing}
+                titulo="Nenhum retorno combinado"
+                descricao="Ao registrar um contato, marque quando voltar a falar e ele aparece aqui."
+              />
+            }
+          />
+        </>
+      ) : null}
+    </Card>
   );
 }
 
@@ -536,13 +733,16 @@ export function Relacionamento() {
   const [fichaAberta, definirFichaAberta] = useState(null);
   const [aba, definirAba] = useState("fila");
 
+  const [verSilenciados, definirVerSilenciados] = useState(false);
+
   const consulta = useMemo(() => {
     const query = new URLSearchParams();
     if (situacao) query.set("situacao", situacao);
     if (buscaAplicada.trim()) query.set("busca", buscaAplicada.trim());
+    if (verSilenciados) query.set("incluir_silencio", "sim");
     const texto = query.toString();
     return texto ? `?${texto}` : "";
-  }, [situacao, buscaAplicada]);
+  }, [situacao, buscaAplicada, verSilenciados]);
 
   const fila = usarBusca(() => api.vendas.get(`/crm/clientes${consulta}`), [consulta]);
   const resumo = usarBusca(() => api.vendas.get("/crm/resumo"), []);
@@ -583,10 +783,14 @@ export function Relacionamento() {
           <CardIndicador
             compacto
             rotulo="Para ligar hoje"
-            valor={formatarNumero(paraLigarHoje)}
-            detalhe="recompra atrasada, em risco ou inativo"
+            valor={formatarNumero(paraLigarHoje + (indicadores.retornos?.para_hoje ?? 0))}
+            detalhe={
+              indicadores.retornos?.para_hoje
+                ? `${indicadores.retornos.para_hoje} retorno(s) combinado(s) e ${paraLigarHoje} da fila`
+                : "recompra atrasada, em risco ou inativo"
+            }
             icone={PhoneCall}
-            tom={paraLigarHoje ? "erro" : "sucesso"}
+            tom={paraLigarHoje || indicadores.retornos?.para_hoje ? "erro" : "sucesso"}
           />
           <CardIndicador
             compacto
@@ -604,13 +808,19 @@ export function Relacionamento() {
             icone={Repeat}
             tom="sucesso"
           />
+          {/* Conversão medida no caixa: houve venda depois do contato. Antes
+              este número era a soma do que alguém marcou numa lista suspensa. */}
           <CardIndicador
             compacto
             rotulo="Contatos que viraram compra"
-            valor={formatarNumero(indicadores.contatos.convertidos)}
-            detalhe={`de ${formatarNumero(indicadores.contatos.total)} contatos registrados`}
+            valor={`${String(indicadores.contatos.conversao_pct).replace(".", ",")}%`}
+            detalhe={`${formatarNumero(
+              indicadores.contatos.com_compra_depois
+            )} de ${formatarNumero(indicadores.contatos.total)} — ${formatarMoeda(
+              indicadores.contatos.valor_apos_contato
+            )} em vendas`}
             icone={HeartHandshake}
-            tom="marca"
+            tom={indicadores.contatos.conversao_pct >= 20 ? "sucesso" : "marca"}
           />
         </div>
       ) : null}
@@ -618,6 +828,12 @@ export function Relacionamento() {
       <div className="mb-4 flex gap-1">
         {[
           ["fila", "Fila de contato"],
+          [
+            "retornos",
+            indicadores?.retornos?.para_hoje
+              ? `Retornos (${indicadores.retornos.para_hoje})`
+              : "Retornos",
+          ],
           ["agenda", "Contatos registrados"],
         ].map(([chave, rotulo]) => (
           <button
@@ -634,7 +850,9 @@ export function Relacionamento() {
         ))}
       </div>
 
-      {aba === "agenda" ? (
+      {aba === "retornos" ? (
+        <Retornos aoAbrirFicha={definirFichaAberta} />
+      ) : aba === "agenda" ? (
         <AgendaContatos aoAtualizar={recarregarTudo} />
       ) : (
         <Card>
@@ -674,6 +892,24 @@ export function Relacionamento() {
               </button>
             </form>
 
+            {/* Lista que encolhe sem explicação assusta: quando alguém sai da
+                fila por contato recente, a tela diz quantos e deixa ver quem. */}
+            {fila.dados?.em_silencio ? (
+              <div className="flex items-center gap-2 pb-2">
+                <p className="text-rotulo text-secundario">
+                  {fila.dados.em_silencio} cliente(s) fora da fila por contato recente.
+                </p>
+                <Botao
+                  tamanho="pequeno"
+                  variante="secundario"
+                  icone={Eye}
+                  onClick={() => definirVerSilenciados((atual) => !atual)}
+                >
+                  {verSilenciados ? "Ocultar" : "Ver mesmo assim"}
+                </Botao>
+              </div>
+            ) : null}
+
             {fila.dados?.sem_contato ? (
               <p className="pb-2 text-rotulo text-secundario">
                 {fila.dados.sem_contato} cliente(s) pediram para não receber oferta e ficam fora da
@@ -696,9 +932,16 @@ export function Relacionamento() {
                   chave: "situacao",
                   titulo: "Situação",
                   renderizar: (cliente) => (
-                    <Badge tom={SITUACAO[cliente.situacao]?.tom}>
-                      {SITUACAO[cliente.situacao]?.rotulo ?? cliente.situacao}
-                    </Badge>
+                    <div>
+                      <Badge tom={SITUACAO[cliente.situacao]?.tom}>
+                        {SITUACAO[cliente.situacao]?.rotulo ?? cliente.situacao}
+                      </Badge>
+                      {cliente.em_silencio ? (
+                        <p className="mt-0.5 text-rotulo text-secundario">
+                          {cliente.silencio_motivo}
+                        </p>
+                      ) : null}
+                    </div>
                   ),
                 },
                 { chave: "nome", titulo: "Cliente" },
@@ -713,11 +956,22 @@ export function Relacionamento() {
                   ),
                 },
                 {
-                  chave: "intervalo_medio_dias",
+                  chave: "regua_dias",
                   titulo: "Ritmo",
                   alinhamento: "direita",
+                  // De onde veio a previsão muda o que se diz ao cliente, então
+                  // a tela mostra a origem em vez de só o número.
                   renderizar: (cliente) =>
-                    cliente.intervalo_medio_dias ? `${cliente.intervalo_medio_dias} dias` : "—",
+                    cliente.regua_dias ? (
+                      <div>
+                        <p className="text-texto">{cliente.regua_dias} dias</p>
+                        <p className="text-rotulo text-secundario">
+                          {cliente.origem_regua === "produto" ? "pela caixa" : "pelo histórico"}
+                        </p>
+                      </div>
+                    ) : (
+                      "—"
+                    ),
                 },
                 {
                   chave: "dias_sem_comprar",
