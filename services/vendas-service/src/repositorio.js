@@ -27,7 +27,7 @@ export async function buscarVenda(id) {
 export async function listarItens(vendaId) {
   const { rows } = await consultar(
     `SELECT id, venda_id, produto_id, lote_id, quantidade, preco_unitario, desconto,
-            produto_nome, tipo_controle
+            produto_nome, tipo_controle, dias_de_uso
        FROM vendas.itens_venda
       WHERE venda_id = $1
       ORDER BY id`,
@@ -79,6 +79,7 @@ export function inserirItem({
   precoUnitario,
   produtoNome,
   tipoControle,
+  diasDeUso,
 }) {
   return emTransacao(async (cliente) => {
     // Mesmo produto lido duas vezes soma na linha que já existe: o carrinho
@@ -95,19 +96,26 @@ export function inserirItem({
     const { rows } = existentes.length
       ? await cliente.query(
           `UPDATE vendas.itens_venda
-              SET quantidade = quantidade + $2
+              SET quantidade = quantidade + $2,
+                  -- O snapshot da duração só é preenchido se ainda estiver
+                  -- vazio: a linha guarda o que valia quando o item entrou.
+                  dias_de_uso = COALESCE(dias_de_uso, $3)
             WHERE id = $1
             RETURNING id, venda_id, produto_id, lote_id, quantidade, preco_unitario, desconto,
-                      produto_nome, tipo_controle`,
-          [existentes[0].id, quantidade]
+                      produto_nome, tipo_controle, dias_de_uso`,
+          [existentes[0].id, quantidade, diasDeUso ?? null]
         )
       : await cliente.query(
           `INSERT INTO vendas.itens_venda
-             (venda_id, produto_id, lote_id, quantidade, preco_unitario, produto_nome, tipo_controle)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
+             (venda_id, produto_id, lote_id, quantidade, preco_unitario, produto_nome,
+              tipo_controle, dias_de_uso)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            RETURNING id, venda_id, produto_id, lote_id, quantidade, preco_unitario, desconto,
-                     produto_nome, tipo_controle`,
-          [vendaId, produtoId, loteId, quantidade, precoUnitario, produtoNome, tipoControle]
+                     produto_nome, tipo_controle, dias_de_uso`,
+          [
+            vendaId, produtoId, loteId, quantidade, precoUnitario, produtoNome,
+            tipoControle, diasDeUso ?? null,
+          ]
         );
 
     await recalcularTotal(cliente, vendaId);
@@ -213,7 +221,7 @@ export async function inserirPagamento({ vendaId, formaPagamento, valor }) {
 
 export async function marcarFinalizada(vendaId) {
   const { rows } = await consultar(
-    `UPDATE vendas.vendas SET status = 'finalizada'
+    `UPDATE vendas.vendas SET status = 'finalizada', finalizado_em = now()
       WHERE id = $1 AND status = 'aberta'
       RETURNING id, numero, status, valor_total, desconto, criado_em`,
     [vendaId]

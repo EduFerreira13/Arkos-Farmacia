@@ -20,7 +20,9 @@ import {
   analisarClientes,
   atualizarResultadoContato,
   historicoDoCliente,
+  ligarVendaAoContato,
   listarContatos,
+  listarRetornosPendentes,
   registrarContato,
   resumoCrm,
 } from "./crm.js";
@@ -58,6 +60,29 @@ import {
 const auth = criarAutenticacao({ secret: env.JWT_SECRET });
 
 const CENTAVO = 0.005; // tolerância para comparar dinheiro em ponto flutuante
+
+const DATA_INVALIDA = Symbol("data de retorno invalida");
+const DESCONTO_INVALIDO = Symbol("desconto de oferta invalido");
+
+/**
+ * Data combinada para o próximo contato. Opcional — nem todo contato pede
+ * retorno. Data no passado é recusada: retorno já nasceria atrasado, o que só
+ * suja a lista de quem realmente ficou para trás.
+ */
+function validarDataDeRetorno(valor) {
+  if (valor === undefined || valor === null || valor === "") return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(valor))) return DATA_INVALIDA;
+  if (String(valor) < hojeNoFuso()) return DATA_INVALIDA;
+  return String(valor);
+}
+
+/** Desconto prometido no contato, para o balcão aplicar depois. */
+function validarDescontoDaOferta(valor) {
+  if (valor === undefined || valor === null || valor === "") return null;
+  const percentual = Number(valor);
+  if (!Number.isFinite(percentual) || percentual < 0 || percentual > 100) return DESCONTO_INVALIDO;
+  return percentual > 0 ? Number(percentual.toFixed(2)) : null;
+}
 
 function invalido(resposta, mensagem) {
   return resposta.code(400).send({ erro: ERROS.DADOS_INVALIDOS, mensagem });
@@ -170,12 +195,15 @@ export async function registrarRotas(app) {
    * do histórico. Cliente que pediu para não ser incomodado sai da lista.
    */
   app.get("/crm/clientes", async (requisicao, resposta) => {
-    const { situacao, busca, incluir_sem_compra } = requisicao.query ?? {};
+    const { situacao, busca, incluir_sem_compra, incluir_silencio } = requisicao.query ?? {};
+
+    const mostrarSilencio = incluir_silencio === "sim";
 
     const clientes = await analisarClientes({
       situacao,
       busca,
       incluirSemCompra: incluir_sem_compra !== "nao",
+      incluirEmSilencio: mostrarSilencio,
     });
 
     if (situacao && !clientes.length) {
@@ -183,11 +211,30 @@ export async function registrarRotas(app) {
       requisicao.log.debug({ situacao }, "nenhum cliente na situacao pedida");
     }
 
+    // Quantos ficaram de fora por contato recente. A tela avisa em vez de
+    // simplesmente sumir com eles — lista que encolhe sem explicação assusta.
+    const todos = mostrarSilencio
+      ? clientes
+      : await analisarClientes({
+          situacao,
+          busca,
+          incluirSemCompra: incluir_sem_compra !== "nao",
+          incluirEmSilencio: true,
+        });
+
     return {
       clientes: clientes.filter((cliente) => cliente.aceita_contato),
       sem_contato: clientes.filter((cliente) => !cliente.aceita_contato).length,
+      em_silencio: todos.filter((cliente) => cliente.em_silencio && cliente.aceita_contato).length,
+      mostrando_em_silencio: mostrarSilencio,
     };
   });
+
+  /**
+   * Retornos combinados e ainda não atendidos. É a primeira coisa a olhar no
+   * dia: prometer "te ligo quinta" e não ligar é pior do que não ter ligado.
+   */
+  app.get("/crm/retornos", async () => ({ retornos: await listarRetornosPendentes() }));
 
   app.get("/crm/resumo", async () => await resumoCrm());
 
@@ -345,9 +392,13 @@ export async function registrarRotas(app) {
   });
 
   app.get("/crm/clientes/:id", async (requisicao, resposta) => {
-    const [analise] = await analisarClientes({ incluirSemCompra: true }).then((lista) =>
-      lista.filter((cliente) => cliente.id === requisicao.params.id)
-    );
+    // A ficha ignora a janela de silêncio de propósito: silêncio é regra da
+    // fila ("não ligue de novo hoje"), não pode esconder um cliente que alguém
+    // foi abrir na mão — nem no balcão, quando ele está ali na frente.
+    const [analise] = await analisarClientes({
+      incluirSemCompra: true,
+      incluirEmSilencio: true,
+    }).then((lista) => lista.filter((cliente) => cliente.id === requisicao.params.id));
     if (!analise) return naoEncontrado(resposta, "Cliente não encontrado.");
 
     return { cliente: analise, ...(await historicoDoCliente(requisicao.params.id)) };
@@ -359,7 +410,8 @@ export async function registrarRotas(app) {
   });
 
   app.post("/crm/contatos", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
-    const { cliente_id, canal, motivo, oferta, observacao, resultado } = requisicao.body ?? {};
+    const { cliente_id, canal, motivo, oferta, observacao, resultado, proximo_contato_em, desconto_pct } =
+      requisicao.body ?? {};
 
     const canais = ["telefone", "whatsapp", "email", "presencial"];
     if (!cliente_id) return invalido(resposta, "Informe cliente_id.");
@@ -368,6 +420,16 @@ export async function registrarRotas(app) {
     }
     if (!motivo || !String(motivo).trim()) {
       return invalido(resposta, "motivo do contato é obrigatório.");
+    }
+
+    const retorno = validarDataDeRetorno(proximo_contato_em);
+    if (retorno === DATA_INVALIDA) {
+      return invalido(resposta, "proximo_contato_em precisa ser uma data de hoje em diante.");
+    }
+
+    const descontoDaOferta = validarDescontoDaOferta(desconto_pct);
+    if (descontoDaOferta === DESCONTO_INVALIDO) {
+      return invalido(resposta, "desconto_pct da oferta precisa estar entre 0 e 100.");
     }
 
     try {
@@ -379,6 +441,8 @@ export async function registrarRotas(app) {
         oferta,
         observacao,
         resultado,
+        proximoContatoEm: retorno,
+        descontoPct: descontoDaOferta,
       });
       return resposta.code(201).send({ contato });
     } catch (erro) {
@@ -389,16 +453,22 @@ export async function registrarRotas(app) {
   });
 
   app.patch("/crm/contatos/:id", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
-    const { resultado, observacao } = requisicao.body ?? {};
+    const { resultado, observacao, proximo_contato_em } = requisicao.body ?? {};
     const resultados = ["aguardando", "interessado", "sem_interesse", "nao_atendeu", "convertido"];
-    if (!resultados.includes(resultado)) {
+    if (resultado !== undefined && !resultados.includes(resultado)) {
       return invalido(resposta, `resultado inválido. Use: ${resultados.join(", ")}.`);
+    }
+
+    const retorno = validarDataDeRetorno(proximo_contato_em);
+    if (retorno === DATA_INVALIDA) {
+      return invalido(resposta, "proximo_contato_em precisa ser uma data de hoje em diante.");
     }
 
     const contato = await atualizarResultadoContato({
       contatoId: requisicao.params.id,
       resultado,
       observacao,
+      proximoContatoEm: retorno,
     });
     if (!contato) return naoEncontrado(resposta, "Contato não encontrado.");
     return { contato };
@@ -650,6 +720,7 @@ export async function registrarRotas(app) {
       precoUnitario: produto.preco_venda,
       produtoNome: produto.nome,
       tipoControle: produto.tipo_controle,
+      diasDeUso: produto.dias_de_uso ?? null,
     });
 
     return resposta.code(201).send({
@@ -1015,6 +1086,22 @@ export async function registrarRotas(app) {
       );
     }
 
+    // 5) Fecha o ciclo do relacionamento: se havia uma oferta em aberto para
+    // este cliente, ela vira convertida com esta venda anexada. Depois da venda
+    // já registrada, e sem derrubar a resposta se falhar — a venda aconteceu de
+    // qualquer forma, e o vínculo é informação de acompanhamento.
+    let contatoConvertido = null;
+    if (completa.cliente_id) {
+      try {
+        contatoConvertido = await ligarVendaAoContato({
+          clienteId: completa.cliente_id,
+          vendaId: venda.id,
+        });
+      } catch (erro) {
+        requisicao.log.warn({ erro: erro.message, vendaId: venda.id }, "nao liguei a venda ao contato");
+      }
+    }
+
     return {
       venda: await buscarVendaCompleta(venda.id),
       nota_fiscal: nota,
@@ -1023,6 +1110,7 @@ export async function registrarRotas(app) {
         produto_nome: item.produto_nome,
         lotes,
       })),
+      contato_convertido: contatoConvertido,
       troco: Number((totalPago - completa.valor_total).toFixed(2)),
     };
   });

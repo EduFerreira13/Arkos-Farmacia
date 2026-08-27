@@ -587,6 +587,26 @@ ok(
     analise.dados.totais.vendas > 0
 );
 
+// A duração do tratamento é o que permite prever recompra sem histórico.
+const duracaoInvalida = await req(`${S.estoque}/produtos/${produtoId}`, {
+  metodo: "PATCH", token: gerente, corpo: { dias_de_uso: 0 },
+});
+ok("duracao de uso zero e recusada no cadastro", duracaoInvalida.status === 400);
+
+const comDuracao = await req(`${S.estoque}/produtos/${produtoId}`, {
+  metodo: "PATCH", token: gerente, corpo: { dias_de_uso: 30 },
+});
+ok("cadastro aceita a duracao do tratamento", comDuracao.dados?.produto?.dias_de_uso === 30);
+
+const vendaComDuracao = await req(`${S.vendas}/vendas`, { metodo: "POST", token: farmaceutico, corpo: {} });
+const itemComDuracao = await req(`${S.vendas}/vendas/${vendaComDuracao.dados.venda.id}/itens`, {
+  metodo: "POST", token: farmaceutico, corpo: { produto_id: produtoId, quantidade: 1 },
+});
+ok(
+  "item da venda guarda a duracao valida no dia da compra",
+  itemComDuracao.dados.venda.itens[0].dias_de_uso === 30
+);
+
 const receitasRetidas = await req(`${S.vendas}/vendas/receitas?de=${diasAtras(30)}&ate=${hoje}`, { token: farmaceutico });
 ok("lista receitas retidas", receitasRetidas.status === 200 && receitasRetidas.dados.receitas.length >= 1);
 
@@ -655,12 +675,124 @@ ok(
   contatosListados.status === 200 && contatosListados.dados.contatos.some((c) => c.id === contato.dados.contato.id)
 );
 
+// -------------------------------------------------- ciclo do contato fechado
+
+const emDias = (dias) => new Date(Date.now() + dias * 86400000).toISOString().slice(0, 10);
+
+const retornoNoPassado = await req(`${S.vendas}/vendas/crm/contatos`, {
+  metodo: "POST", token: caixa,
+  corpo: { cliente_id: clienteId, canal: "telefone", motivo: "x", proximo_contato_em: "2020-01-01" },
+});
+ok("retorno agendado para o passado e recusado", retornoNoPassado.status === 400);
+
+const ofertaImpossivel = await req(`${S.vendas}/vendas/crm/contatos`, {
+  metodo: "POST", token: caixa,
+  corpo: { cliente_id: clienteId, canal: "telefone", motivo: "x", desconto_pct: 150 },
+});
+ok("desconto de oferta acima de 100 e recusado", ofertaImpossivel.status === 400);
+
+const contatoComRetorno = await req(`${S.vendas}/vendas/crm/contatos`, {
+  metodo: "POST", token: caixa,
+  corpo: {
+    cliente_id: clienteId, canal: "telefone", motivo: "Reposicao do uso continuo",
+    oferta: "10% na reposicao", desconto_pct: 10, proximo_contato_em: emDias(3),
+  },
+});
+ok(
+  "contato guarda o retorno combinado e o desconto prometido",
+  contatoComRetorno.status === 201 &&
+    contatoComRetorno.dados.contato.proximo_contato_em &&
+    Number(contatoComRetorno.dados.contato.desconto_pct) === 10
+);
+
+const retornosPendentes = await req(`${S.vendas}/vendas/crm/retornos`, { token: caixa });
+ok(
+  "retorno entra na lista de pendentes com o atraso calculado",
+  retornosPendentes.status === 200 &&
+    retornosPendentes.dados.retornos.some(
+      (r) => r.cliente_id === clienteId && r.dias_de_atraso < 0
+    )
+);
+
+// A oferta feita no telefone tem de chegar ao balcão, senão a promessa se perde.
+const fichaComOferta = await req(`${S.vendas}/vendas/crm/clientes/${clienteId}`, { token: caixa });
+ok(
+  "ficha do cliente mostra a oferta que ficou de pe",
+  Number(fichaComOferta.dados.oferta_aberta?.desconto_pct) === 10
+);
+
+// Quem acabou de ser chamado sai da fila — insistir no dia seguinte desgasta.
+const filaComSilencio = await req(`${S.vendas}/vendas/crm/clientes`, { token: caixa });
+ok(
+  "cliente recem-contatado sai da fila",
+  !filaComSilencio.dados.clientes.some((c) => c.id === clienteId) &&
+    filaComSilencio.dados.em_silencio >= 1,
+  `em_silencio=${filaComSilencio.dados.em_silencio}`
+);
+
+const filaSemFiltro = await req(`${S.vendas}/vendas/crm/clientes?incluir_silencio=sim`, { token: caixa });
+const emSilencio = filaSemFiltro.dados.clientes.find((c) => c.id === clienteId);
+ok(
+  "da para ver quem esta em silencio e ate quando",
+  Boolean(emSilencio?.silencio_motivo) && emSilencio.silencio_dias_restantes > 0
+);
+
+// A conversão é medida pelo caixa, não pelo que alguém marcou na lista.
+const vendaDoContato = await req(`${S.vendas}/vendas`, { metodo: "POST", token: farmaceutico, corpo: {} });
+const idVendaContato = vendaDoContato.dados.venda.id;
+await req(`${S.vendas}/vendas/${idVendaContato}/cliente`, {
+  metodo: "POST", token: farmaceutico, corpo: { cliente_id: clienteId },
+});
+await req(`${S.vendas}/vendas/${idVendaContato}/itens`, {
+  metodo: "POST", token: farmaceutico, corpo: { produto_id: produtoId, quantidade: 1 },
+});
+const totalDoContato = (await req(`${S.vendas}/vendas/${idVendaContato}`, { token: farmaceutico }))
+  .dados.venda.valor_total;
+await req(`${S.vendas}/vendas/${idVendaContato}/pagamentos`, {
+  metodo: "POST", token: farmaceutico,
+  corpo: { forma_pagamento: "pix", valor: totalDoContato },
+});
+const vendaFechada = await req(`${S.vendas}/vendas/${idVendaContato}/finalizar`, {
+  metodo: "POST", token: farmaceutico,
+});
+ok(
+  "a venda amarra sozinha o contato que a provocou",
+  vendaFechada.status === 200 &&
+    vendaFechada.dados.contato_convertido?.venda_id === idVendaContato,
+  `contato=${vendaFechada.dados?.contato_convertido?.id}`
+);
+
+const contatosMedidos = await req(`${S.vendas}/vendas/crm/contatos`, { token: gerente });
+const medido = contatosMedidos.dados.contatos.find(
+  (c) => c.id === contatoComRetorno.dados.contato.id
+);
+ok(
+  "conversao do contato vem da venda real, com os dias ate a compra",
+  medido?.venda_apos_contato_id === idVendaContato && medido.dias_ate_a_compra >= 0,
+  `dias=${medido?.dias_ate_a_compra}`
+);
+
+const fichaDepoisDaCompra = await req(`${S.vendas}/vendas/crm/clientes/${clienteId}`, { token: caixa });
+ok("oferta deixa de ficar em aberto depois da compra", fichaDepoisDaCompra.dados.oferta_aberta === null);
+
+const resumoComCiclo = await req(`${S.vendas}/vendas/crm/resumo`, { token: gerente });
+ok(
+  "resumo traz conversao medida, retornos e silencio",
+  resumoComCiclo.dados.contatos.com_compra_depois >= 1 &&
+    typeof resumoComCiclo.dados.contatos.conversao_pct === "number" &&
+    typeof resumoComCiclo.dados.retornos.total === "number" &&
+    typeof resumoComCiclo.dados.em_silencio === "number",
+  `conversao=${resumoComCiclo.dados.contatos.conversao_pct}%`
+);
+
 const clienteSemContato = await req(`${S.vendas}/vendas/clientes/${clienteId}`, {
   metodo: "PATCH", token: caixa, corpo: { aceita_contato: false },
 });
 ok("cliente pode pedir para não receber oferta", clienteSemContato.status === 200);
 
-const filaSemEle = await req(`${S.vendas}/vendas/crm/clientes`, { token: caixa });
+// Com incluir_silencio=sim o único motivo que pode tirá-lo da lista é a recusa
+// de contato — sem isso o teste passaria pelo motivo errado.
+const filaSemEle = await req(`${S.vendas}/vendas/crm/clientes?incluir_silencio=sim`, { token: caixa });
 ok(
   "quem não aceita contato sai da fila",
   !filaSemEle.dados.clientes.some((cliente) => cliente.id === clienteId)
