@@ -12,6 +12,7 @@ const SELECT_PRODUTO = `
   SELECT p.id, p.nome, p.principio_ativo, p.fabricante, p.classe_terapeutica,
          p.codigo_barras, p.tipo_controle, p.unidade_venda, p.ncm, p.cfop,
          p.preco_custo, p.preco_venda, p.estoque_minimo, p.venda_sob_encomenda,
+         p.dias_de_uso,
          p.categoria_id, c.nome AS categoria_nome,
          p.fornecedor_id, f.nome AS fornecedor_nome,
          p.criado_em,
@@ -68,8 +69,8 @@ export async function inserirProduto(dados) {
     `INSERT INTO estoque.produtos
        (nome, principio_ativo, fabricante, classe_terapeutica, codigo_barras,
         tipo_controle, unidade_venda, ncm, cfop, preco_custo, preco_venda,
-        estoque_minimo, venda_sob_encomenda, categoria_id, fornecedor_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+        estoque_minimo, venda_sob_encomenda, categoria_id, fornecedor_id, dias_de_uso)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
      RETURNING id`,
     [
       dados.nome,
@@ -87,6 +88,7 @@ export async function inserirProduto(dados) {
       dados.venda_sob_encomenda ?? false,
       dados.categoria_id ?? null,
       dados.fornecedor_id ?? null,
+      dados.dias_de_uso ?? null,
     ]
   );
   return buscarProduto(rows[0].id);
@@ -108,6 +110,7 @@ const CAMPOS_ATUALIZAVEIS = [
   "venda_sob_encomenda",
   "categoria_id",
   "fornecedor_id",
+  "dias_de_uso",
 ];
 
 /**

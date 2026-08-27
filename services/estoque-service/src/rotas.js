@@ -51,6 +51,20 @@ function responderErro(resposta, erro) {
   throw erro;
 }
 
+/**
+ * `dias_de_uso` é opcional: vazio significa "não se aplica" e é gravado como
+ * null. Devolve INVALIDO quando veio algo que não é um prazo utilizável, para o
+ * chamador recusar com mensagem em vez de gravar lixo.
+ */
+const INVALIDO = Symbol("dias_de_uso invalido");
+
+function validarDiasDeUso(valor) {
+  if (valor === undefined || valor === null || valor === "") return null;
+  const dias = Number(valor);
+  if (!Number.isInteger(dias) || dias <= 0) return INVALIDO;
+  return dias;
+}
+
 function invalido(resposta, mensagem) {
   return resposta.code(400).send({ erro: ERROS.DADOS_INVALIDOS, mensagem });
 }
@@ -137,6 +151,12 @@ export async function registrarRotas(app) {
       return invalido(resposta, "estoque_minimo precisa ser um inteiro maior ou igual a zero.");
     }
 
+    // Duração do tratamento: opcional, mas se vier tem de ser um prazo real.
+    const diasDeUso = validarDiasDeUso(corpo.dias_de_uso);
+    if (diasDeUso === INVALIDO) {
+      return invalido(resposta, "dias_de_uso precisa ser um inteiro maior que zero.");
+    }
+
     // §1 — controlado exige princípio ativo e classe terapêutica, que são o que
     // acionam as regras de venda restrita.
     if (exigeReceita(tipoControle)) {
@@ -156,6 +176,7 @@ export async function registrarRotas(app) {
         preco_custo: precoCusto,
         estoque_minimo: estoqueMinimo,
         venda_sob_encomenda: Boolean(corpo.venda_sob_encomenda),
+        dias_de_uso: diasDeUso,
       });
       return resposta.code(201).send({ produto });
     } catch (erro) {
@@ -187,6 +208,14 @@ export async function registrarRotas(app) {
         return invalido(resposta, `${campo} inválido.`);
       }
       corpo[campo] = valor;
+    }
+
+    if (corpo.dias_de_uso !== undefined) {
+      const dias = validarDiasDeUso(corpo.dias_de_uso);
+      if (dias === INVALIDO) {
+        return invalido(resposta, "dias_de_uso precisa ser um inteiro maior que zero.");
+      }
+      corpo.dias_de_uso = dias;
     }
 
     const produto = await atualizarProduto(id, corpo, requisicao.usuario.id);
