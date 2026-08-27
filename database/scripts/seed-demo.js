@@ -73,6 +73,14 @@ function instante(dias, hora, minuto) {
   return `${paraISO(dataDeDiasAtras(dias))} ${hh}:${mm}:00`;
 }
 
+/**
+ * Data corrida a partir de hoje: negativo é passado, positivo é futuro.
+ * Usada nos retornos combinados — alguns já venceram, outros ainda vão chegar.
+ */
+function diaCorrido(deslocamento) {
+  return paraISO(dataDeDiasAtras(-deslocamento));
+}
+
 const dinheiro = (valor) => Number(Number(valor).toFixed(2));
 
 /** Mesma chave de acesso simulada que o fiscal-service gera. */
@@ -119,33 +127,33 @@ const CORRELATOS = "Correlatos";
  * produto no sorteio das vendas (produto de giro alto aparece mais).
  */
 const PRODUTOS = [
-  { chave: "dipirona", nome: "Dipirona Monoidratada 500mg 20 comprimidos", categoria: MEDICAMENTO, fornecedor: "panvel", principio_ativo: "Dipirona monoidratada", fabricante: "Neo Quimica", tipo_controle: "livre", codigo_barras: "7891058001234", unidade_venda: "caixa", preco_custo: 4.2, preco_venda: 9.9, estoque_minimo: 15, ncm: "30049099", cfop: "5405", giro: 10, saldo: 48 },
-  { chave: "paracetamol", nome: "Paracetamol 750mg 20 comprimidos", categoria: MEDICAMENTO, fornecedor: "panvel", principio_ativo: "Paracetamol", fabricante: "Medley", tipo_controle: "livre", codigo_barras: "7891058002941", unidade_venda: "caixa", preco_custo: 5.1, preco_venda: 11.5, estoque_minimo: 15, ncm: "30049069", cfop: "5405", giro: 9, saldo: 36 },
-  { chave: "ibuprofeno", nome: "Ibuprofeno 400mg 20 capsulas", categoria: MEDICAMENTO, fornecedor: "farmalog", principio_ativo: "Ibuprofeno", fabricante: "EMS", tipo_controle: "livre", codigo_barras: "7896004703121", unidade_venda: "caixa", preco_custo: 8.4, preco_venda: 17.9, estoque_minimo: 10, ncm: "30049099", cfop: "5405", giro: 7, saldo: 22 },
-  { chave: "omeprazol", nome: "Omeprazol 20mg 28 capsulas", categoria: MEDICAMENTO, fornecedor: "farmalog", principio_ativo: "Omeprazol", fabricante: "Medley", tipo_controle: "livre", codigo_barras: "7896422505598", unidade_venda: "caixa", preco_custo: 6.8, preco_venda: 14.9, estoque_minimo: 12, ncm: "30049069", cfop: "5405", giro: 8, saldo: 30 },
-  { chave: "losartana", nome: "Losartana Potassica 50mg 30 comprimidos", categoria: MEDICAMENTO, fornecedor: "farmalog", principio_ativo: "Losartana potassica", fabricante: "EMS", tipo_controle: "livre", codigo_barras: "7896004712345", unidade_venda: "caixa", preco_custo: 7.5, preco_venda: 16.4, estoque_minimo: 20, ncm: "30049069", cfop: "5405", giro: 9, saldo: 54 },
-  { chave: "metformina", nome: "Metformina 850mg 30 comprimidos", categoria: MEDICAMENTO, fornecedor: "farmalog", principio_ativo: "Cloridrato de metformina", fabricante: "Merck", tipo_controle: "livre", codigo_barras: "7896004718001", unidade_venda: "caixa", preco_custo: 8.9, preco_venda: 18.9, estoque_minimo: 18, ncm: "30049069", cfop: "5405", giro: 8, saldo: 41 },
-  { chave: "sinvastatina", nome: "Sinvastatina 20mg 30 comprimidos", categoria: MEDICAMENTO, fornecedor: "farmalog", principio_ativo: "Sinvastatina", fabricante: "EMS", tipo_controle: "livre", codigo_barras: "7896004719114", unidade_venda: "caixa", preco_custo: 11.2, preco_venda: 23.5, estoque_minimo: 15, ncm: "30049069", cfop: "5405", giro: 6, saldo: 27 },
-  { chave: "soro", nome: "Soro Fisiologico 0,9% 500ml", categoria: MEDICAMENTO, fornecedor: "medsupply", principio_ativo: "Cloreto de sodio", fabricante: "Fresenius Kabi", tipo_controle: "livre", codigo_barras: "7898040370015", unidade_venda: "frasco", preco_custo: 5.0, preco_venda: 9.5, estoque_minimo: 8, ncm: "30049099", cfop: "5405", giro: 6, saldo: 26 },
-  { chave: "dorflex", nome: "Relaxante Muscular 300mg 30 comprimidos", categoria: MEDICAMENTO, fornecedor: "panvel", principio_ativo: "Dipirona e orfenadrina", fabricante: "Sanofi", tipo_controle: "livre", codigo_barras: "7891058003115", unidade_venda: "caixa", preco_custo: 12.4, preco_venda: 24.9, estoque_minimo: 12, ncm: "30049099", cfop: "5405", giro: 7, saldo: 19 },
-  { chave: "vitaminac", nome: "Vitamina C 1g 10 comprimidos efervescentes", categoria: MEDICAMENTO, fornecedor: "panvel", principio_ativo: "Acido ascorbico", fabricante: "Bayer", tipo_controle: "livre", codigo_barras: "7891058004112", unidade_venda: "tubo", preco_custo: 9.8, preco_venda: 21.9, estoque_minimo: 10, ncm: "30045090", cfop: "5405", giro: 6, saldo: 24 },
+  { chave: "dipirona", nome: "Dipirona Monoidratada 500mg 20 comprimidos", categoria: MEDICAMENTO, fornecedor: "panvel", principio_ativo: "Dipirona monoidratada", fabricante: "Neo Quimica", tipo_controle: "livre", codigo_barras: "7891058001234", unidade_venda: "caixa", preco_custo: 4.2, preco_venda: 9.9, estoque_minimo: 15, ncm: "30049099", cfop: "5405", dias_de_uso: null, giro: 10, saldo: 48 },
+  { chave: "paracetamol", nome: "Paracetamol 750mg 20 comprimidos", categoria: MEDICAMENTO, fornecedor: "panvel", principio_ativo: "Paracetamol", fabricante: "Medley", tipo_controle: "livre", codigo_barras: "7891058002941", unidade_venda: "caixa", preco_custo: 5.1, preco_venda: 11.5, estoque_minimo: 15, ncm: "30049069", cfop: "5405", dias_de_uso: null, giro: 9, saldo: 36 },
+  { chave: "ibuprofeno", nome: "Ibuprofeno 400mg 20 capsulas", categoria: MEDICAMENTO, fornecedor: "farmalog", principio_ativo: "Ibuprofeno", fabricante: "EMS", tipo_controle: "livre", codigo_barras: "7896004703121", unidade_venda: "caixa", preco_custo: 8.4, preco_venda: 17.9, estoque_minimo: 10, ncm: "30049099", cfop: "5405", dias_de_uso: null, giro: 7, saldo: 22 },
+  { chave: "omeprazol", nome: "Omeprazol 20mg 28 capsulas", categoria: MEDICAMENTO, fornecedor: "farmalog", principio_ativo: "Omeprazol", fabricante: "Medley", tipo_controle: "livre", codigo_barras: "7896422505598", unidade_venda: "caixa", preco_custo: 6.8, preco_venda: 14.9, estoque_minimo: 12, ncm: "30049069", cfop: "5405", dias_de_uso: 28, giro: 8, saldo: 30 },
+  { chave: "losartana", nome: "Losartana Potassica 50mg 30 comprimidos", categoria: MEDICAMENTO, fornecedor: "farmalog", principio_ativo: "Losartana potassica", fabricante: "EMS", tipo_controle: "livre", codigo_barras: "7896004712345", unidade_venda: "caixa", preco_custo: 7.5, preco_venda: 16.4, estoque_minimo: 20, ncm: "30049069", cfop: "5405", dias_de_uso: 30, giro: 9, saldo: 54 },
+  { chave: "metformina", nome: "Metformina 850mg 30 comprimidos", categoria: MEDICAMENTO, fornecedor: "farmalog", principio_ativo: "Cloridrato de metformina", fabricante: "Merck", tipo_controle: "livre", codigo_barras: "7896004718001", unidade_venda: "caixa", preco_custo: 8.9, preco_venda: 18.9, estoque_minimo: 18, ncm: "30049069", cfop: "5405", dias_de_uso: 30, giro: 8, saldo: 41 },
+  { chave: "sinvastatina", nome: "Sinvastatina 20mg 30 comprimidos", categoria: MEDICAMENTO, fornecedor: "farmalog", principio_ativo: "Sinvastatina", fabricante: "EMS", tipo_controle: "livre", codigo_barras: "7896004719114", unidade_venda: "caixa", preco_custo: 11.2, preco_venda: 23.5, estoque_minimo: 15, ncm: "30049069", cfop: "5405", dias_de_uso: 30, giro: 6, saldo: 27 },
+  { chave: "soro", nome: "Soro Fisiologico 0,9% 500ml", categoria: MEDICAMENTO, fornecedor: "medsupply", principio_ativo: "Cloreto de sodio", fabricante: "Fresenius Kabi", tipo_controle: "livre", codigo_barras: "7898040370015", unidade_venda: "frasco", preco_custo: 5.0, preco_venda: 9.5, estoque_minimo: 8, ncm: "30049099", cfop: "5405", dias_de_uso: null, giro: 6, saldo: 26 },
+  { chave: "dorflex", nome: "Relaxante Muscular 300mg 30 comprimidos", categoria: MEDICAMENTO, fornecedor: "panvel", principio_ativo: "Dipirona e orfenadrina", fabricante: "Sanofi", tipo_controle: "livre", codigo_barras: "7891058003115", unidade_venda: "caixa", preco_custo: 12.4, preco_venda: 24.9, estoque_minimo: 12, ncm: "30049099", cfop: "5405", dias_de_uso: null, giro: 7, saldo: 19 },
+  { chave: "vitaminac", nome: "Vitamina C 1g 10 comprimidos efervescentes", categoria: MEDICAMENTO, fornecedor: "panvel", principio_ativo: "Acido ascorbico", fabricante: "Bayer", tipo_controle: "livre", codigo_barras: "7891058004112", unidade_venda: "tubo", preco_custo: 9.8, preco_venda: 21.9, estoque_minimo: 10, ncm: "30045090", cfop: "5405", dias_de_uso: 10, giro: 6, saldo: 24 },
 
-  { chave: "amoxicilina", nome: "Amoxicilina 500mg 21 capsulas", categoria: MEDICAMENTO, fornecedor: "panvel", principio_ativo: "Amoxicilina tri-hidratada", fabricante: "Prati-Donaduzzi", tipo_controle: "tarja_vermelha", classe_terapeutica: "Antibiotico", codigo_barras: "7896658201458", unidade_venda: "caixa", preco_custo: 18.0, preco_venda: 34.9, estoque_minimo: 8, ncm: "30041019", cfop: "5405", giro: 4, saldo: 17 },
-  { chave: "azitromicina", nome: "Azitromicina 500mg 5 comprimidos", categoria: MEDICAMENTO, fornecedor: "panvel", principio_ativo: "Azitromicina di-hidratada", fabricante: "EMS", tipo_controle: "tarja_vermelha", classe_terapeutica: "Antibiotico", codigo_barras: "7896004709871", unidade_venda: "caixa", preco_custo: 22.0, preco_venda: 42.5, estoque_minimo: 6, ncm: "30042029", cfop: "5405", giro: 3, saldo: 4 },
-  { chave: "sertralina", nome: "Cloridrato de Sertralina 50mg 30 comprimidos", categoria: MEDICAMENTO, fornecedor: "farmalog", principio_ativo: "Cloridrato de sertralina", fabricante: "Eurofarma", tipo_controle: "tarja_vermelha", classe_terapeutica: "Antidepressivo (lista C1)", codigo_barras: "7896016807765", unidade_venda: "caixa", preco_custo: 19.9, preco_venda: 38.4, estoque_minimo: 6, ncm: "30049069", cfop: "5405", giro: 4, saldo: 15 },
-  { chave: "clonazepam", nome: "Clonazepam 2mg 30 comprimidos", categoria: MEDICAMENTO, fornecedor: "farmalog", principio_ativo: "Clonazepam", fabricante: "Prati-Donaduzzi", tipo_controle: "tarja_preta", classe_terapeutica: "Psicotropico (lista B1)", codigo_barras: "7896658203001", unidade_venda: "caixa", preco_custo: 12.0, preco_venda: 26.9, estoque_minimo: 5, ncm: "30049099", cfop: "5405", giro: 4, saldo: 13 },
-  { chave: "alprazolam", nome: "Alprazolam 1mg 30 comprimidos", categoria: MEDICAMENTO, fornecedor: "farmalog", principio_ativo: "Alprazolam", fabricante: "Eurofarma", tipo_controle: "tarja_preta", classe_terapeutica: "Ansiolitico (lista B1)", codigo_barras: "7896016801122", unidade_venda: "caixa", preco_custo: 15.5, preco_venda: 32.0, estoque_minimo: 5, ncm: "30049099", cfop: "5405", giro: 3, saldo: 11 },
+  { chave: "amoxicilina", nome: "Amoxicilina 500mg 21 capsulas", categoria: MEDICAMENTO, fornecedor: "panvel", principio_ativo: "Amoxicilina tri-hidratada", fabricante: "Prati-Donaduzzi", tipo_controle: "tarja_vermelha", classe_terapeutica: "Antibiotico", codigo_barras: "7896658201458", unidade_venda: "caixa", preco_custo: 18.0, preco_venda: 34.9, estoque_minimo: 8, ncm: "30041019", cfop: "5405", dias_de_uso: 7, giro: 4, saldo: 17 },
+  { chave: "azitromicina", nome: "Azitromicina 500mg 5 comprimidos", categoria: MEDICAMENTO, fornecedor: "panvel", principio_ativo: "Azitromicina di-hidratada", fabricante: "EMS", tipo_controle: "tarja_vermelha", classe_terapeutica: "Antibiotico", codigo_barras: "7896004709871", unidade_venda: "caixa", preco_custo: 22.0, preco_venda: 42.5, estoque_minimo: 6, ncm: "30042029", cfop: "5405", dias_de_uso: 5, giro: 3, saldo: 4 },
+  { chave: "sertralina", nome: "Cloridrato de Sertralina 50mg 30 comprimidos", categoria: MEDICAMENTO, fornecedor: "farmalog", principio_ativo: "Cloridrato de sertralina", fabricante: "Eurofarma", tipo_controle: "tarja_vermelha", classe_terapeutica: "Antidepressivo (lista C1)", codigo_barras: "7896016807765", unidade_venda: "caixa", preco_custo: 19.9, preco_venda: 38.4, estoque_minimo: 6, ncm: "30049069", cfop: "5405", dias_de_uso: 30, giro: 4, saldo: 15 },
+  { chave: "clonazepam", nome: "Clonazepam 2mg 30 comprimidos", categoria: MEDICAMENTO, fornecedor: "farmalog", principio_ativo: "Clonazepam", fabricante: "Prati-Donaduzzi", tipo_controle: "tarja_preta", classe_terapeutica: "Psicotropico (lista B1)", codigo_barras: "7896658203001", unidade_venda: "caixa", preco_custo: 12.0, preco_venda: 26.9, estoque_minimo: 5, ncm: "30049099", cfop: "5405", dias_de_uso: 30, giro: 4, saldo: 13 },
+  { chave: "alprazolam", nome: "Alprazolam 1mg 30 comprimidos", categoria: MEDICAMENTO, fornecedor: "farmalog", principio_ativo: "Alprazolam", fabricante: "Eurofarma", tipo_controle: "tarja_preta", classe_terapeutica: "Ansiolitico (lista B1)", codigo_barras: "7896016801122", unidade_venda: "caixa", preco_custo: 15.5, preco_venda: 32.0, estoque_minimo: 5, ncm: "30049099", cfop: "5405", dias_de_uso: 30, giro: 3, saldo: 11 },
 
-  { chave: "protetor", nome: "Protetor Solar Fator 50 200ml", categoria: PERFUMARIA, fornecedor: "dermacenter", fabricante: "Dermacenter", tipo_controle: "livre", codigo_barras: "7899876500441", unidade_venda: "frasco", preco_custo: 32.0, preco_venda: 64.9, estoque_minimo: 6, ncm: "33049910", cfop: "5102", giro: 5, saldo: 14 },
+  { chave: "protetor", nome: "Protetor Solar Fator 50 200ml", categoria: PERFUMARIA, fornecedor: "dermacenter", fabricante: "Dermacenter", tipo_controle: "livre", codigo_barras: "7899876500441", unidade_venda: "frasco", preco_custo: 32.0, preco_venda: 64.9, estoque_minimo: 6, ncm: "33049910", cfop: "5102", dias_de_uso: 60, giro: 5, saldo: 14 },
   { chave: "creme_dental", nome: "Creme Dental Protecao Total 90g", categoria: PERFUMARIA, fornecedor: "dermacenter", fabricante: "Colgate", tipo_controle: "livre", codigo_barras: "7891024132074", unidade_venda: "unidade", preco_custo: 4.9, preco_venda: 10.9, estoque_minimo: 12, ncm: "33061000", cfop: "5102", giro: 9, saldo: 44 },
-  { chave: "shampoo", nome: "Shampoo Anticaspa 200ml", categoria: PERFUMARIA, fornecedor: "dermacenter", fabricante: "Dermacenter", tipo_controle: "livre", codigo_barras: "7899876502018", unidade_venda: "frasco", preco_custo: 12.4, preco_venda: 27.5, estoque_minimo: 8, ncm: "33051000", cfop: "5102", giro: 5, saldo: 7 },
+  { chave: "shampoo", nome: "Shampoo Anticaspa 200ml", categoria: PERFUMARIA, fornecedor: "dermacenter", fabricante: "Dermacenter", tipo_controle: "livre", codigo_barras: "7899876502018", unidade_venda: "frasco", preco_custo: 12.4, preco_venda: 27.5, estoque_minimo: 8, ncm: "33051000", cfop: "5102", dias_de_uso: 45, giro: 5, saldo: 7 },
   { chave: "alcool_gel", nome: "Alcool em Gel 70% 500ml", categoria: PERFUMARIA, fornecedor: "dermacenter", fabricante: "Asseptgel", tipo_controle: "livre", codigo_barras: "7899876503510", unidade_venda: "frasco", preco_custo: 7.4, preco_venda: 15.9, estoque_minimo: 10, ncm: "38089490", cfop: "5102", giro: 7, saldo: 31 },
   { chave: "sabonete", nome: "Sabonete Antibacteriano 90g", categoria: PERFUMARIA, fornecedor: "dermacenter", fabricante: "Protex", tipo_controle: "livre", codigo_barras: "7891024140017", unidade_venda: "unidade", preco_custo: 3.2, preco_venda: 7.5, estoque_minimo: 15, ncm: "34011190", cfop: "5102", giro: 8, saldo: 52 },
 
-  { chave: "termometro", nome: "Termometro Digital Axilar", categoria: CORRELATOS, fornecedor: "medsupply", fabricante: "G-Tech", tipo_controle: "livre", codigo_barras: "7898675400128", unidade_venda: "unidade", preco_custo: 18.9, preco_venda: 39.9, estoque_minimo: 4, ncm: "90251110", cfop: "5102", giro: 3, saldo: 3 },
+  { chave: "termometro", nome: "Termometro Digital Axilar", categoria: CORRELATOS, fornecedor: "medsupply", fabricante: "G-Tech", tipo_controle: "livre", codigo_barras: "7898675400128", unidade_venda: "unidade", preco_custo: 18.9, preco_venda: 39.9, estoque_minimo: 4, ncm: "90251110", cfop: "5102", dias_de_uso: null, giro: 3, saldo: 3 },
   { chave: "pressao", nome: "Aparelho de Pressao Digital de Braco", categoria: CORRELATOS, fornecedor: "medsupply", fabricante: "Omron", tipo_controle: "livre", codigo_barras: "7898675401231", unidade_venda: "unidade", preco_custo: 149.0, preco_venda: 289.9, estoque_minimo: 2, ncm: "90181910", cfop: "5102", giro: 1, saldo: 5 },
   { chave: "mascara", nome: "Mascara Cirurgica Tripla caixa 50 unidades", categoria: CORRELATOS, fornecedor: "medsupply", fabricante: "Descarpack", tipo_controle: "livre", codigo_barras: "7898675403457", unidade_venda: "caixa", preco_custo: 14.0, preco_venda: 29.9, estoque_minimo: 5, ncm: "63079000", cfop: "5102", giro: 4, saldo: 23 },
-  { chave: "fralda", nome: "Fralda Geriatrica Tamanho G pacote 8 unidades", categoria: CORRELATOS, fornecedor: "medsupply", fabricante: "Bigfral", tipo_controle: "livre", codigo_barras: "7898675405116", unidade_venda: "pacote", preco_custo: 21.5, preco_venda: 42.9, estoque_minimo: 6, ncm: "96190000", cfop: "5102", giro: 4, saldo: 5 },
+  { chave: "fralda", nome: "Fralda Geriatrica Tamanho G pacote 8 unidades", categoria: CORRELATOS, fornecedor: "medsupply", fabricante: "Bigfral", tipo_controle: "livre", codigo_barras: "7898675405116", unidade_venda: "pacote", preco_custo: 21.5, preco_venda: 42.9, estoque_minimo: 6, ncm: "96190000", cfop: "5102", dias_de_uso: 20, giro: 4, saldo: 5 },
   { chave: "glicosimetro", nome: "Tiras para Glicosimetro caixa 50 unidades", categoria: CORRELATOS, fornecedor: "medsupply", fabricante: "Accu-Chek", tipo_controle: "livre", codigo_barras: "7898675407011", unidade_venda: "caixa", preco_custo: 62.0, preco_venda: 109.9, estoque_minimo: 4, ncm: "38221000", cfop: "5102", giro: 3, saldo: 9 },
 ];
 
@@ -289,15 +297,20 @@ const PEDIDOS_COMPRA = [
   { fornecedor: "medsupply", status: "cancelado", dias: 30, hora: 15, minuto: 5, observacao: "Fornecedor sem previsao de entrega", motivo_cancelamento: "Fornecedor sem estoque do item principal", itens: [["glicosimetro", 10, 60.0]] },
 ];
 
+/**
+ * Contatos de exemplo. `retorno` é quando ficou de voltar a falar (negativo já
+ * venceu, positivo ainda vai chegar) e `desconto` é o que foi prometido — é o
+ * que o balcão vê quando o cliente aparece.
+ */
 const CONTATOS_CRM = [
-  { cliente: "Helena Souza Prado", dias: 6, canal: "telefone", motivo: "Recompra de uso continuo atrasada", oferta: "Reservar Sinvastatina com 5% de desconto", resultado: "interessado", observacao: "Pediu para separar e retirar no sabado" },
-  { cliente: "Paulo Henrique Dias", dias: 4, canal: "whatsapp", motivo: "Recompra de uso continuo atrasada", oferta: "Reservar Alprazolam mediante receita", resultado: "aguardando", observacao: "Vai passar no medico esta semana" },
-  { cliente: "Isabela Martins Rosa", dias: 12, canal: "whatsapp", motivo: "Sem comprar ha mais de 60 dias", oferta: "10% de desconto na proxima compra", resultado: "nao_atendeu" },
-  { cliente: "Carlos Eduardo Pinho", dias: 10, canal: "telefone", motivo: "Sem comprar ha mais de 60 dias", oferta: "10% de desconto na proxima compra", resultado: "sem_interesse", observacao: "Mudou de bairro" },
+  { cliente: "Helena Souza Prado", dias: 6, canal: "telefone", motivo: "Recompra de uso continuo atrasada", oferta: "Reservar Sinvastatina com 5% de desconto", desconto: 5, retorno: -1, resultado: "interessado", observacao: "Pediu para separar e retirar no sabado" },
+  { cliente: "Paulo Henrique Dias", dias: 4, canal: "whatsapp", motivo: "Recompra de uso continuo atrasada", oferta: "Reservar Alprazolam mediante receita", retorno: 0, resultado: "aguardando", observacao: "Vai passar no medico esta semana" },
+  { cliente: "Isabela Martins Rosa", dias: 12, canal: "whatsapp", motivo: "Sem comprar ha mais de 60 dias", oferta: "10% de desconto na proxima compra", desconto: 10, retorno: -3, resultado: "nao_atendeu" },
+  { cliente: "Carlos Eduardo Pinho", dias: 10, canal: "telefone", motivo: "Sem comprar ha mais de 60 dias", oferta: "10% de desconto na proxima compra", desconto: 10, resultado: "sem_interesse", observacao: "Mudou de bairro" },
   { cliente: "Dona Cecilia Barbosa", dias: 9, canal: "telefone", motivo: "Reposicao de fralda geriatrica", oferta: "Entrega em casa sem custo", resultado: "convertido", observacao: "Comprou dois pacotes no dia seguinte" },
-  { cliente: "Marta Ribeiro Alves", dias: 20, canal: "presencial", motivo: "Cliente frequente", oferta: "Reserva mensal automatica de Losartana", resultado: "interessado" },
-  { cliente: "Vera Lucia Antunes", dias: 15, canal: "email", motivo: "Sem comprar ha mais de 60 dias", oferta: "Cupom de 10% valido por 15 dias", resultado: "aguardando" },
-  { cliente: "Antonio Carlos Reis", dias: 3, canal: "whatsapp", motivo: "Reposicao de tiras de glicosimetro", oferta: "Caixa reservada com desconto de convenio", resultado: "convertido" },
+  { cliente: "Marta Ribeiro Alves", dias: 20, canal: "presencial", motivo: "Cliente frequente", oferta: "Reserva mensal automatica de Losartana", desconto: 5, retorno: 2, resultado: "interessado" },
+  { cliente: "Vera Lucia Antunes", dias: 15, canal: "email", motivo: "Sem comprar ha mais de 60 dias", oferta: "Desconto de 10% valido por 15 dias", desconto: 10, retorno: 5, resultado: "aguardando" },
+  { cliente: "Antonio Carlos Reis", dias: 3, canal: "whatsapp", motivo: "Reposicao de tiras de glicosimetro", oferta: "Caixa reservada com desconto de convenio", desconto: 8, resultado: "convertido" },
 ];
 
 /** Divide o saldo do produto entre os lotes, deixando mais no de validade longa. */
@@ -381,7 +394,7 @@ async function main() {
     await inserirEmLote(
       client,
       "estoque.produtos",
-      ["id", "nome", "principio_ativo", "fabricante", "classe_terapeutica", "codigo_barras", "tipo_controle", "unidade_venda", "ncm", "cfop", "preco_custo", "preco_venda", "estoque_minimo", "categoria_id", "fornecedor_id", "criado_em"],
+      ["id", "nome", "principio_ativo", "fabricante", "classe_terapeutica", "codigo_barras", "tipo_controle", "unidade_venda", "ncm", "cfop", "preco_custo", "preco_venda", "estoque_minimo", "dias_de_uso", "categoria_id", "fornecedor_id", "criado_em"],
       PRODUTOS.map((produto) => {
         const id = randomUUID();
         produtoPorChave[produto.chave] = { ...produto, id };
@@ -399,6 +412,7 @@ async function main() {
           produto.preco_custo,
           produto.preco_venda,
           produto.estoque_minimo,
+          produto.dias_de_uso ?? null,
           categoriaId[produto.categoria] ?? null,
           fornecedorId[produto.fornecedor] ?? null,
           instante(DIAS_DE_HISTORICO + 30, 9, 0),
@@ -683,23 +697,32 @@ async function main() {
     await inserirEmLote(
       client,
       "vendas.vendas",
-      ["id", "usuario_id", "cliente_id", "status", "valor_total", "desconto", "motivo_cancelamento", "criado_em"],
-      vendas.map((venda) => [
-        venda.id,
-        usuarioId[venda.operador],
-        venda.cliente?.id ?? null,
-        venda.status,
-        venda.status === "cancelada" ? 0 : venda.total,
-        venda.desconto,
-        venda.status === "cancelada" ? "Cliente desistiu da compra no caixa" : null,
-        instante(venda.diasAtras, venda.hora, venda.minuto),
-      ])
+      ["id", "usuario_id", "cliente_id", "status", "valor_total", "desconto", "motivo_cancelamento", "categoria_cancelamento", "criado_em", "finalizado_em"],
+      vendas.map((venda) => {
+        const abertura = instante(venda.diasAtras, venda.hora, venda.minuto);
+        return [
+          venda.id,
+          usuarioId[venda.operador],
+          venda.cliente?.id ?? null,
+          venda.status,
+          venda.status === "cancelada" ? 0 : venda.total,
+          venda.desconto,
+          venda.status === "cancelada" ? "Cliente desistiu da compra no caixa" : null,
+          venda.status === "cancelada" ? "desistencia" : null,
+          abertura,
+          // O carrinho fecha alguns minutos depois de abrir; só a venda
+          // finalizada tem data de finalização.
+          venda.status === "finalizada"
+            ? instante(venda.diasAtras, venda.hora, Math.min(venda.minuto + 4, 59))
+            : null,
+        ];
+      })
     );
 
     await inserirEmLote(
       client,
       "vendas.itens_venda",
-      ["venda_id", "produto_id", "lote_id", "quantidade", "preco_unitario", "produto_nome", "tipo_controle"],
+      ["venda_id", "produto_id", "lote_id", "quantidade", "preco_unitario", "produto_nome", "tipo_controle", "dias_de_uso"],
       vendas.flatMap((venda) =>
         venda.itens.map((item) => [
           venda.id,
@@ -709,6 +732,8 @@ async function main() {
           item.preco,
           item.produto.nome,
           item.produto.tipo_controle,
+          // Mesmo snapshot que a venda real grava: a duração valendo no dia.
+          item.produto.dias_de_uso ?? null,
         ])
       )
     );
@@ -1080,7 +1105,7 @@ async function main() {
     await inserirEmLote(
       client,
       "vendas.contatos_cliente",
-      ["cliente_id", "usuario_id", "canal", "motivo", "oferta", "observacao", "resultado", "criado_em"],
+      ["cliente_id", "usuario_id", "canal", "motivo", "oferta", "observacao", "resultado", "proximo_contato_em", "desconto_pct", "criado_em"],
       CONTATOS_CRM.filter((contato) => clientePorNome[contato.cliente]).map((contato) => [
         clientePorNome[contato.cliente].id,
         usuarioId[sorteio.escolher(operadores)],
@@ -1089,6 +1114,8 @@ async function main() {
         contato.oferta,
         contato.observacao ?? null,
         contato.resultado,
+        contato.retorno === undefined ? null : diaCorrido(contato.retorno),
+        contato.desconto ?? null,
         instante(contato.dias, sorteio.inteiro(9, 17), sorteio.inteiro(0, 59)),
       ])
     );
