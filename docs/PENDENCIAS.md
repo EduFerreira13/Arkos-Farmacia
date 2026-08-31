@@ -13,13 +13,14 @@
 - [ ] **Passos do tour são fixos no código** — `apps/web/src/componentes/Tour.jsx`. Trocar a ordem ou o texto exige alterar o arquivo.
 - [ ] **Não há envio de email para a recuperação de senha** — o fluxo de "esqueci minha senha" está inteiro (token com validade de 30 minutos, uso único, resposta igual para email existente ou não). Falta só o provedor de envio: hoje, em `NODE_ENV=development`, o serviço devolve o código na própria resposta para dar para testar, e **em produção isso não acontece** — sem provedor configurado, o código é gerado e ninguém recebe. Definir o provedor (SMTP da farmácia, SendGrid, Resend) e o remetente antes de subir.
 - [ ] **Estorno de venda já finalizada** — o cancelamento só funciona com a venda em `aberta`. Cancelar venda finalizada exigiria devolver o estoque dos lotes exatos e lançar a saída no caixa, com regra de quem autoriza; ficou fora do MVP e hoje a API responde 422 explicando.
-- [ ] **Nenhuma verificação visual automatizada do frontend** — o build passa e as telas foram construídas seguindo `docs/REGRAS-VISUAIS.md`, mas não há navegador headless nesta máquina para conferir renderização, contraste no modo escuro e densidade de tabela. Vale uma passada manual em 1280px, claro e escuro.
+- [ ] **Nenhuma verificação visual automatizada do frontend** — o build passa e as telas foram construídas seguindo `docs/REGRAS-VISUAIS.md`, mas nenhuma suíte confere renderização, contraste no modo escuro e densidade de tabela. O Chrome headless da máquina serve para isso (`chrome --headless=new --screenshot`, foi como a marca nova foi conferida nos dois modos em 31/08/2026); falta transformar em suíte. Até lá, vale uma passada manual em 1280px, claro e escuro.
 - [ ] Credenciais reais de um provedor de NF-e (ex: Focus NFe, eNotas) para sair do modo mockado — não necessário para o MVP.
-- [ ] Definição de identidade visual final do logo em formatos vetoriais (SVG) para uso em favicon, PDF de cupom, etc.
 - [ ] Domínio/hospedagem definitivos para deploy (fora do escopo do MVP local).
 
 ## Resolvido
 
 <!-- Mover itens para cá conforme forem decididos, com a data e a decisão tomada -->
+
+- [x] **Identidade visual final do logo em vetor** — resolvido em 31/08/2026. Os arquivos do design entraram em `marca/` (SVG, PNG e os originais `.cdr`/PDF em RGB e CMYK). O `Logo.jsx` deixou de ser desenho provisório e passou a trazer os traçados oficiais inline — símbolo com o degradê do vetor, wordmark em `currentColor` — e o favicon virou a silhueta real sobre o gradiente da marca. Conferido no Chrome headless nos dois modos e na tela de login. Falta ainda o uso em cupom impresso, que não existe no MVP.
 
 - [x] **Régua de recompra é a mesma para todo produto** — resolvido em 27/08/2026. O cadastro do produto passou a ter `dias_de_uso` (quanto UMA unidade dura), copiado para o item no momento da venda. O CRM escolhe a fonte: com três compras ou mais vale o ritmo observado do cliente, abaixo disso vale a duração do produto — que dá sinal já na primeira compra, onde o histórico não dizia nada. `origem_regua` informa qual foi usada. Fica em branco onde não se aplica (aparelho, higiene), e aí o comportamento é o de antes.

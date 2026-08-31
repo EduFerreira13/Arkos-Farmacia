@@ -8,8 +8,11 @@
 ## 1. Identidade
 
 - **Nome:** Arkos
-- **Logo:** montanha estilizada em degradê azul → ciano, com wordmark em azul escuro sólido, sem serifa.
+- **Logo:** pico estilizado em degradê azul → ciano, com wordmark em azul escuro sólido, sem serifa.
 - **Conceito:** solidez (montanha), tecnologia (gradiente), clareza (clean/corporativo).
+- **Arquivos:** os vetores oficiais estão em [`marca/`](../marca/) — `elemento-arkos.svg` é o símbolo, `tipografia-arkos.svg` é o wordmark, `logo-arkos.svg` é a marca completa.
+- **Na interface:** usar sempre o componente `apps/web/src/componentes/Logo.jsx`, que traz esses traçados inline. Nunca redesenhar a marca na mão nem apontar para um `.png`.
+- **Sobre fundo escuro ou colorido:** o degradê perde contraste, então o símbolo vira silhueta sólida — branca no modo escuro (automático, via CSS) e em `currentColor` na variante `monocromatico`, que é a usada no painel da tela de login.
 
 ---
 
@@ -25,6 +28,7 @@ Extraída do logo + expandida para uso em UI (light e dark mode).
 | Azul Primário | `#1E4E9C` | Botões primários, links, ícones ativos |
 | Azul Médio | `#2C6FBF` | Hover states, gráficos |
 | Ciano/Teal (Accent) | `#20B8C4` | Destaques, badges, indicadores positivos, gradientes |
+| Azul da Marca | `#26398C` | Wordmark do logo (token `azul-marca`) — é a cor exata do vetor, um pouco mais clara que o Azul Marinho; só a marca usa |
 | Gradiente Marca | `linear-gradient(135deg, #152A54 0%, #1E4E9C 50%, #20B8C4 100%)` | Headers de destaque, cards de boas-vindas, tela pós-login |
 
 ### Cores neutras (light mode)
