@@ -14,6 +14,9 @@ export default {
         primario: "#1E4E9C",
         medio: "#2C6FBF",
         ciano: "#20B8C4",
+        // Azul da tipografia como sai do vetor oficial (marca/svg): um
+        // pouco mais claro que o marinho, e só a marca usa.
+        "azul-marca": "#26398C",
 
         // Superfícies e texto — trocam conforme o modo
         fundo: "var(--cor-fundo)",
