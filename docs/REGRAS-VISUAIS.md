@@ -11,7 +11,7 @@
 - **Logo:** pico estilizado em degradê azul → ciano, com wordmark em azul escuro sólido, sem serifa.
 - **Conceito:** solidez (montanha), tecnologia (gradiente), clareza (clean/corporativo).
 - **Arquivos:** os vetores oficiais estão em [`marca/`](../marca/) — `elemento-arkos.svg` é o símbolo, `tipografia-arkos.svg` é o wordmark, `logo-arkos.svg` é a marca completa.
-- **Na interface:** usar sempre o componente `apps/web/src/componentes/Logo.jsx`, que traz esses traçados inline. Nunca redesenhar a marca na mão nem apontar para um `.png`.
+- **Na interface:** usar sempre o componente `apps/web/src/componentes/Logo.jsx`, que traz esses traçados inline. Nunca redesenhar a marca na mão nem apontar para um `.png`. `Logo` é o lockup horizontal de barra e cabeçalho; `LogoCompleta` é o arco com o wordmark dentro, para telas onde a marca é o assunto — hoje, o login.
 - **Sobre fundo escuro ou colorido:** o degradê perde contraste, então o símbolo vira silhueta sólida — branca no modo escuro (automático, via CSS) e em `currentColor` na variante `monocromatico`, que é a usada no painel da tela de login.
 
 ---

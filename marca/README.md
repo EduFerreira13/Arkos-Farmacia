@@ -15,13 +15,25 @@ RGB para tela, CMYK para impressão.
 
 ## Como isso vira interface
 
-O componente [`apps/web/src/componentes/Logo.jsx`](../apps/web/src/componentes/Logo.jsx)
-carrega os traçados de `elemento-arkos.svg` e `tipografia-arkos.svg` inline, para
-a marca herdar tamanho e cor da tela em vez de virar um `<img>` de tamanho fixo.
+Os três vetores viram componente em
+[`apps/web/src/componentes/Logo.jsx`](../apps/web/src/componentes/Logo.jsx), com
+os traçados inline — assim a marca herda tamanho e cor da tela em vez de virar um
+`<img>` de tamanho fixo:
 
-Os `viewBox` do componente (`75 75 851 600` no símbolo, `75 75 1000 300` no
+| Vetor | Componente | Onde aparece |
+|---|---|---|
+| `elemento-arkos.svg` | `Simbolo` | Sozinho no menu recolhido; dentro do `Logo` |
+| `tipografia-arkos.svg` | `Tipografia` | Dentro do `Logo` |
+| ambos, lado a lado | `Logo` | Cabeçalho do menu |
+| `logo-arkos.svg` | `LogoCompleta` | Tela de login |
+
+`Logo` é o lockup horizontal (símbolo à esquerda, wordmark à direita), para barra
+e cabeçalho. `LogoCompleta` é a composição do próprio manual — o arco com o
+wordmark dentro —, para onde a marca é o assunto da tela e tem espaço.
+
+Os `viewBox` dos componentes (`75 75 851 600` no símbolo, `75 75 1000 300` no
 wordmark) são a caixa de tinta dos vetores, sem a área de respiro que o Corel
-exporta em volta.
+exporta em volta. A marca completa já vem enquadrada e usa `0 0 1000 487.01`.
 
 Se a marca mudar, reexportar o SVG para cá e refazer os traçados do componente a
 partir do arquivo novo — não editar os `d` na mão.
