@@ -255,17 +255,17 @@ export function Login() {
 
   return (
     <div className="flex h-full">
-      {/* Gradiente da marca como destaque da tela de login (§6) */}
-      <div className="hidden w-[42%] flex-col justify-between bg-marca p-10 text-white lg:flex">
-        <LogoCompleta altura={72} variante="monocromatico" className="text-white" />
-        <div>
-          <p className="text-h1 leading-tight">Gestão da farmácia em um só lugar</p>
-          <p className="mt-3 max-w-md text-corpo-espacoso text-white/85">
-            Vendas, estoque com controle de lote e validade, financeiro e controlados — com as
-            travas de segurança que a operação exige.
-          </p>
-        </div>
-        <p className="text-rotulo text-white/70">Arkos MVP</p>
+      {/* Gradiente da marca como destaque da tela de login (§6). A marca fica no
+          centro do painel, que é onde o olho cai primeiro, com o texto logo
+          abaixo; a assinatura do rodapé sai do fluxo para não puxar o bloco. */}
+      <div className="relative hidden w-[42%] flex-col items-center justify-center bg-marca p-10 text-center text-white lg:flex">
+        <LogoCompleta altura={140} variante="monocromatico" className="text-white" />
+        <p className="mt-10 text-h1 leading-tight">Gestão da farmácia em um só lugar</p>
+        <p className="mt-3 max-w-md text-corpo-espacoso text-white/85">
+          Vendas, estoque com controle de lote e validade, financeiro e controlados — com as
+          travas de segurança que a operação exige.
+        </p>
+        <p className="absolute inset-x-0 bottom-10 text-rotulo text-white/70">Arkos MVP</p>
       </div>
 
       <div className="flex flex-1 items-center justify-center bg-fundo px-8">

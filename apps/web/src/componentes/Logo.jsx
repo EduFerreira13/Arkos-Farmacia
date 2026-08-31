@@ -21,8 +21,10 @@ import { useId } from "react";
 const CAIXA_SIMBOLO = "75 75 851 600";
 const PROPORCAO_SIMBOLO = 851 / 600;
 
-const CAIXA_TIPOGRAFIA = "75 75 1000 300";
-const PROPORCAO_TIPOGRAFIA = 1000 / 300;
+// A altura é 273.51, não 300: o wordmark não tem descida, e a sobra abaixo da
+// linha de base empurrava as letras para cima do símbolo no lockup.
+const CAIXA_TIPOGRAFIA = "75.22 75.22 999.56 273.51";
+const PROPORCAO_TIPOGRAFIA = 999.56 / 273.51;
 
 // A marca completa já vem enquadrada do Corel, sem respiro sobrando.
 const CAIXA_COMPLETA = "0 0 1000 487.01";
