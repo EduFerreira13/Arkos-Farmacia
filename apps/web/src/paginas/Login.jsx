@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { ArrowLeft, KeyRound, LogIn } from "lucide-react";
-import { Logo } from "../componentes/Logo.jsx";
+import { LogoCompleta } from "../componentes/Logo.jsx";
 import { Botao } from "../componentes/Botao.jsx";
 import { CampoTexto } from "../componentes/Campos.jsx";
 import { Aviso } from "../componentes/Superficies.jsx";
@@ -257,7 +257,7 @@ export function Login() {
     <div className="flex h-full">
       {/* Gradiente da marca como destaque da tela de login (§6) */}
       <div className="hidden w-[42%] flex-col justify-between bg-marca p-10 text-white lg:flex">
-        <Logo tamanho={36} variante="monocromatico" className="text-white" />
+        <LogoCompleta altura={72} variante="monocromatico" className="text-white" />
         <div>
           <p className="text-h1 leading-tight">Gestão da farmácia em um só lugar</p>
           <p className="mt-3 max-w-md text-corpo-espacoso text-white/85">
@@ -271,7 +271,7 @@ export function Login() {
       <div className="flex flex-1 items-center justify-center bg-fundo px-8">
         <div className="w-full max-w-sm">
           <div className="mb-8 lg:hidden">
-            <Logo tamanho={32} />
+            <LogoCompleta altura={48} />
           </div>
 
           {recuperando ? (
