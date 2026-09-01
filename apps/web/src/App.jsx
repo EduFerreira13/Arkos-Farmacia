@@ -7,7 +7,7 @@ import { PDV } from "./paginas/PDV.jsx";
 import { HistoricoVendas } from "./paginas/HistoricoVendas.jsx";
 import { Relacionamento } from "./paginas/Relacionamento.jsx";
 import { Produtos } from "./paginas/Produtos.jsx";
-import { Movimentacoes } from "./paginas/Movimentacoes.jsx";
+import { Perdas } from "./paginas/Perdas.jsx";
 import { Inventario } from "./paginas/Inventario.jsx";
 import { Alertas } from "./paginas/Alertas.jsx";
 import { Compras } from "./paginas/Compras.jsx";
@@ -50,7 +50,11 @@ export default function App() {
         <Route path="/relacionamento" element={comPermissao("vender", <Relacionamento />)} />
 
         <Route path="/produtos" element={comPermissao("consultar_estoque", <Produtos />)} />
-        <Route path="/movimentacoes" element={comPermissao("ajustar_estoque", <Movimentacoes />)} />
+        {/* "Entradas e saídas" virou "Perdas e avarias": a entrada agora chega
+            pelo recebimento do pedido de compra. O redirecionamento evita link
+            salvo quebrado. */}
+        <Route path="/movimentacoes" element={<Navigate to="/perdas" replace />} />
+        <Route path="/perdas" element={comPermissao("ajustar_estoque", <Perdas />)} />
         <Route path="/inventario" element={comPermissao("ajustar_estoque", <Inventario />)} />
         <Route path="/alertas" element={comPermissao("consultar_estoque", <Alertas />)} />
 

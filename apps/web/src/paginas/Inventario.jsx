@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ClipboardList } from "lucide-react";
-import { TIPO_MOVIMENTACAO } from "@arkos/shared-types";
+import { TIPO_CONTROLE_LABEL, TIPO_CONTROLE_LISTA, TIPO_MOVIMENTACAO } from "@arkos/shared-types";
 import { api } from "../lib/api.js";
 import { usarBusca } from "../lib/usarBusca.js";
 import { formatarData, formatarNumero } from "../lib/formato.js";
 import { Botao } from "../componentes/Botao.jsx";
+import { CampoBusca } from "../componentes/CampoBusca.jsx";
 import { CampoSelect, CampoTexto } from "../componentes/Campos.jsx";
+import { ExportarRelatorio } from "../componentes/ExportarRelatorio.jsx";
+import { BarraDePesquisa, LimparFiltros, LinhaDeFiltros } from "../componentes/Filtros.jsx";
 import {
   Aviso,
   Badge,
@@ -17,12 +20,19 @@ import {
   TituloPagina,
 } from "../componentes/Superficies.jsx";
 
+const FILTROS_VAZIOS = { busca: "", tipo_controle: "", categoria_id: "" };
+
 /**
  * Inventário: contagem física lote a lote. A divergência entre o que o sistema
  * diz e o que foi contado exige justificativa (§2) e entra como ajuste na
  * auditoria de estoque.
+ *
+ * A lista traz só produto com saldo — o que entrou por compra e ainda não saiu
+ * por venda nem por perda. Contar o que o sistema já sabe estar zerado não é
+ * inventário, é rolar a tela.
  */
 export function Inventario() {
+  const [filtros, definirFiltros] = useState(FILTROS_VAZIOS);
   const [produtoId, definirProdutoId] = useState("");
   const [contagens, definirContagens] = useState({});
   const [justificativa, definirJustificativa] = useState("");
@@ -30,13 +40,47 @@ export function Inventario() {
   const [erro, definirErro] = useState(null);
   const [enviando, definirEnviando] = useState(false);
 
-  const produtos = usarBusca(() => api.estoque.get("/produtos"), []);
+  const mudar = (nome, valor) => definirFiltros((atual) => ({ ...atual, [nome]: valor }));
+
+  const parametros = useMemo(() => {
+    // `com_saldo` acompanha os filtros até o relatório: a planilha do
+    // inventário é a folha de contagem, e não o catálogo inteiro.
+    const limpos = { com_saldo: "true" };
+    if (filtros.busca.trim()) limpos.busca = filtros.busca.trim();
+    if (filtros.tipo_controle) limpos.tipo_controle = filtros.tipo_controle;
+    if (filtros.categoria_id) limpos.categoria_id = filtros.categoria_id;
+    return limpos;
+  }, [filtros]);
+
+  const consulta = useMemo(() => `?${new URLSearchParams(parametros).toString()}`, [parametros]);
+
+  const categorias = usarBusca(() => api.estoque.get("/categorias"), []);
+  const produtos = usarBusca(() => api.estoque.get(`/produtos${consulta}`), [consulta]);
   const detalhe = usarBusca(
     () => (produtoId ? api.estoque.get(`/produtos/${produtoId}`) : Promise.resolve(null)),
     [produtoId]
   );
 
+  const lista = produtos.dados?.produtos ?? [];
   const lotes = detalhe.dados?.produto.lotes ?? [];
+
+  const resumoDosFiltros = useMemo(() => {
+    const itens = ["Só produtos com saldo em estoque"];
+    if (filtros.busca.trim()) itens.push(`Pesquisa: ${filtros.busca.trim()}`);
+    if (filtros.tipo_controle) {
+      itens.push(`Controle: ${TIPO_CONTROLE_LABEL[filtros.tipo_controle]}`);
+    }
+    if (filtros.categoria_id) {
+      const categoria = categorias.dados?.categorias.find(
+        (item) => item.id === filtros.categoria_id
+      );
+      if (categoria) itens.push(`Categoria: ${categoria.nome}`);
+    }
+    return itens;
+  }, [filtros, categorias.dados]);
+
+  const filtrosAtivos =
+    filtros.busca !== "" || filtros.tipo_controle !== "" || filtros.categoria_id !== "";
 
   const divergencias = lotes
     .map((lote) => {
@@ -89,35 +133,98 @@ export function Inventario() {
     <>
       <TituloPagina
         titulo="Inventário"
-        descricao="Contagem física por lote. Divergência só entra com justificativa."
+        acoes={
+          <ExportarRelatorio
+            servico="estoque"
+            caminho="/relatorios/estoque"
+            titulo="Folha de contagem"
+            descricao="Os produtos com saldo que estão na tela, com saldo do sistema e próxima validade."
+            rotulo="Relatório"
+            comPeriodo={false}
+            parametros={parametros}
+            resumoDosFiltros={resumoDosFiltros}
+          />
+        }
       />
+
+      <Card className="mb-6">
+        <LinhaDeFiltros
+          acoes={
+            <LimparFiltros
+              ativo={filtrosAtivos}
+              aoLimpar={() => {
+                definirFiltros(FILTROS_VAZIOS);
+                definirProdutoId("");
+              }}
+            />
+          }
+        >
+          <BarraDePesquisa
+            rotulo="Pesquisar produto"
+            placeholder="Código, nome, princípio ativo ou EAN"
+            valor={filtros.busca}
+            aoMudar={(valor) => mudar("busca", valor)}
+          />
+          <CampoSelect
+            rotulo="Tipo de controle"
+            className="w-56"
+            value={filtros.tipo_controle}
+            onChange={(evento) => mudar("tipo_controle", evento.target.value)}
+            opcoes={[
+              { valor: "", rotulo: "Todos" },
+              ...TIPO_CONTROLE_LISTA.map((tipo) => ({
+                valor: tipo,
+                rotulo: TIPO_CONTROLE_LABEL[tipo],
+              })),
+            ]}
+          />
+          <CampoSelect
+            rotulo="Categoria"
+            className="w-56"
+            value={filtros.categoria_id}
+            onChange={(evento) => mudar("categoria_id", evento.target.value)}
+            opcoes={[
+              { valor: "", rotulo: "Todas" },
+              ...(categorias.dados?.categorias ?? []).map((categoria) => ({
+                valor: categoria.id,
+                rotulo: categoria.nome,
+              })),
+            ]}
+          />
+        </LinhaDeFiltros>
+
+        <CardCorpo>
+          {produtos.carregando ? <Carregando texto="Carregando produtos" /> : null}
+          {produtos.erro ? <Aviso tom="erro">{produtos.erro.message}</Aviso> : null}
+          {produtos.dados ? (
+            <CampoBusca
+              rotulo={`Produto a contar (${lista.length} com saldo)`}
+              className="max-w-2xl"
+              valor={produtoId}
+              placeholder="Escolha o produto para contar lote a lote"
+              opcoes={lista.map((produto) => ({
+                valor: produto.id,
+                rotulo: produto.nome,
+                detalhe: `${produto.codigo ?? "sem código"} — saldo em sistema ${
+                  produto.quantidade_atual
+                }`,
+              }))}
+              aoEscolher={(valor) => {
+                definirProdutoId(valor);
+                definirContagens({});
+                definirMensagem(null);
+                definirErro(null);
+              }}
+              vazio="Nenhum produto com saldo para esses filtros."
+            />
+          ) : null}
+        </CardCorpo>
+      </Card>
 
       <div className="grid grid-cols-[380px_1fr] gap-6">
         <Card>
-          <CardCabecalho titulo="Escolha o produto" icone={ClipboardList} />
+          <CardCabecalho titulo="Fechar a contagem" icone={ClipboardList} />
           <CardCorpo className="space-y-4">
-            {produtos.carregando ? <Carregando /> : null}
-            {produtos.erro ? <Aviso tom="erro">{produtos.erro.message}</Aviso> : null}
-            {produtos.dados ? (
-              <CampoSelect
-                rotulo="Produto"
-                value={produtoId}
-                onChange={(evento) => {
-                  definirProdutoId(evento.target.value);
-                  definirContagens({});
-                  definirMensagem(null);
-                  definirErro(null);
-                }}
-                opcoes={[
-                  { valor: "", rotulo: "Selecione o produto" },
-                  ...produtos.dados.produtos.map((produto) => ({
-                    valor: produto.id,
-                    rotulo: `${produto.nome} (saldo ${produto.quantidade_atual})`,
-                  })),
-                ]}
-              />
-            ) : null}
-
             {produtoId ? (
               <>
                 <CampoTexto
@@ -153,7 +260,11 @@ export function Inventario() {
                   {enviando ? "Ajustando" : "Aplicar contagem"}
                 </Botao>
               </>
-            ) : null}
+            ) : (
+              <p className="text-corpo text-secundario">
+                Escolha um produto acima para começar a contagem.
+              </p>
+            )}
           </CardCorpo>
         </Card>
 
@@ -253,7 +364,7 @@ export function Inventario() {
               <EstadoVazio
                 icone={ClipboardList}
                 titulo="Produto sem lote cadastrado"
-                descricao="Dê entrada de um lote antes de inventariar."
+                descricao="Dê entrada de um lote pelo recebimento de compra antes de inventariar."
               />
             )
           ) : null}
