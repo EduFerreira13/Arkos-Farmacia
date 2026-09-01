@@ -19,6 +19,19 @@ export const env = {
   // Comunicação entre serviços é sempre HTTP (docs/ARQUITETURA.md).
   ESTOQUE_URL: `http://localhost:${process.env.ESTOQUE_SERVICE_PORT ?? 3002}`,
   FINANCEIRO_URL: `http://localhost:${process.env.FINANCEIRO_SERVICE_PORT ?? 3004}`,
+
+  /**
+   * Identificação da farmácia no cabeçalho da ordem de compra (src/pdf.js). Não
+   * é segredo — é o que já vai impresso no documento que chega ao fornecedor —,
+   * mas fica no .env porque muda de instalação para instalação. Sem
+   * configuração, o PDF sai com o nome genérico em vez de quebrar.
+   */
+  FARMACIA: {
+    nome: process.env.FARMACIA_NOME ?? "Farmácia Arkos",
+    cnpj: process.env.FARMACIA_CNPJ ?? "",
+    endereco: process.env.FARMACIA_ENDERECO ?? "",
+    telefone: process.env.FARMACIA_TELEFONE ?? "",
+  },
 };
 
 export function validarEnv() {

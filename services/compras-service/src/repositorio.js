@@ -2,34 +2,61 @@ import { consultar, emTransacao } from "./db.js";
 
 /** Acesso ao schema `compras`. */
 
-export async function listarPedidos({ status, de, ate } = {}) {
+/** Colunas do pedido usadas em toda listagem — o número vem primeiro. */
+const CAMPOS_PEDIDO = `p.id, p.numero, p.fornecedor_id, p.fornecedor_nome, p.status,
+       p.forma_pagamento, p.frete, p.desconto, p.observacao, p.motivo_cancelamento,
+       p.valor_total, p.usuario_id, p.criado_em, p.recebido_em, p.entregue_em`;
+
+/**
+ * Filtros da tela: situação, período de criação, forma de pagamento,
+ * fornecedor e busca livre — que pega o número do pedido, o fornecedor e o
+ * nome dos produtos pedidos.
+ *
+ * @param {{ status?: string, de?: string, ate?: string, forma_pagamento?: string,
+ *   fornecedor_id?: string, busca?: string }} filtros
+ */
+function condicoesDePedido(filtros = {}) {
   const condicoes = [];
   const valores = [];
 
-  if (status) {
-    valores.push(status);
+  if (filtros.status) {
+    valores.push(filtros.status);
     condicoes.push(`p.status = $${valores.length}`);
   }
-  if (de) {
-    valores.push(de);
+  if (filtros.de) {
+    valores.push(filtros.de);
     condicoes.push(`p.criado_em::date >= $${valores.length}::date`);
   }
-  if (ate) {
-    valores.push(ate);
+  if (filtros.ate) {
+    valores.push(filtros.ate);
     condicoes.push(`p.criado_em::date <= $${valores.length}::date`);
   }
+  if (filtros.forma_pagamento) {
+    valores.push(filtros.forma_pagamento);
+    condicoes.push(`p.forma_pagamento = $${valores.length}`);
+  }
+  if (filtros.fornecedor_id) {
+    valores.push(filtros.fornecedor_id);
+    condicoes.push(`p.fornecedor_id = $${valores.length}`);
+  }
+  if (filtros.busca) {
+    valores.push(`%${filtros.busca}%`);
+    condicoes.push(
+      `(p.numero ILIKE $${valores.length} OR p.fornecedor_nome ILIKE $${valores.length}
+        OR EXISTS (SELECT 1 FROM compras.itens_pedido i
+                    WHERE i.pedido_id = p.id AND i.produto_nome ILIKE $${valores.length}))`
+    );
+  }
 
-  const onde = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";
+  return { onde: condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "", valores };
+}
+
+export async function listarPedidos(filtros = {}) {
+  const { onde, valores } = condicoesDePedido(filtros);
   const { rows } = await consultar(
-    `SELECT p.id, p.fornecedor_id, p.fornecedor_nome, p.status, p.observacao,
-            p.motivo_cancelamento, p.valor_total, p.usuario_id,
-            p.criado_em, p.enviado_em, p.recebido_em,
+    `SELECT ${CAMPOS_PEDIDO},
             (SELECT COUNT(*) FROM compras.itens_pedido i WHERE i.pedido_id = p.id)::int AS total_itens,
-            (SELECT SUM(i.quantidade) FROM compras.itens_pedido i WHERE i.pedido_id = p.id)::int AS total_unidades,
-            EXISTS (
-              SELECT 1 FROM compras.recebimentos r
-               WHERE r.pedido_id = p.id AND r.tem_divergencia
-            ) AS teve_divergencia
+            (SELECT SUM(i.quantidade) FROM compras.itens_pedido i WHERE i.pedido_id = p.id)::int AS total_unidades
        FROM compras.pedidos p
        ${onde}
       ORDER BY p.criado_em DESC
@@ -41,9 +68,7 @@ export async function listarPedidos({ status, de, ate } = {}) {
 
 export async function buscarPedido(id) {
   const { rows } = await consultar(
-    `SELECT id, fornecedor_id, fornecedor_nome, status, observacao, motivo_cancelamento,
-            valor_total, usuario_id, criado_em, enviado_em, recebido_em
-       FROM compras.pedidos WHERE id = $1`,
+    `SELECT ${CAMPOS_PEDIDO} FROM compras.pedidos p WHERE p.id = $1`,
     [id]
   );
   return rows[0] ?? null;
@@ -92,17 +117,41 @@ export async function buscarPedidoCompleto(id) {
   return { ...pedido, itens, recebimentos };
 }
 
-/** Cria o pedido e seus itens na mesma transação, já com o total somado. */
-export function criarPedido({ fornecedorId, fornecedorNome, observacao, usuarioId, itens }) {
+/**
+ * Cria o pedido e seus itens na mesma transação. O total é itens + frete -
+ * desconto: é esse valor que vira conta a pagar quando a mercadoria chega.
+ *
+ * O número (PC-AAAA-00001) sai do default da tabela, então dois pedidos criados
+ * no mesmo instante não brigam pelo mesmo número.
+ */
+export function criarPedido({
+  fornecedorId,
+  fornecedorNome,
+  formaPagamento,
+  frete = 0,
+  desconto = 0,
+  usuarioId,
+  itens,
+}) {
   return emTransacao(async (cliente) => {
-    const total = itens.reduce((soma, item) => soma + item.quantidade * item.preco_unitario, 0);
+    const itensTotal = itens.reduce((soma, item) => soma + item.quantidade * item.preco_unitario, 0);
+    const total = Math.max(itensTotal + Number(frete) - Number(desconto), 0);
 
     const { rows } = await cliente.query(
       `INSERT INTO compras.pedidos
-         (fornecedor_id, fornecedor_nome, observacao, usuario_id, valor_total)
-       VALUES ($1, $2, $3, $4, $5)
+         (fornecedor_id, fornecedor_nome, forma_pagamento, frete, desconto,
+          usuario_id, valor_total)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id`,
-      [fornecedorId, fornecedorNome, observacao ?? null, usuarioId, Number(total.toFixed(2))]
+      [
+        fornecedorId,
+        fornecedorNome,
+        formaPagamento,
+        Number(Number(frete).toFixed(2)),
+        Number(Number(desconto).toFixed(2)),
+        usuarioId,
+        Number(total.toFixed(2)),
+      ]
     );
     const pedidoId = rows[0].id;
 
@@ -119,22 +168,11 @@ export function criarPedido({ fornecedorId, fornecedorNome, observacao, usuarioI
   });
 }
 
-export async function marcarEnviado(pedidoId) {
-  const { rows } = await consultar(
-    `UPDATE compras.pedidos
-        SET status = 'enviado', enviado_em = now()
-      WHERE id = $1 AND status = 'rascunho'
-      RETURNING id, status, enviado_em`,
-    [pedidoId]
-  );
-  return rows[0] ?? null;
-}
-
 export async function marcarCancelado({ pedidoId, motivo }) {
   const { rows } = await consultar(
     `UPDATE compras.pedidos
         SET status = 'cancelado', motivo_cancelamento = $2
-      WHERE id = $1 AND status IN ('rascunho', 'enviado')
+      WHERE id = $1 AND status = 'pendente_entrega'
       RETURNING id, status, motivo_cancelamento`,
     [pedidoId, motivo]
   );
@@ -145,15 +183,15 @@ export async function marcarCancelado({ pedidoId, motivo }) {
  * Registra o recebimento conferido item a item (§4): grava as quantidades, a
  * divergência de cada linha e marca o pedido como recebido.
  */
-export function registrarRecebimento({ pedidoId, usuarioId, observacao, itens }) {
+export function registrarRecebimento({ pedidoId, usuarioId, entregueEm, itens }) {
   return emTransacao(async (cliente) => {
     const temDivergencia = itens.some((item) => item.divergencia !== 0);
 
     const { rows } = await cliente.query(
-      `INSERT INTO compras.recebimentos (pedido_id, usuario_id, observacao, tem_divergencia)
-            VALUES ($1, $2, $3, $4)
+      `INSERT INTO compras.recebimentos (pedido_id, usuario_id, tem_divergencia)
+            VALUES ($1, $2, $3)
          RETURNING id, recebido_em`,
-      [pedidoId, usuarioId, observacao ?? null, temDivergencia]
+      [pedidoId, usuarioId, temDivergencia]
     );
     const recebimentoId = rows[0].id;
 
@@ -178,28 +216,32 @@ export function registrarRecebimento({ pedidoId, usuarioId, observacao, itens })
     }
 
     await cliente.query(
-      `UPDATE compras.pedidos SET status = 'recebido', recebido_em = now() WHERE id = $1`,
-      [pedidoId]
+      `UPDATE compras.pedidos
+          SET status = 'recebido', recebido_em = now(),
+              entregue_em = COALESCE($2::date, current_date)
+        WHERE id = $1`,
+      [pedidoId, entregueEm ?? null]
     );
 
     return { recebimento_id: recebimentoId, tem_divergencia: temDivergencia };
   });
 }
 
-/** Pedidos do período para o relatório em planilha. */
-export async function listarPedidosNoPeriodo({ de, ate }) {
+/** Pedidos para o relatório em planilha, com os mesmos filtros da tela. */
+export async function listarPedidosNoPeriodo(filtros) {
+  const { onde, valores } = condicoesDePedido(filtros);
   const { rows } = await consultar(
-    `SELECT p.criado_em, p.fornecedor_nome, p.status, p.valor_total, p.observacao,
-            p.enviado_em, p.recebido_em, p.usuario_id,
+    `SELECT p.numero, p.criado_em, p.fornecedor_nome, p.status, p.forma_pagamento,
+            p.frete, p.desconto, p.valor_total, p.recebido_em, p.entregue_em, p.usuario_id,
+            p.motivo_cancelamento,
             (SELECT string_agg(i.produto_nome || ' x' || i.quantidade, ' | ' ORDER BY i.produto_nome)
                FROM compras.itens_pedido i WHERE i.pedido_id = p.id) AS itens,
-            EXISTS (
-              SELECT 1 FROM compras.recebimentos r WHERE r.pedido_id = p.id AND r.tem_divergencia
-            ) AS teve_divergencia
+            (SELECT SUM(i.quantidade) FROM compras.itens_pedido i WHERE i.pedido_id = p.id)::int
+              AS total_unidades
        FROM compras.pedidos p
-      WHERE p.criado_em::date BETWEEN $1::date AND $2::date
+       ${onde}
       ORDER BY p.criado_em`,
-    [de, ate]
+    valores
   );
   return rows;
 }

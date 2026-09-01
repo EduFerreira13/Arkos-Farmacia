@@ -1,8 +1,17 @@
-import { ERROS } from "@arkos/shared-types";
+import {
+  ERROS,
+  FORMA_PAGAMENTO_COMPRA,
+  FORMA_PAGAMENTO_COMPRA_LABEL,
+  FORMA_PAGAMENTO_COMPRA_LISTA,
+  STATUS_PEDIDO_COMPRA,
+  STATUS_PEDIDO_COMPRA_LABEL,
+  STATUS_PEDIDO_COMPRA_LISTA,
+} from "@arkos/shared-types";
 import { criarAutenticacao } from "@arkos/auth-middleware";
 import { env } from "./env.js";
 import { ErroServico, estoque, financeiro } from "./servicos.js";
-import { formatarDataHora, gerarCsv, nomeArquivo, periodo } from "./relatorios.js";
+import { formatarData, formatarDataHora, gerarCsv, nomeArquivo, periodo } from "./relatorios.js";
+import { gerarOrdemDeCompraPdf } from "./pdf.js";
 import {
   buscarPedido,
   buscarPedidoCompleto,
@@ -11,7 +20,6 @@ import {
   listarPedidos,
   listarPedidosNoPeriodo,
   marcarCancelado,
-  marcarEnviado,
   registrarRecebimento,
 } from "./repositorio.js";
 
@@ -44,9 +52,39 @@ function responderErroServico(resposta, erro) {
 export async function registrarRotas(app) {
   app.addHook("preHandler", auth.autenticar);
 
-  app.get("/pedidos", async (requisicao) => {
-    const { status, de, ate } = requisicao.query ?? {};
-    return { pedidos: await listarPedidos({ status, de, ate }) };
+  /** Filtros da tela de pedidos — os mesmos que o relatório aceita. */
+  function filtrosDePedido(query = {}) {
+    return {
+      status: query.status,
+      de: query.de,
+      ate: query.ate,
+      forma_pagamento: query.forma_pagamento,
+      fornecedor_id: query.fornecedor_id,
+      busca: query.busca,
+    };
+  }
+
+  function filtrosValidos(resposta, filtros) {
+    if (filtros.status && !STATUS_PEDIDO_COMPRA_LISTA.includes(filtros.status)) {
+      return invalido(resposta, `status inválido. Use: ${STATUS_PEDIDO_COMPRA_LISTA.join(", ")}.`);
+    }
+    if (
+      filtros.forma_pagamento &&
+      !FORMA_PAGAMENTO_COMPRA_LISTA.includes(filtros.forma_pagamento)
+    ) {
+      return invalido(
+        resposta,
+        `forma_pagamento inválida. Use: ${FORMA_PAGAMENTO_COMPRA_LISTA.join(", ")}.`
+      );
+    }
+    return null;
+  }
+
+  app.get("/pedidos", async (requisicao, resposta) => {
+    const filtros = filtrosDePedido(requisicao.query);
+    const recusa = filtrosValidos(resposta, filtros);
+    if (recusa) return recusa;
+    return { pedidos: await listarPedidos(filtros) };
   });
 
   app.get("/pedidos/:id", async (requisicao, resposta) => {
@@ -94,13 +132,35 @@ export async function registrarRotas(app) {
     }
   });
 
+  /**
+   * Cria o pedido já como pendente de entrega (§4). Não existe rascunho: o
+   * pedido só nasce quando a compra foi decidida, e a partir daí o que se
+   * espera dele é a mercadoria chegar.
+   */
   app.post("/pedidos", { preHandler: auth.exigirPermissao(PERMISSAO) }, async (requisicao, resposta) => {
-    const { fornecedor_id, observacao, itens } = requisicao.body ?? {};
+    const { fornecedor_id, forma_pagamento, frete, desconto, itens } = requisicao.body ?? {};
     const token = requisicao.headers.authorization;
 
     if (!fornecedor_id) return invalido(resposta, "Informe fornecedor_id.");
     if (!Array.isArray(itens) || !itens.length) {
       return invalido(resposta, "Informe ao menos um item no pedido.");
+    }
+
+    const formaPagamento = forma_pagamento ?? FORMA_PAGAMENTO_COMPRA.BOLETO;
+    if (!FORMA_PAGAMENTO_COMPRA_LISTA.includes(formaPagamento)) {
+      return invalido(
+        resposta,
+        `forma_pagamento inválida. Use: ${FORMA_PAGAMENTO_COMPRA_LISTA.join(", ")}.`
+      );
+    }
+
+    const valorFrete = Number(frete ?? 0);
+    const valorDesconto = Number(desconto ?? 0);
+    if (!Number.isFinite(valorFrete) || valorFrete < 0) {
+      return invalido(resposta, "frete inválido.");
+    }
+    if (!Number.isFinite(valorDesconto) || valorDesconto < 0) {
+      return invalido(resposta, "desconto inválido.");
     }
 
     for (const item of itens) {
@@ -131,10 +191,22 @@ export async function registrarRotas(app) {
         });
       }
 
+      // O desconto não pode virar pedido negativo: mais fácil recusar aqui do
+      // que descobrir um total zerado só quando a conta a pagar for criada.
+      const totalItens = itensCompletos.reduce(
+        (soma, item) => soma + item.quantidade * item.preco_unitario,
+        0
+      );
+      if (valorDesconto > totalItens + valorFrete) {
+        return invalido(resposta, "O desconto não pode ser maior que o valor do pedido.");
+      }
+
       const pedidoId = await criarPedido({
         fornecedorId: fornecedor.id,
         fornecedorNome: fornecedor.nome,
-        observacao,
+        formaPagamento,
+        frete: valorFrete,
+        desconto: valorDesconto,
         usuarioId: requisicao.usuario.id,
         itens: itensCompletos,
       });
@@ -146,12 +218,53 @@ export async function registrarRotas(app) {
     }
   });
 
-  app.post("/pedidos/:id/enviar", { preHandler: auth.exigirPermissao(PERMISSAO) }, async (requisicao, resposta) => {
-    const enviado = await marcarEnviado(requisicao.params.id);
-    if (!enviado) {
-      return bloqueado(resposta, "Só um pedido em rascunho pode ser enviado ao fornecedor.");
+  /**
+   * Ordem de compra em PDF — é o documento que vai para o fornecedor, com os
+   * dados da farmácia, do fornecedor, os itens, as quantidades e os valores.
+   * Fica disponível a qualquer momento: gerar de novo devolve o mesmo papel.
+   */
+  app.get("/pedidos/:id/ordem-de-compra.pdf", async (requisicao, resposta) => {
+    const pedido = await buscarPedidoCompleto(requisicao.params.id);
+    if (!pedido) {
+      return resposta
+        .code(404)
+        .send({ erro: ERROS.NAO_ENCONTRADO, mensagem: "Pedido não encontrado." });
     }
-    return { pedido: await buscarPedidoCompleto(requisicao.params.id) };
+
+    // Os dados do fornecedor moram no estoque-service; o pedido guarda só o
+    // nome. Se a consulta falhar, o PDF ainda sai — com o que o pedido tem.
+    let fornecedor = { nome: pedido.fornecedor_nome };
+    try {
+      const { fornecedores } = await estoque.listarFornecedores(requisicao.headers.authorization);
+      fornecedor =
+        fornecedores.find((registro) => registro.id === pedido.fornecedor_id) ?? fornecedor;
+    } catch (erro) {
+      requisicao.log.warn(
+        { pedidoId: pedido.id, erro: erro.message },
+        "ordem de compra gerada sem os dados completos do fornecedor"
+      );
+    }
+
+    const arquivo = gerarOrdemDeCompraPdf({
+      farmacia: env.FARMACIA,
+      fornecedor,
+      pedido: {
+        numero: pedido.numero,
+        emitido_em: formatarDataHora(pedido.criado_em),
+        forma_pagamento: FORMA_PAGAMENTO_COMPRA_LABEL[pedido.forma_pagamento] ?? pedido.forma_pagamento,
+        situacao: STATUS_PEDIDO_COMPRA_LABEL[pedido.status] ?? pedido.status,
+        entregue_em: formatarData(pedido.entregue_em) || null,
+        frete: pedido.frete,
+        desconto: pedido.desconto,
+        valor_total: pedido.valor_total,
+      },
+      itens: pedido.itens,
+    });
+
+    return resposta
+      .header("Content-Type", "application/pdf")
+      .header("Content-Disposition", `attachment; filename="ordem_de_compra_${pedido.numero}.pdf"`)
+      .send(arquivo);
   });
 
   app.post("/pedidos/:id/cancelar", { preHandler: auth.exigirPermissao(PERMISSAO) }, async (requisicao, resposta) => {
@@ -175,8 +288,12 @@ export async function registrarRotas(app) {
    * total recebido vira conta a pagar do fornecedor.
    */
   app.post("/pedidos/:id/receber", { preHandler: auth.exigirPermissao(PERMISSAO) }, async (requisicao, resposta) => {
-    const { itens, observacao, vencimento_conta } = requisicao.body ?? {};
+    const { itens, entregue_em } = requisicao.body ?? {};
     const token = requisicao.headers.authorization;
+
+    if (entregue_em && !/^\d{4}-\d{2}-\d{2}$/.test(entregue_em)) {
+      return invalido(resposta, "entregue_em deve estar no formato AAAA-MM-DD.");
+    }
 
     const pedido = await buscarPedido(requisicao.params.id);
     if (!pedido) {
@@ -184,8 +301,12 @@ export async function registrarRotas(app) {
         .code(404)
         .send({ erro: ERROS.NAO_ENCONTRADO, mensagem: "Pedido não encontrado." });
     }
-    if (pedido.status === "recebido") return bloqueado(resposta, "Este pedido já foi recebido.");
-    if (pedido.status === "cancelado") return bloqueado(resposta, "Pedido cancelado.");
+    if (pedido.status === STATUS_PEDIDO_COMPRA.RECEBIDO) {
+      return bloqueado(resposta, "Este pedido já foi recebido.");
+    }
+    if (pedido.status === STATUS_PEDIDO_COMPRA.CANCELADO) {
+      return bloqueado(resposta, "Pedido cancelado.");
+    }
     if (!Array.isArray(itens) || !itens.length) {
       return invalido(resposta, "Informe a conferência de cada item recebido.");
     }
@@ -236,7 +357,7 @@ export async function registrarRotas(app) {
             numeroLote: item.numero_lote,
             quantidade: item.quantidade_recebida,
             dataValidade: item.data_validade,
-            motivo: `recebimento do pedido ${pedido.id.slice(0, 8)}`,
+            motivo: `recebimento do pedido ${pedido.numero}`,
           },
           token
         );
@@ -247,11 +368,22 @@ export async function registrarRotas(app) {
       throw erro;
     }
 
-    // 2) Conta a pagar do que foi efetivamente recebido (§5).
+    // 2) Conta a pagar do que foi efetivamente recebido (§5). Frete e desconto
+    // são do pedido inteiro, então entram proporcionalmente ao que chegou.
+    const valorItensRecebidos = conferidos.reduce(
+      (soma, item) => soma + item.quantidade_recebida * item.preco_unitario,
+      0
+    );
+    const valorItensPedidos = conferidos.reduce(
+      (soma, item) => soma + item.quantidade_pedida * item.preco_unitario,
+      0
+    );
+    const proporcao = valorItensPedidos > 0 ? valorItensRecebidos / valorItensPedidos : 0;
     const valorRecebido = Number(
-      conferidos
-        .reduce((soma, item) => soma + item.quantidade_recebida * item.preco_unitario, 0)
-        .toFixed(2)
+      Math.max(
+        valorItensRecebidos + (Number(pedido.frete) - Number(pedido.desconto)) * proporcao,
+        0
+      ).toFixed(2)
     );
 
     let conta = null;
@@ -260,9 +392,11 @@ export async function registrarRotas(app) {
         const resultado = await financeiro.criarContaPagar(
           {
             fornecedorId: pedido.fornecedor_id,
-            descricao: `Pedido de compra ${pedido.id.slice(0, 8)} - ${pedido.fornecedor_nome}`,
+            descricao: `Pedido de compra ${pedido.numero} - ${pedido.fornecedor_nome}`,
             valor: valorRecebido,
-            vencimento: vencimento_conta ?? null,
+            // Sem campo de vencimento na conferência: o financeiro usa o padrão
+            // de 30 dias e ajusta na tela de contas, onde isso é assunto.
+            vencimento: null,
           },
           token
         );
@@ -280,7 +414,7 @@ export async function registrarRotas(app) {
     const registro = await registrarRecebimento({
       pedidoId: pedido.id,
       usuarioId: requisicao.usuario.id,
-      observacao,
+      entregueEm: entregue_em ?? null,
       itens: conferidos,
     });
 
@@ -303,36 +437,54 @@ export async function registrarRotas(app) {
     };
   });
 
-  /** Pedidos do período em planilha. */
+  /** Pedidos em planilha, com os mesmos filtros da tela. */
   app.get("/relatorios/pedidos", async (requisicao, resposta) => {
     const intervalo = periodo(requisicao.query);
     if (intervalo.erro) return invalido(resposta, intervalo.erro);
 
-    const linhas = await listarPedidosNoPeriodo(intervalo);
+    const filtros = { ...filtrosDePedido(requisicao.query), ...intervalo };
+    const recusa = filtrosValidos(resposta, filtros);
+    if (recusa) return recusa;
+
+    const linhas = await listarPedidosNoPeriodo(filtros);
     const soma = (filtro) =>
       linhas.filter(filtro).reduce((total, linha) => total + Number(linha.valor_total), 0);
 
     const csv = gerarCsv(
       [
+        { titulo: "Numero", valor: (l) => l.numero },
         { titulo: "Data do pedido", valor: (l) => formatarDataHora(l.criado_em) },
         { titulo: "Fornecedor", valor: (l) => l.fornecedor_nome },
-        { titulo: "Status", valor: (l) => l.status },
+        {
+          titulo: "Situacao",
+          valor: (l) => STATUS_PEDIDO_COMPRA_LABEL[l.status] ?? l.status,
+        },
+        {
+          titulo: "Forma de pagamento",
+          valor: (l) => FORMA_PAGAMENTO_COMPRA_LABEL[l.forma_pagamento] ?? l.forma_pagamento,
+        },
         { titulo: "Itens", valor: (l) => l.itens ?? "" },
-        { titulo: "Enviado em", valor: (l) => formatarDataHora(l.enviado_em) },
+        { titulo: "Unidades", valor: (l) => l.total_unidades ?? 0 },
+        { titulo: "Entregue em", valor: (l) => formatarData(l.entregue_em) },
         { titulo: "Recebido em", valor: (l) => formatarDataHora(l.recebido_em) },
-        { titulo: "Teve divergencia", valor: (l) => (l.teve_divergencia ? "Sim" : "Nao") },
-        { titulo: "Observacao", valor: (l) => l.observacao ?? "" },
+        { titulo: "Motivo do cancelamento", valor: (l) => l.motivo_cancelamento ?? "" },
+        { titulo: "Frete (R$)", valor: (l) => Number(l.frete) },
+        { titulo: "Desconto (R$)", valor: (l) => Number(l.desconto) },
         { titulo: "Valor do pedido (R$)", valor: (l) => Number(l.valor_total) },
       ],
       linhas,
       [
-        { titulo: "Pedidos no periodo", valor: linhas.length },
+        { titulo: "Pedidos na lista", valor: linhas.length },
         { titulo: "Valor total pedido (R$)", valor: soma(() => true) },
-        { titulo: "Valor recebido (R$)", valor: soma((l) => l.status === "recebido") },
         {
-          titulo: "Pedidos com divergencia",
-          valor: linhas.filter((l) => l.teve_divergencia).length,
+          titulo: "Valor recebido (R$)",
+          valor: soma((l) => l.status === STATUS_PEDIDO_COMPRA.RECEBIDO),
         },
+        {
+          titulo: "Pendentes de entrega",
+          valor: linhas.filter((l) => l.status === STATUS_PEDIDO_COMPRA.PENDENTE_ENTREGA).length,
+        },
+        { titulo: "Frete somado (R$)", valor: linhas.reduce((t, l) => t + Number(l.frete), 0) },
       ]
     );
 
