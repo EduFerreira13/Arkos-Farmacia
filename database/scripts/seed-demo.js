@@ -288,13 +288,17 @@ const CONTAS_RECEBER = [
   { origem: "convenio", descricao: "Convenio Bradesco Saude - dois meses atras", valor: 1640.0, vencimento: -28, status: "recebido", recebido_dias: 27 },
 ];
 
+/**
+ * Pedidos de compra da demonstração. Não existe mais rascunho: o pedido nasce
+ * pendente de entrega e sai desse estado ao ser recebido ou cancelado.
+ */
 const PEDIDOS_COMPRA = [
-  { fornecedor: "panvel", status: "rascunho", dias: 0, hora: 8, minuto: 40, observacao: "Reposicao sugerida pelo estoque baixo", itens: [["azitromicina", 12, 21.5], ["amoxicilina", 20, 17.4]] },
-  { fornecedor: "medsupply", status: "enviado", dias: 2, hora: 14, minuto: 20, observacao: "Confirmado por telefone com o vendedor", itens: [["termometro", 10, 18.4], ["fralda", 15, 21.0]] },
-  { fornecedor: "dermacenter", status: "enviado", dias: 1, hora: 11, minuto: 15, observacao: "Campanha de verao", itens: [["protetor", 12, 31.0], ["shampoo", 10, 12.0]] },
-  { fornecedor: "farmalog", status: "recebido", dias: 8, hora: 9, minuto: 10, observacao: "Entrega semanal", recebimento: { dias: 7, hora: 10, minuto: 35, observacao: "Faltaram duas caixas de omeprazol", itens: [["omeprazol", 18, 300], ["losartana", 24, 420]] }, itens: [["omeprazol", 20, 6.6], ["losartana", 24, 7.2]] },
-  { fornecedor: "panvel", status: "recebido", dias: 22, hora: 8, minuto: 55, observacao: "Reposicao de analgesicos", recebimento: { dias: 21, hora: 9, minuto: 40, observacao: "Conferido sem divergencia", itens: [["dipirona", 60, 430], ["paracetamol", 40, 260]] }, itens: [["dipirona", 60, 4.1], ["paracetamol", 40, 5.0]] },
-  { fornecedor: "medsupply", status: "cancelado", dias: 30, hora: 15, minuto: 5, observacao: "Fornecedor sem previsao de entrega", motivo_cancelamento: "Fornecedor sem estoque do item principal", itens: [["glicosimetro", 10, 60.0]] },
+  { fornecedor: "panvel", status: "pendente_entrega", dias: 0, hora: 8, minuto: 40, forma_pagamento: "boleto", frete: 32.0, desconto: 0, itens: [["azitromicina", 12, 21.5], ["amoxicilina", 20, 17.4]] },
+  { fornecedor: "medsupply", status: "pendente_entrega", dias: 2, hora: 14, minuto: 20, forma_pagamento: "pix", frete: 0, desconto: 15.0, itens: [["termometro", 10, 18.4], ["fralda", 15, 21.0]] },
+  { fornecedor: "dermacenter", status: "pendente_entrega", dias: 1, hora: 11, minuto: 15, forma_pagamento: "prazo", frete: 24.5, desconto: 0, itens: [["protetor", 12, 31.0], ["shampoo", 10, 12.0]] },
+  { fornecedor: "farmalog", status: "recebido", dias: 8, hora: 9, minuto: 10, forma_pagamento: "boleto", frete: 18.0, desconto: 0, entregue: 7, recebimento: { dias: 7, hora: 10, minuto: 35, itens: [["omeprazol", 18, 300], ["losartana", 24, 420]] }, itens: [["omeprazol", 20, 6.6], ["losartana", 24, 7.2]] },
+  { fornecedor: "panvel", status: "recebido", dias: 22, hora: 8, minuto: 55, forma_pagamento: "transferencia", frete: 0, desconto: 40.0, entregue: 21, recebimento: { dias: 21, hora: 9, minuto: 40, itens: [["dipirona", 60, 430], ["paracetamol", 40, 260]] }, itens: [["dipirona", 60, 4.1], ["paracetamol", 40, 5.0]] },
+  { fornecedor: "medsupply", status: "cancelado", dias: 30, hora: 15, minuto: 5, forma_pagamento: "boleto", frete: 0, desconto: 0, motivo_cancelamento: "Fornecedor sem estoque do item principal", itens: [["glicosimetro", 10, 60.0]] },
 ];
 
 /**
@@ -394,12 +398,15 @@ async function main() {
     await inserirEmLote(
       client,
       "estoque.produtos",
-      ["id", "nome", "principio_ativo", "fabricante", "classe_terapeutica", "codigo_barras", "tipo_controle", "unidade_venda", "ncm", "cfop", "preco_custo", "preco_venda", "estoque_minimo", "dias_de_uso", "categoria_id", "fornecedor_id", "criado_em"],
-      PRODUTOS.map((produto) => {
+      ["id", "codigo", "nome", "principio_ativo", "fabricante", "classe_terapeutica", "codigo_barras", "tipo_controle", "unidade_venda", "ncm", "cfop", "preco_custo", "preco_venda", "estoque_minimo", "dias_de_uso", "categoria_id", "fornecedor_id", "criado_em"],
+      PRODUTOS.map((produto, posicao) => {
         const id = randomUUID();
-        produtoPorChave[produto.chave] = { ...produto, id };
+        // Mesmo formato que o serviço gera no cadastro: PRD-00001 em diante.
+        const codigo = `PRD-${String(posicao + 1).padStart(5, "0")}`;
+        produtoPorChave[produto.chave] = { ...produto, id, codigo };
         return [
           id,
+          codigo,
           produto.nome,
           produto.principio_ativo ?? null,
           produto.fabricante,
@@ -466,7 +473,7 @@ async function main() {
     await inserirEmLote(
       client,
       "vendas.clientes",
-      ["id", "nome", "cpf", "telefone", "email", "convenio", "observacao", "aceita_contato", "criado_em"],
+      ["id", "nome", "cpf", "telefone", "email", "convenio", "observacao", "endereco", "aceita_contato", "criado_em"],
       CLIENTES.map((cliente) => {
         const id = randomUUID();
         clientePorNome[cliente.nome] = { ...cliente, id };
@@ -478,6 +485,7 @@ async function main() {
           cliente.email,
           cliente.convenio,
           cliente.observacao ?? null,
+          cliente.endereco ?? null,
           cliente.aceita_contato ?? true,
           instante(DIAS_DE_HISTORICO, 10, 0),
         ];
@@ -1022,28 +1030,32 @@ async function main() {
         preco,
         itemId: randomUUID(),
       }));
-      const total = itens.reduce((soma, item) => soma + item.quantidade * item.preco, 0);
+      const totalItens = itens.reduce((soma, item) => soma + item.quantidade * item.preco, 0);
+      // O total do pedido é itens + frete - desconto, igual ao do serviço.
+      const total = totalItens + pedido.frete - pedido.desconto;
       const pedidoId = randomUUID();
 
       await client.query(
         `INSERT INTO compras.pedidos
-           (id, fornecedor_id, fornecedor_nome, status, observacao, motivo_cancelamento,
-            valor_total, usuario_id, criado_em, enviado_em, recebido_em)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+           (id, fornecedor_id, fornecedor_nome, status, forma_pagamento, frete, desconto,
+            motivo_cancelamento, valor_total, usuario_id, criado_em, recebido_em, entregue_em)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [
           pedidoId,
           fornecedorId[pedido.fornecedor],
           FORNECEDORES.find((registro) => registro.chave === pedido.fornecedor).nome,
           pedido.status,
-          pedido.observacao,
+          pedido.forma_pagamento,
+          dinheiro(pedido.frete),
+          dinheiro(pedido.desconto),
           pedido.motivo_cancelamento ?? null,
           dinheiro(total),
           usuarioId.gerente,
           instante(pedido.dias, pedido.hora, pedido.minuto),
-          pedido.status === "rascunho" ? null : instante(pedido.dias, pedido.hora, pedido.minuto + 20),
           pedido.recebimento
             ? instante(pedido.recebimento.dias, pedido.recebimento.hora, pedido.recebimento.minuto)
             : null,
+          pedido.entregue === undefined ? null : paraISO(dataDeDiasAtras(pedido.entregue)),
         ]
       );
 
@@ -1071,13 +1083,12 @@ async function main() {
 
       await client.query(
         `INSERT INTO compras.recebimentos
-           (id, pedido_id, usuario_id, observacao, tem_divergencia, recebido_em)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
+           (id, pedido_id, usuario_id, tem_divergencia, recebido_em)
+         VALUES ($1, $2, $3, $4, $5)`,
         [
           recebimentoId,
           pedidoId,
           usuarioId.gerente,
-          pedido.recebimento.observacao,
           conferidos.some((item) => item.divergencia !== 0),
           instante(pedido.recebimento.dias, pedido.recebimento.hora, pedido.recebimento.minuto),
         ]

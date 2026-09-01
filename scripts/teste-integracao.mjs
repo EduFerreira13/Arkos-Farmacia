@@ -367,6 +367,29 @@ const clienteNovo = await req(`${S.vendas}/vendas/clientes`, {
 ok("cadastra cliente", clienteNovo.status === 201);
 const clienteId = clienteNovo.dados.cliente.id;
 
+const clienteSemCpf = await req(`${S.vendas}/vendas/clientes`, {
+  metodo: "POST", token: caixa,
+  corpo: { nome: `Sem CPF ${sufixo}`, telefone: "(11) 90000-0001" },
+});
+ok("cliente sem CPF é recusado", clienteSemCpf.status === 400);
+
+const clienteSemTelefone = await req(`${S.vendas}/vendas/clientes`, {
+  metodo: "POST", token: caixa,
+  corpo: { nome: `Sem telefone ${sufixo}`, cpf: `999.777.${sufixo.slice(0, 3)}-0` },
+});
+ok("cliente sem telefone é recusado", clienteSemTelefone.status === 400);
+
+const clientesPorValor = await req(`${S.vendas}/vendas/clientes?min_valor=999999`, { token: caixa });
+ok("filtro de valor gasto reduz a lista", clientesPorValor.status === 200 && clientesPorValor.dados.clientes.length === 0);
+
+const relatorioClientes = await req(`${S.vendas}/vendas/relatorios/clientes?busca=Integracao%20${sufixo}`, {
+  token: gerente, cru: true,
+});
+ok(
+  "planilha de clientes respeita o filtro",
+  relatorioClientes.status === 200 && relatorioClientes.texto.includes("Clientes na lista;1")
+);
+
 const venda = await req(`${S.vendas}/vendas`, { metodo: "POST", token: farmaceutico });
 ok("abre venda", venda.status === 201 && venda.dados.venda.status === "aberta");
 const vendaId = venda.dados.venda.id;
@@ -902,29 +925,46 @@ const pedido = await req(`${S.compras}/compras/pedidos`, {
   metodo: "POST", token: gerente,
   corpo: {
     fornecedor_id: fornecedor.dados.fornecedor.id,
-    observacao: "pedido de integracao",
+    forma_pagamento: "pix",
+    frete: 10,
+    desconto: 5,
     itens: [{ produto_id: produtoId, quantidade: 10, preco_unitario: 5 }],
   },
 });
-ok("cria pedido de compra com total somado", pedido.status === 201 && pedido.dados.pedido.valor_total === 50);
+// 10 x 5 = 50, mais 10 de frete, menos 5 de desconto.
+ok("cria pedido de compra com frete e desconto no total", pedido.status === 201 && Number(pedido.dados.pedido.valor_total) === 55);
+ok("pedido nasce pendente de entrega", pedido.dados.pedido.status === "pendente_entrega");
+ok("pedido recebe número padronizado", /^PC-\d{4}-\d{5}$/.test(pedido.dados.pedido.numero ?? ""));
 const pedidoId = pedido.dados.pedido.id;
 
-const receberRascunho = await req(`${S.compras}/compras/pedidos/${pedidoId}/receber`, {
+const descontoMaior = await req(`${S.compras}/compras/pedidos`, {
+  metodo: "POST", token: gerente,
+  corpo: {
+    fornecedor_id: fornecedor.dados.fornecedor.id,
+    desconto: 9999,
+    itens: [{ produto_id: produtoId, quantidade: 1, preco_unitario: 5 }],
+  },
+});
+ok("desconto maior que o pedido é recusado", descontoMaior.status === 400);
+
+const ordemPdf = await req(`${S.compras}/compras/pedidos/${pedidoId}/ordem-de-compra.pdf`, { token: gerente, cru: true });
+ok(
+  "ordem de compra sai em PDF",
+  ordemPdf.status === 200 && ordemPdf.texto.startsWith("%PDF-") && ordemPdf.texto.includes(pedido.dados.pedido.numero)
+);
+
+const semLote = await req(`${S.compras}/compras/pedidos/${pedidoId}/receber`, {
   metodo: "POST", token: gerente,
   corpo: { itens: [{ item_pedido_id: pedido.dados.pedido.itens[0].id, quantidade_recebida: 10 }] },
 });
-ok("recebimento exige lote e validade", receberRascunho.status === 400);
-
-const enviado = await req(`${S.compras}/compras/pedidos/${pedidoId}/enviar`, { metodo: "POST", token: gerente });
-ok("envia pedido ao fornecedor", enviado.status === 200 && enviado.dados.pedido.status === "enviado");
+ok("recebimento exige lote e validade", semLote.status === 400);
 
 const saldoAntes = (await req(`${S.estoque}/produtos/${produtoId}`, { token: gerente })).dados.produto.quantidade_atual;
 
 const recebido = await req(`${S.compras}/compras/pedidos/${pedidoId}/receber`, {
   metodo: "POST", token: gerente,
   corpo: {
-    observacao: "faltaram duas unidades",
-    vencimento_conta: diasAtras(-30),
+    entregue_em: hoje,
     itens: [{
       item_pedido_id: pedido.dados.pedido.itens[0].id,
       quantidade_recebida: 8,
@@ -934,10 +974,12 @@ const recebido = await req(`${S.compras}/compras/pedidos/${pedidoId}/receber`, {
   },
 });
 ok(
-  "recebimento registra divergência sem bloquear a entrada",
+  "recebimento parcial não bloqueia a entrada",
   recebido.status === 200 && recebido.dados.recebimento.tem_divergencia && recebido.dados.alerta_divergencia.length === 1
 );
-ok("conta a pagar usa o valor recebido", Number(recebido.dados.conta_pagar?.valor) === 40);
+ok("recebimento grava a data de entrega", recebido.dados.pedido.entregue_em?.slice(0, 10) === hoje);
+// 8 x 5 = 40 de itens, mais 80% do saldo de frete e desconto (10 - 5 = 5).
+ok("conta a pagar usa o valor recebido com frete e desconto proporcionais", Number(recebido.dados.conta_pagar?.valor) === 44);
 
 const saldoDepois = (await req(`${S.estoque}/produtos/${produtoId}`, { token: gerente })).dados.produto.quantidade_atual;
 ok("estoque recebeu as 8 unidades", saldoDepois === saldoAntes + 8, `${saldoAntes} -> ${saldoDepois}`);
@@ -955,7 +997,22 @@ const pedidoCaixa = await req(`${S.compras}/compras/pedidos`, {
 ok("operador de caixa não cria pedido de compra", pedidoCaixa.status === 403);
 
 const relatorioPedidos = await req(`${S.compras}/compras/relatorios/pedidos?de=${diasAtras(7)}&ate=${hoje}`, { token: gerente, cru: true });
-ok("planilha de pedidos sai com divergências", relatorioPedidos.status === 200 && relatorioPedidos.texto.includes("Pedidos com divergencia"));
+ok("planilha de pedidos sai com o total pedido", relatorioPedidos.status === 200 && relatorioPedidos.texto.includes("Valor total pedido"));
+
+const relatorioFiltrado = await req(
+  `${S.compras}/compras/relatorios/pedidos?de=${diasAtras(7)}&ate=${hoje}&busca=${pedido.dados.pedido.numero}`,
+  { token: gerente, cru: true }
+);
+ok(
+  "planilha respeita o filtro da tela",
+  relatorioFiltrado.status === 200 && relatorioFiltrado.texto.includes("Pedidos na lista;1")
+);
+
+const pedidosBuscados = await req(
+  `${S.compras}/compras/pedidos?busca=${pedido.dados.pedido.numero}`,
+  { token: gerente }
+);
+ok("busca de pedido acha pelo número", pedidosBuscados.status === 200 && pedidosBuscados.dados.pedidos.length === 1);
 
 secao("Autenticação exigida em todos os serviços");
 for (const [nome, url] of [
