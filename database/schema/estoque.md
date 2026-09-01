@@ -77,6 +77,7 @@
 | cfop | character varying | YES | - |
 | venda_sob_encomenda | boolean | NO | false |
 | dias_de_uso | integer | YES | - |
+| codigo | character varying | YES | - |
 
 ## vw_estoque_baixo
 

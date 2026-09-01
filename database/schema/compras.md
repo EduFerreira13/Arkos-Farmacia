@@ -35,7 +35,7 @@
 | id | uuid | NO | gen_random_uuid() |
 | fornecedor_id | uuid | NO | - |
 | fornecedor_nome | character varying | NO | - |
-| status | USER-DEFINED | NO | 'rascunho'::compras.status_pedido |
+| status | character varying | NO | 'pendente_entrega'::character varying |
 | observacao | text | YES | - |
 | motivo_cancelamento | text | YES | - |
 | valor_total | numeric | NO | 0 |
@@ -43,6 +43,11 @@
 | criado_em | timestamp with time zone | NO | now() |
 | enviado_em | timestamp with time zone | YES | - |
 | recebido_em | timestamp with time zone | YES | - |
+| numero | character varying | NO | ((('PC-'::text || to_char(now(), 'YYYY'::text)) || '-'::text) || lpad((nextval('compras.pedido_numero_seq'::regclass))::text, 5, '0'::text)) |
+| forma_pagamento | character varying | NO | 'boleto'::character varying |
+| frete | numeric | NO | 0 |
+| desconto | numeric | NO | 0 |
+| entregue_em | date | YES | - |
 
 ## recebimentos
 

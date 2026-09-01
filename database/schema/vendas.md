@@ -17,6 +17,7 @@
 | criado_em | timestamp with time zone | NO | now() |
 | aceita_contato | boolean | NO | true |
 | data_nascimento | date | YES | - |
+| endereco | text | YES | - |
 
 ## contatos_cliente
 
