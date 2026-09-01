@@ -16,11 +16,17 @@ function inicioDoMes() {
 /**
  * Botão de exportação de relatório em planilha (CSV que o Excel abre direto).
  *
+ * O arquivo sai com o que está na tela: `parametros` são os filtros que a
+ * página já aplicou, e vão junto na consulta. Sem isso, a pessoa filtra a
+ * lista, exporta, e recebe de volta o catálogo inteiro.
+ *
  * @param {Object} props
- * @param {"vendas"|"estoque"|"financeiro"} props.servico
+ * @param {"vendas"|"estoque"|"financeiro"|"compras"|"auth"} props.servico
  * @param {string} props.caminho rota do relatório no serviço
  * @param {string} props.titulo texto do modal
  * @param {string} [props.descricao]
+ * @param {Record<string, unknown>} [props.parametros] filtros aplicados na tela
+ * @param {string[]} [props.resumoDosFiltros] o que está filtrado, em texto
  * @param {boolean} [props.comPeriodo] quando falso, exporta a posição atual
  * @param {{ nome: string, rotulo: string, opcoes: {valor: string, rotulo: string}[] }} [props.modelo]
  *   seletor extra virado em parâmetro de query (ex: agrupar, tipo)
@@ -33,6 +39,8 @@ export function ExportarRelatorio({
   caminho,
   titulo,
   descricao,
+  parametros,
+  resumoDosFiltros = [],
   comPeriodo = true,
   comXlsx = false,
   periodoInicial,
@@ -55,20 +63,27 @@ export function ExportarRelatorio({
     definirPronto(null);
     definirBaixando(true);
     try {
-      const parametros = new URLSearchParams();
-      if (comPeriodo) {
-        parametros.set("de", de);
-        parametros.set("ate", ate);
+      const consulta = new URLSearchParams();
+
+      // Filtros da tela primeiro: é o que define o recorte do arquivo.
+      for (const [nome, valor] of Object.entries(parametros ?? {})) {
+        if (valor === undefined || valor === null || valor === "") continue;
+        consulta.set(nome, String(valor));
       }
-      if (modelo && escolhaModelo) parametros.set(modelo.nome, escolhaModelo);
-      if (comXlsx && formato === "xlsx") parametros.set("formato", "xlsx");
+
+      if (comPeriodo) {
+        consulta.set("de", de);
+        consulta.set("ate", ate);
+      }
+      if (modelo && escolhaModelo) consulta.set(modelo.nome, escolhaModelo);
+      if (comXlsx && formato === "xlsx") consulta.set("formato", "xlsx");
 
       // O caminho pode já trazer query (ex: ?tipo=pagar), então o separador varia.
-      const consulta = parametros.toString();
+      const texto = consulta.toString();
       const separador = caminho.includes("?") ? "&" : "?";
       const nome = await baixarArquivo(
         servico,
-        consulta ? `${caminho}${separador}${consulta}` : caminho,
+        texto ? `${caminho}${separador}${texto}` : caminho,
         "relatorio.csv"
       );
       definirPronto(nome);
@@ -103,6 +118,18 @@ export function ExportarRelatorio({
           }
         >
           <div className="space-y-4">
+            {/* Deixa explícito que o arquivo herda o recorte da tela — evita a
+                surpresa de filtrar por um fornecedor e receber todos. */}
+            {resumoDosFiltros.length ? (
+              <Aviso tom="info" titulo="A planilha sai com os filtros da tela">
+                <ul className="mt-0.5 space-y-0.5">
+                  {resumoDosFiltros.map((linha) => (
+                    <li key={linha}>{linha}</li>
+                  ))}
+                </ul>
+              </Aviso>
+            ) : null}
+
             {comPeriodo ? (
               <div className="grid grid-cols-2 gap-4">
                 <CampoTexto
@@ -123,8 +150,7 @@ export function ExportarRelatorio({
               </div>
             ) : (
               <p className="text-corpo text-secundario">
-                A planilha traz a posição de agora, com saldo, situação contra o estoque mínimo e
-                valor em estoque.
+                A planilha traz a posição de agora, sem recorte de período.
               </p>
             )}
 
