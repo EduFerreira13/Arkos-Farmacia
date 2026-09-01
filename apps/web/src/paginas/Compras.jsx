@@ -45,8 +45,7 @@ const OPCOES_PAGAMENTO = FORMA_PAGAMENTO_COMPRA_LISTA.map((forma) => ({
   rotulo: FORMA_PAGAMENTO_COMPRA_LABEL[forma],
 }));
 
-/** Fornecedor identificado como aparece na nota: razão social e CNPJ. */
-const rotuloDoFornecedor = (fornecedor) => fornecedor.nome;
+/** O fornecedor é identificado como aparece na nota: razão social e CNPJ. */
 const cnpjDoFornecedor = (fornecedor) =>
   fornecedor.cnpj ? `CNPJ ${fornecedor.cnpj}` : "sem CNPJ cadastrado";
 
@@ -227,7 +226,7 @@ function FormularioPedido({ itensIniciais = [], aoFechar, aoSalvar }) {
             placeholder="Busque pela razão social ou pelo CNPJ"
             opcoes={auxiliares.dados.fornecedores.map((registro) => ({
               valor: registro.id,
-              rotulo: rotuloDoFornecedor(registro),
+              rotulo: registro.nome,
               detalhe: cnpjDoFornecedor(registro),
             }))}
             aoEscolher={definirFornecedorId}
