@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
-  ArrowLeftRight,
   BarChart3,
   Bell,
   ChevronDown,
@@ -18,6 +17,7 @@ import {
   LogOut,
   Moon,
   Package,
+  PackageMinus,
   PieChart,
   ScrollText,
   ShoppingCart,
@@ -28,7 +28,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { PERFIL_LABEL, PERFIS, PERFIS_LISTA } from "@arkos/shared-types";
-import { Logo, Simbolo } from "./Logo.jsx";
+import { Simbolo, Tipografia } from "./Logo.jsx";
 import { Botao, BotaoIcone } from "./Botao.jsx";
 import { Tour, chaveDoTour } from "./Tour.jsx";
 import { usarPreferencias } from "../lib/preferencias.jsx";
@@ -65,11 +65,10 @@ export const SECOES = [
     rotulo: "Estoque",
     icone: Package,
     itens: [
-      { para: "/produtos", rotulo: "Produtos", icone: Package, permissao: "consultar_estoque" },
       {
-        para: "/movimentacoes",
-        rotulo: "Entradas e saídas",
-        icone: ArrowLeftRight,
+        para: "/perdas",
+        rotulo: "Perdas e avarias",
+        icone: PackageMinus,
         permissao: "ajustar_estoque",
       },
       {
@@ -144,6 +143,9 @@ export const SECOES = [
         permissao: "ajustar_estoque",
       },
       { para: "/cadastros/clientes", rotulo: "Clientes", icone: Users, permissao: "vender" },
+      // Produto é cadastro, não movimento de estoque: fica junto de cliente,
+      // fornecedor e usuário, que é onde se procura por "cadastrar alguma coisa".
+      { para: "/produtos", rotulo: "Produtos", icone: Package, permissao: "consultar_estoque" },
       {
         para: "/cadastros/usuarios",
         rotulo: "Usuários",
@@ -209,17 +211,34 @@ function Sidebar({ recolhida, aoAlternar, usuario, aoExpandir }) {
         recolhida ? "w-sidebar-recolhida" : "w-sidebar",
       ].join(" ")}
     >
-      <div
-        className={`flex h-16 items-center border-b border-borda ${
-          recolhida ? "justify-center px-2" : "justify-between px-3 pl-4"
-        }`}
-      >
-        {recolhida ? <Simbolo tamanho={28} /> : <Logo tamanho={28} />}
+      {/* O símbolo é o mesmo elemento nos dois estados, e a posição é que muda:
+          centrado na barra recolhida, encostado à esquerda quando ela abre. Como
+          quem desliza é a margem, e não um componente que some e volta, o
+          movimento acompanha a animação da barra em vez de piscar no meio dela.
+          O wordmark saiu daqui — agora vive no cabeçalho, sobre o conteúdo. */}
+      <div className="flex h-16 items-center border-b border-borda">
+        <div
+          className={`transition-all duration-200 ease-out ${
+            recolhida ? "ml-3" : "ml-4"
+          }`}
+        >
+          <Simbolo tamanho={28} />
+        </div>
+
         {/* O controle de recolher fica junto da marca, no alto: é onde a pessoa
             procura, e não some no rodapé de uma lista longa. */}
-        {recolhida ? null : (
-          <BotaoIcone icone={ChevronsLeft} rotulo="Recolher menu" onClick={aoAlternar} />
-        )}
+        <div
+          className={`ml-auto overflow-hidden transition-all duration-200 ease-out ${
+            recolhida ? "w-0 opacity-0" : "w-12 pr-3 opacity-100"
+          }`}
+        >
+          <BotaoIcone
+            icone={ChevronsLeft}
+            rotulo="Recolher menu"
+            tabIndex={recolhida ? -1 : undefined}
+            onClick={aoAlternar}
+          />
+        </div>
       </div>
 
       {recolhida ? (
@@ -356,8 +375,22 @@ function Topbar({ usuario, perfilReal, simulando, aoSair, aoSimular, aoVerTour, 
   const { tema, alternarTema } = usarPreferencias();
 
   return (
-    <header className="flex h-16 shrink-0 items-center gap-4 border-b border-borda bg-card px-5">
-      <div className="ml-auto flex items-center gap-1">
+    /* Três colunas com as laterais de mesma largura: o wordmark fica no centro
+       exato do cabeçalho e os controles ficam à direita sem passar por cima
+       dele — o seletor de visão só existe para o administrador, então o espaço
+       da direita muda de tamanho conforme quem entrou. */
+    <header className="grid h-16 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4 border-b border-borda bg-card px-5">
+      <span aria-hidden="true" />
+
+      <Link
+        to="/"
+        aria-label="Arkos — ir para o início"
+        className="justify-self-center rounded-botao px-2 py-1 text-azul-marca focus-visible:foco-arkos dark:text-white"
+      >
+        <Tipografia altura={17} rotulo={null} />
+      </Link>
+
+      <div className="flex items-center justify-end gap-1">
         <SeletorDeVisao
           usuario={usuario}
           perfilReal={perfilReal}
