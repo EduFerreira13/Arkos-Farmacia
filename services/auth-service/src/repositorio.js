@@ -79,12 +79,36 @@ export async function atualizarUsuario(id, campos) {
 }
 
 /** Lista de usuários para a tela de cadastro (administrador). */
-export async function listarUsuarios() {
+/**
+ * Usuários com os filtros da tela: busca por nome ou email, perfil e situação.
+ * Nunca traz senha_hash — a coluna nem entra no SELECT.
+ *
+ * @param {{ busca?: string, perfil?: string, ativo?: "true"|"false" }} filtros
+ */
+export async function listarUsuarios({ busca, perfil, ativo } = {}) {
+  const condicoes = [];
+  const valores = [];
+
+  if (busca) {
+    valores.push(`%${busca}%`);
+    condicoes.push(`(u.nome ILIKE $${valores.length} OR u.email ILIKE $${valores.length})`);
+  }
+  if (perfil) {
+    valores.push(perfil);
+    condicoes.push(`p.nome = $${valores.length}`);
+  }
+  if (ativo === "true" || ativo === true) condicoes.push(`u.ativo`);
+  else if (ativo === "false" || ativo === false) condicoes.push(`NOT u.ativo`);
+
+  const onde = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";
+
   const { rows } = await consultar(
     `SELECT u.id, u.nome, u.email, u.ativo, u.criado_em, p.nome AS perfil
        FROM auth.usuarios u
        JOIN auth.perfis p ON p.id = u.perfil_id
-      ORDER BY u.nome`
+       ${onde}
+      ORDER BY u.nome`,
+    valores
   );
   return rows;
 }

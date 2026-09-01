@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
-import { ERROS, PERFIS, PERFIS_LISTA } from "@arkos/shared-types";
+import { ERROS, PERFIL_LABEL, PERFIS, PERFIS_LISTA } from "@arkos/shared-types";
 import { assinarToken, criarAutenticacao } from "@arkos/auth-middleware";
 import { env } from "./env.js";
+import { formatarDataHora, gerarCsv, hojeNoFuso } from "./relatorios.js";
 import {
   atualizarUsuario,
   buscarPerfilPorNome,
@@ -247,10 +248,55 @@ export async function registrarRotas(app) {
     return { perfis: await listarPerfis() };
   });
 
+  /** Filtros da tela de usuários — os mesmos que o relatório aceita. */
+  const filtrosDeUsuario = (query = {}) => ({
+    busca: query.busca,
+    perfil: query.perfil,
+    ativo: query.ativo,
+  });
+
   app.get(
     "/usuarios",
     { preHandler: [auth.autenticar, auth.exigirPerfil([PERFIS.ADMINISTRADOR])] },
-    async () => ({ usuarios: await listarUsuarios() })
+    async (requisicao) => ({ usuarios: await listarUsuarios(filtrosDeUsuario(requisicao.query)) })
+  );
+
+  /**
+   * Usuários em planilha, com os filtros que estão valendo na tela. Só o
+   * administrador chega aqui, e o arquivo não leva senha nem hash — quem entra
+   * no sistema e com qual perfil é o que interessa numa auditoria de acesso.
+   */
+  app.get(
+    "/relatorios/usuarios",
+    { preHandler: [auth.autenticar, auth.exigirPerfil([PERFIS.ADMINISTRADOR])] },
+    async (requisicao, resposta) => {
+      const linhas = await listarUsuarios(filtrosDeUsuario(requisicao.query));
+
+      const csv = gerarCsv(
+        [
+          { titulo: "Nome", valor: (l) => l.nome },
+          { titulo: "Email", valor: (l) => l.email },
+          { titulo: "Perfil", valor: (l) => PERFIL_LABEL[l.perfil] ?? l.perfil },
+          { titulo: "Situacao", valor: (l) => (l.ativo ? "Ativo" : "Inativo") },
+          { titulo: "Criado em", valor: (l) => formatarDataHora(l.criado_em) },
+        ],
+        linhas,
+        [
+          { titulo: "Usuarios na lista", valor: linhas.length },
+          { titulo: "Ativos", valor: linhas.filter((l) => l.ativo).length },
+          { titulo: "Inativos", valor: linhas.filter((l) => !l.ativo).length },
+          ...PERFIS_LISTA.map((perfil) => ({
+            titulo: PERFIL_LABEL[perfil],
+            valor: linhas.filter((l) => l.perfil === perfil).length,
+          })),
+        ]
+      );
+
+      return resposta
+        .header("Content-Type", "text/csv; charset=utf-8")
+        .header("Content-Disposition", `attachment; filename="usuarios_${hojeNoFuso()}.csv"`)
+        .send(csv);
+    }
   );
 
   app.post(
