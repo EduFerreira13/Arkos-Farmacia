@@ -1,14 +1,16 @@
 # Arkos — Regras de Negócio (MVP)
 
 > Baseado em padrão de mercado para sistemas de gestão farmacêutica no Brasil.
-> Última atualização: 21/08/2026
+> Última atualização: 01/09/2026
 
 ---
 
 ## 1. Produtos
 
-- Todo produto pertence a uma **categoria**: Medicamento (controlado ou não), Perfumaria/Higiene, Correlatos (produtos médico-hospitalares).
-- Campos obrigatórios: nome, princípio ativo (se medicamento), fabricante, categoria, código de barras (EAN), unidade de venda (unidade/caixa), preço de custo, preço de venda, estoque mínimo.
+- Todo produto pertence a uma **categoria**: Medicamento (genérico, similar, de referência, manipulado), Perfumaria/Higiene, Correlatos (produtos médico-hospitalares), Dermocosmético, Vitaminas e suplementos, entre outras — a lista fica em `estoque.categorias` e cresce por migration.
+- Todo produto tem um **código** curto e sequencial (`PRD-00001`), que é o que se usa para conferir nota, etiqueta e contagem. O serviço sugere o próximo no cadastro, e quem já tem numeração própria pode informar a sua.
+- Campos obrigatórios: código, nome, princípio ativo (se medicamento), fabricante, categoria, código de barras (EAN), unidade de venda (unidade/caixa), preço de custo, preço de venda, estoque mínimo.
+- Produto **não tem fornecedor fixo**: o mesmo genérico vem de distribuidoras diferentes conforme o preço da semana. Quem abasteceu cada lote fica registrado no pedido de compra.
 - Medicamentos controlados exigem campo **classe terapêutica** (ex: psicotrópico, antibiótico, tarja preta) — usado para acionar regras de venda restrita.
 - Produto sem estoque não pode ser vendido (bloqueio automático no PDV), exceto se configurado para venda sob encomenda.
 
@@ -21,7 +23,9 @@
   - Produtos a vencer em 90 / 60 / 30 dias (janelas configuráveis).
   - Produto vencido: bloqueado automaticamente para venda.
 - Toda movimentação de estoque (entrada, saída, ajuste, perda, devolução) gera um **registro de auditoria** (quem, quando, motivo) — obrigatório para rastreabilidade, especialmente em controlados.
-- Inventário: permite contagem física e ajuste com justificativa obrigatória para divergências.
+- Inventário: permite contagem física e ajuste com justificativa obrigatória para divergências. A folha de contagem traz só produto **com saldo** — o que entrou por compra e ainda não saiu por venda nem por perda.
+- **Perda e avaria** têm tela própria, com motivo em lista fechada (avaria no transporte, embalagem danificada, produto vencido, quebra, furto, recolhimento) mais um detalhe livre. A baixa é sempre de um lote específico.
+- **Entrada de lote acontece no recebimento do pedido de compra**, que é onde chegam número de lote e validade — não há entrada avulsa pela interface.
 
 ## 3. Vendas (PDV)
 
@@ -35,11 +39,17 @@
 ## 4. Compras / Fornecedores
 
 - Pedido de compra gerado manualmente ou por sugestão automática (quando estoque atinge o mínimo).
-- Recebimento de mercadoria: conferência obrigatória (quantidade recebida x quantidade do pedido) antes de dar entrada no estoque.
-- Divergência no recebimento gera alerta para o gestor, não bloqueia a entrada, mas fica registrada.
+- **Não existe rascunho**: o pedido é criado quando a compra está decidida e nasce `pendente_entrega`, saindo desse estado só ao ser recebido ou cancelado. Criar meio pedido e deixar guardado só gerava lista de pedido que ninguém mandou.
+- Todo pedido recebe um **número** sequencial e legível (`PC-2026-00001`) — é por ele que se procura o pedido no telefone com o fornecedor.
+- O pedido registra **forma de pagamento**, **frete** e **desconto** combinados com o fornecedor. O total é itens + frete − desconto, e é esse valor que vira conta a pagar.
+- Ao ser criado, o pedido gera a **ordem de compra em PDF** com os dados da farmácia, do fornecedor, os itens, as quantidades e os valores. É o documento que vai para o fornecedor, e pode ser reimpresso a qualquer momento.
+- Recebimento de mercadoria: conferência obrigatória (quantidade recebida x quantidade do pedido) antes de dar entrada no estoque, junto com a **data em que a mercadoria chegou**.
+- Divergência no recebimento gera alerta para o gestor, não bloqueia a entrada, mas fica registrada. Quando chega menos do que o pedido, frete e desconto entram na conta a pagar proporcionalmente ao que veio.
+- Cadastro de fornecedor consulta o **CNPJ** na base pública da Receita e preenche razão social, telefone e email. O retorno preenche o formulário, nunca o cadastro: quem cadastra confere antes de salvar.
 
 ## 5. Financeiro
 
+- Cadastro de cliente exige **nome, CPF e telefone**: o CPF identifica a pessoa na nota e no convênio, o telefone é o que permite o retorno do relacionamento. Email, data de nascimento, convênio, endereço e observações são opcionais.
 - Contas a pagar: vinculadas a fornecedores e compras.
 - Contas a receber: geradas automaticamente por vendas a prazo (se houver) ou por convênios.
 - Fluxo de caixa diário: soma automática das vendas do PDV (por forma de pagamento) + lançamentos manuais.

@@ -15,7 +15,8 @@
 | GET | `/auth/perfis` | Lista os 4 perfis padrão |
 | POST | `/auth/recuperar-senha` | Gera código de redefinição válido por 30 minutos |
 | POST | `/auth/redefinir-senha` | Troca a senha usando o código (uso único) |
-| GET | `/auth/usuarios` | Lista usuários (admin) |
+| GET | `/auth/usuarios` | Lista usuários (admin) — `?busca=&perfil=&ativo=` |
+| GET | `/auth/relatorios/usuarios` | Planilha dos usuários, com os mesmos filtros (admin) |
 | POST | `/auth/simular` | `{ perfil }` → token valendo com o perfil escolhido (só administrador) |
 | POST | `/auth/usuarios` | Cria usuário (admin) |
 | PATCH | `/auth/usuarios/:id` | Ativa/desativa, troca perfil |
@@ -45,8 +46,9 @@ original que guardou.
 
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/produtos` | Lista produtos (filtros: nome, categoria, tipo_controle) |
+| GET | `/produtos` | Lista produtos (filtros: `busca`, `categoria_id`, `tipo_controle`, `com_saldo`) |
 | POST | `/produtos` | Cria produto |
+| GET | `/produtos/proximo-codigo` | Próximo código sugerido no cadastro (`PRD-00001`) |
 | GET | `/produtos/:id` | Detalhe do produto + lotes |
 | PATCH | `/produtos/:id` | Atualiza produto (preço gera histórico — §8 das regras de negócio) |
 | POST | `/lotes` | Entrada de novo lote |
@@ -54,12 +56,29 @@ original que guardou.
 | GET | `/alertas/estoque-baixo` | Usa `estoque.vw_estoque_baixo` (lote vencido não conta como disponível) |
 | GET | `/alertas/vencimento` | Usa `estoque.vw_produtos_a_vencer` — `?dias=30\|60\|90` |
 | GET | `/produtos/codigo-barras/:codigo` | Atalho do PDV para leitura de EAN |
-| GET | `/movimentacoes` | Auditoria — `?produto_id=&limite=` |
+| GET | `/movimentacoes` | Auditoria — `?produto_id=&tipo=&de=&ate=&busca=&limite=` |
 | GET/POST | `/categorias` | Cadastro auxiliar exigido pelo formulário de produto |
-| GET/POST | `/fornecedores` | Cadastro auxiliar exigido pelo formulário de produto |
+| GET/POST | `/fornecedores` | Cadastro de fornecedores (`?busca=`) |
+| GET | `/fornecedores/consulta-cnpj/:cnpj` | Consulta o CNPJ na base pública da Receita |
 | PATCH | `/fornecedores/:id` | Atualiza fornecedor |
-| GET | `/relatorios/estoque` | Planilha da posição atual (saldo, vencido, situação, valor em estoque) |
-| GET | `/relatorios/movimentacoes` | Planilha da auditoria — `?de=&ate=` |
+| GET | `/relatorios/estoque` | Planilha da posição atual — aceita os mesmos filtros de `/produtos` |
+| GET | `/relatorios/movimentacoes` | Planilha da auditoria — `?de=&ate=&tipo=&produto_id=&busca=` |
+| GET | `/relatorios/fornecedores` | Planilha dos fornecedores — `?busca=` |
+
+**Código do produto.** `GET /produtos/proximo-codigo` devolve o próximo da
+sequência (`PRD-00001`, `PRD-00002`...), calculado a partir do maior código já
+usado — não de uma sequência do banco, para o número que a tela mostra ser o
+mesmo que vai aparecer na lista. `POST /produtos` aceita `codigo`; sem ele, o
+serviço gera.
+
+**Consulta de CNPJ.** A chamada à base pública (BrasilAPI) fica no serviço, e
+não no navegador, porque o endpoint não libera CORS — e assim trocar de
+provedor (`CNPJ_API_URL` no `.env`) não mexe em nenhuma tela. Sem rede, responde
+502 com mensagem clara e o cadastro segue manual.
+
+**Filtros no relatório.** Toda rota de relatório aceita os mesmos filtros da
+listagem correspondente: a planilha sai com o recorte que está na tela, e não
+com a base inteira.
 
 Permissão por movimentação: `saida` e `devolucao` pedem `vender` (são as duas
 pontas da venda, e o estorno automático da finalização usa o token do operador);
@@ -102,9 +121,15 @@ quem ainda não tem histórico.
 | GET | `/vendas/relatorio` | Planilha do período — `?de=&ate=`, `?agrupar=produto` para o total por produto |
 | GET | `/vendas/analise` | Vendas por produto, por dia e por forma no período (base do BI) |
 | GET | `/vendas/receitas` | Receitas retidas — `?de=&ate=&busca=` |
-| GET/POST | `/vendas/clientes` | Cadastro de clientes (`?busca=`) |
+| GET/POST | `/vendas/clientes` | Cadastro de clientes (`?busca=&convenio=&min_compras=&min_valor=&ordenar=`) |
+| GET | `/vendas/relatorios/clientes` | Planilha dos clientes, com os mesmos filtros |
 | GET | `/vendas/crm/retornos` | Retornos combinados e ainda não atendidos |
 | PATCH | `/vendas/clientes/:id` | Atualiza cliente |
+
+**Obrigatórios do cliente (§5)**: `nome`, `cpf` e `telefone`. No `PATCH` a
+exigência só vale para o campo que vier no corpo. A planilha de clientes leva
+dado pessoal (CPF, telefone, endereço) — a finalidade precisa justificar a
+extração (LGPD).
 | POST | `/vendas/:id/cliente` | Vincula (ou desvincula) o cliente da venda |
 | DELETE | `/vendas/:id/pagamentos/:pagamentoId` | Remove forma de pagamento antes de finalizar |
 
@@ -235,21 +260,30 @@ com chave de acesso simulada de 44 dígitos derivada do ID da venda.
 
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/compras/pedidos` | Lista (filtros: `status`, `de`, `ate`) |
+| GET | `/compras/pedidos` | Lista (filtros: `busca`, `status`, `fornecedor_id`, `forma_pagamento`, `de`, `ate`) |
 | GET | `/compras/pedidos/:id` | Pedido com itens e recebimentos |
-| POST | `/compras/pedidos` | Cria pedido em rascunho (`fornecedor_id`, `itens[]`) |
-| POST | `/compras/pedidos/:id/enviar` | Marca como enviado ao fornecedor |
+| POST | `/compras/pedidos` | Cria pedido já `pendente_entrega` (`fornecedor_id`, `forma_pagamento`, `frete`, `desconto`, `itens[]`) |
+| GET | `/compras/pedidos/:id/ordem-de-compra.pdf` | Ordem de compra em PDF |
 | POST | `/compras/pedidos/:id/cancelar` | Cancela — exige motivo |
-| POST | `/compras/pedidos/:id/receber` | Conferência item a item, entrada no estoque e conta a pagar |
+| POST | `/compras/pedidos/:id/receber` | Conferência item a item, `entregue_em`, entrada no estoque e conta a pagar |
 | GET | `/compras/sugestao` | Sugestão de compra a partir do estoque baixo |
-| GET | `/compras/relatorios/pedidos` | Planilha dos pedidos do período |
+| GET | `/compras/relatorios/pedidos` | Planilha dos pedidos, com os mesmos filtros da lista |
+
+**Situações do pedido**: `pendente_entrega` (nasce assim), `recebido`,
+`cancelado`. Não existe rascunho, e por isso não existe rota de envio ao
+fornecedor — o pedido já sai valendo (§4).
+
+**Numeração**: o pedido recebe `numero` no formato `PC-AAAA-00001`, gerado pelo
+default da tabela, então dois pedidos criados no mesmo instante não brigam pelo
+mesmo número.
 
 **Regra crítica (§4)**: `POST /compras/pedidos/:id/receber` compara a quantidade
 recebida com a pedida, item a item. Divergência **não bloqueia** a entrada — é
 gravada em `compras.itens_recebimento.divergencia` e devolvida em
 `alerta_divergencia` para o gestor ver. Cada item recebido entra como lote no
 `estoque-service` e o valor **efetivamente recebido** (não o do pedido) vira
-conta a pagar no `financeiro-service`.
+conta a pagar no `financeiro-service` — com frete e desconto do pedido entrando
+proporcionalmente ao que chegou.
 
 **Exemplo — recebimento com falta:**
 ```json
