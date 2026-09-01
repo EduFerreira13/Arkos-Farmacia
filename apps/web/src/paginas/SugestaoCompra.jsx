@@ -1,5 +1,10 @@
 import { useState } from "react";
 import { ClipboardList, Truck } from "lucide-react";
+import {
+  FORMA_PAGAMENTO_COMPRA,
+  FORMA_PAGAMENTO_COMPRA_LABEL,
+  FORMA_PAGAMENTO_COMPRA_LISTA,
+} from "@arkos/shared-types";
 import { api } from "../lib/api.js";
 import { usarBusca } from "../lib/usarBusca.js";
 import { formatarMoeda, formatarNumero } from "../lib/formato.js";
@@ -23,6 +28,7 @@ import {
 export function SugestaoCompra() {
   const [selecionados, definirSelecionados] = useState({});
   const [confirmando, definirConfirmando] = useState(false);
+  const [formaPagamento, definirFormaPagamento] = useState(FORMA_PAGAMENTO_COMPRA.BOLETO);
   const [fornecedorId, definirFornecedorId] = useState("");
   const [erro, definirErro] = useState(null);
   const [enviando, definirEnviando] = useState(false);
@@ -60,16 +66,19 @@ export function SugestaoCompra() {
     definirErro(null);
     definirEnviando(true);
     try {
-      await api.compras.post("/pedidos", {
+      const { pedido } = await api.compras.post("/pedidos", {
         fornecedor_id: fornecedorId,
-        observacao: "Gerado pela sugestão automática de compra",
+        forma_pagamento: formaPagamento,
         itens: escolhidos.map((item) => ({
           produto_id: item.produto_id,
           quantidade: item.quantidade_sugerida,
           preco_unitario: Number(item.preco_custo ?? 0),
         })),
       });
-      definirPronto(`Pedido criado em rascunho com ${escolhidos.length} item(ns).`);
+      definirPronto(
+        `Pedido ${pedido.numero} criado com ${escolhidos.length} item(ns), pendente de entrega. ` +
+          "A ordem de compra em PDF está na tela de pedidos."
+      );
       definirConfirmando(false);
       definirSelecionados({});
       sugestao.recarregar();
@@ -199,7 +208,7 @@ export function SugestaoCompra() {
                 Voltar
               </Botao>
               <Botao onClick={gerarPedido} disabled={enviando || !fornecedorId}>
-                {enviando ? "Gerando" : "Criar pedido em rascunho"}
+                {enviando ? "Gerando" : "Criar pedido"}
               </Botao>
             </>
           }
@@ -222,6 +231,17 @@ export function SugestaoCompra() {
             ) : (
               <Carregando />
             )}
+
+            <CampoSelect
+              rotulo="Forma de pagamento"
+              value={formaPagamento}
+              onChange={(evento) => definirFormaPagamento(evento.target.value)}
+              opcoes={FORMA_PAGAMENTO_COMPRA_LISTA.map((forma) => ({
+                valor: forma,
+                rotulo: FORMA_PAGAMENTO_COMPRA_LABEL[forma],
+              }))}
+              ajuda="Frete e desconto, se houver, entram na tela de pedidos."
+            />
 
             <ul className="space-y-1 text-corpo text-secundario">
               {escolhidos.map((item) => (
