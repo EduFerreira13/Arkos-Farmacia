@@ -375,22 +375,20 @@ function Topbar({ usuario, perfilReal, simulando, aoSair, aoSimular, aoVerTour, 
   const { tema, alternarTema } = usarPreferencias();
 
   return (
-    /* Três colunas com as laterais de mesma largura: o wordmark fica no centro
-       exato do cabeçalho e os controles ficam à direita sem passar por cima
-       dele — o seletor de visão só existe para o administrador, então o espaço
-       da direita muda de tamanho conforme quem entrou. */
-    <header className="grid h-16 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4 border-b border-borda bg-card px-5">
-      <span aria-hidden="true" />
-
+    <header className="relative flex h-16 shrink-0 items-center border-b border-borda bg-card px-5">
+      {/* O wordmark é posicionado contra a janela inteira, não contra o
+          cabeçalho: o cabeçalho começa depois da barra lateral, então centrar
+          nele faria a marca escorregar 88px para o lado toda vez que o menu
+          fosse recolhido. Fixo no meio da janela, ela fica parada. */}
       <Link
         to="/"
         aria-label="Arkos — ir para o início"
-        className="justify-self-center rounded-botao px-2 py-1 text-azul-marca focus-visible:foco-arkos dark:text-white"
+        className="fixed left-1/2 top-0 z-10 flex h-16 -translate-x-1/2 items-center rounded-botao px-2 text-azul-marca focus-visible:foco-arkos dark:text-white"
       >
         <Tipografia altura={17} rotulo={null} />
       </Link>
 
-      <div className="flex items-center justify-end gap-1">
+      <div className="ml-auto flex items-center gap-1">
         <SeletorDeVisao
           usuario={usuario}
           perfilReal={perfilReal}
