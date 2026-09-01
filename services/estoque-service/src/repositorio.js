@@ -9,7 +9,7 @@ import { consultar, emTransacao } from "./db.js";
  */
 
 const SELECT_PRODUTO = `
-  SELECT p.id, p.nome, p.principio_ativo, p.fabricante, p.classe_terapeutica,
+  SELECT p.id, p.codigo, p.nome, p.principio_ativo, p.fabricante, p.classe_terapeutica,
          p.codigo_barras, p.tipo_controle, p.unidade_venda, p.ncm, p.cfop,
          p.preco_custo, p.preco_venda, p.estoque_minimo, p.venda_sob_encomenda,
          p.dias_de_uso,
@@ -34,7 +34,11 @@ export async function listarProdutos(filtros = {}) {
 
   if (filtros.nome) {
     valores.push(`%${filtros.nome}%`);
-    condicoes.push(`(p.nome ILIKE $${valores.length} OR p.principio_ativo ILIKE $${valores.length})`);
+    condicoes.push(
+      `(p.nome ILIKE $${valores.length} OR p.principio_ativo ILIKE $${valores.length}
+        OR p.codigo ILIKE $${valores.length} OR p.fabricante ILIKE $${valores.length}
+        OR p.codigo_barras ILIKE $${valores.length})`
+    );
   }
   if (filtros.codigo_barras) {
     valores.push(filtros.codigo_barras);
@@ -49,9 +53,31 @@ export async function listarProdutos(filtros = {}) {
     condicoes.push(`p.tipo_controle = $${valores.length}`);
   }
 
+  // Inventário e perda contam o que existe: produto sem lote válido não entra.
+  if (filtros.com_saldo) {
+    condicoes.push(`EXISTS (
+      SELECT 1 FROM estoque.lotes l
+       WHERE l.produto_id = p.id AND l.quantidade > 0 AND l.data_validade >= current_date
+    )`);
+  }
+
   const onde = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";
-  const { rows } = await consultar(`${SELECT_PRODUTO} ${onde} ORDER BY p.nome`, valores);
+  const { rows } = await consultar(`${SELECT_PRODUTO} ${onde} ORDER BY p.codigo`, valores);
   return rows;
+}
+
+/**
+ * Próximo código sugerido no cadastro (PRD-00001, PRD-00002...). Sai do maior
+ * código já usado, não de uma sequência: assim o número que a tela mostra é o
+ * que a pessoa vê na lista, sem buracos por cadastro abandonado.
+ */
+export async function proximoCodigoProduto() {
+  const { rows } = await consultar(
+    `SELECT COALESCE(MAX(substring(codigo from '[0-9]+$')::int), 0) + 1 AS proximo
+       FROM estoque.produtos
+      WHERE codigo ~ '^PRD-[0-9]+$'`
+  );
+  return `PRD-${String(rows[0].proximo).padStart(5, "0")}`;
 }
 
 export async function buscarProduto(id) {
@@ -67,12 +93,13 @@ export async function buscarProdutoPorCodigoBarras(codigo) {
 export async function inserirProduto(dados) {
   const { rows } = await consultar(
     `INSERT INTO estoque.produtos
-       (nome, principio_ativo, fabricante, classe_terapeutica, codigo_barras,
+       (codigo, nome, principio_ativo, fabricante, classe_terapeutica, codigo_barras,
         tipo_controle, unidade_venda, ncm, cfop, preco_custo, preco_venda,
         estoque_minimo, venda_sob_encomenda, categoria_id, fornecedor_id, dias_de_uso)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
      RETURNING id`,
     [
+      dados.codigo,
       dados.nome,
       dados.principio_ativo ?? null,
       dados.fabricante ?? null,
@@ -95,6 +122,7 @@ export async function inserirProduto(dados) {
 }
 
 const CAMPOS_ATUALIZAVEIS = [
+  "codigo",
   "nome",
   "principio_ativo",
   "fabricante",
@@ -197,9 +225,23 @@ export async function inserirCategoria(nome) {
   return rows[0];
 }
 
-export async function listarFornecedores() {
+/** @param {{ busca?: string }} filtros nome, CNPJ, telefone ou email */
+export async function listarFornecedores({ busca } = {}) {
+  const valores = [];
+  let onde = "";
+  if (busca) {
+    valores.push(`%${busca}%`);
+    onde = `WHERE f.nome ILIKE $1 OR f.cnpj ILIKE $1 OR f.telefone ILIKE $1 OR f.email ILIKE $1`;
+  }
+
   const { rows } = await consultar(
-    `SELECT id, nome, cnpj, telefone, email FROM estoque.fornecedores ORDER BY nome`
+    `SELECT f.id, f.nome, f.cnpj, f.telefone, f.email,
+            (SELECT COUNT(*) FROM estoque.produtos p WHERE p.fornecedor_id = f.id)::int
+              AS total_produtos
+       FROM estoque.fornecedores f
+       ${onde}
+      ORDER BY f.nome`,
+    valores
   );
   return rows;
 }
@@ -236,19 +278,48 @@ export async function listarProdutosAVencer(dias) {
   return rows;
 }
 
-export async function listarMovimentacoes({ produtoId, limite = 100 }) {
+/**
+ * Histórico de movimentação com os mesmos filtros da tela: tipo, produto,
+ * período e busca livre por produto, lote ou motivo.
+ */
+export async function listarMovimentacoes({ produtoId, tipo, de, ate, busca, limite = 100 }) {
+  const condicoes = [];
   const valores = [];
-  let onde = "";
+
   if (produtoId) {
     valores.push(produtoId);
-    onde = `WHERE m.produto_id = $1`;
+    condicoes.push(`m.produto_id = $${valores.length}`);
   }
+  if (tipo) {
+    valores.push(tipo);
+    condicoes.push(`m.tipo = $${valores.length}`);
+  }
+  if (de) {
+    valores.push(de);
+    condicoes.push(`m.criado_em::date >= $${valores.length}::date`);
+  }
+  if (ate) {
+    valores.push(ate);
+    condicoes.push(`m.criado_em::date <= $${valores.length}::date`);
+  }
+  if (busca) {
+    valores.push(`%${busca}%`);
+    condicoes.push(
+      `(p.nome ILIKE $${valores.length} OR p.codigo ILIKE $${valores.length}
+        OR m.motivo ILIKE $${valores.length} OR l.numero_lote ILIKE $${valores.length})`
+    );
+  }
+
+  const onde = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";
   valores.push(limite);
+
   const { rows } = await consultar(
-    `SELECT m.id, m.produto_id, p.nome AS produto_nome, m.lote_id, m.tipo,
+    `SELECT m.id, m.produto_id, p.codigo AS produto_codigo, p.nome AS produto_nome,
+            m.lote_id, l.numero_lote, l.data_validade, m.tipo,
             m.quantidade, m.motivo, m.usuario_id, m.criado_em
        FROM estoque.movimentacoes_estoque m
        JOIN estoque.produtos p ON p.id = m.produto_id
+       LEFT JOIN estoque.lotes l ON l.id = m.lote_id
        ${onde}
       ORDER BY m.criado_em DESC
       LIMIT $${valores.length}`,
@@ -257,10 +328,41 @@ export async function listarMovimentacoes({ produtoId, limite = 100 }) {
   return rows;
 }
 
-/** Posição de estoque por produto — base do relatório em planilha. */
-export async function listarPosicaoEstoque() {
+/**
+ * Posição de estoque por produto — base do relatório em planilha. Aceita os
+ * mesmos filtros da tela, para o arquivo sair com o que está sendo visto.
+ */
+export async function listarPosicaoEstoque(filtros = {}) {
+  const condicoes = [];
+  const valores = [];
+
+  if (filtros.busca) {
+    valores.push(`%${filtros.busca}%`);
+    condicoes.push(
+      `(p.nome ILIKE $${valores.length} OR p.principio_ativo ILIKE $${valores.length}
+        OR p.codigo ILIKE $${valores.length} OR p.fabricante ILIKE $${valores.length}
+        OR p.codigo_barras ILIKE $${valores.length})`
+    );
+  }
+  if (filtros.tipo_controle) {
+    valores.push(filtros.tipo_controle);
+    condicoes.push(`p.tipo_controle = $${valores.length}`);
+  }
+  if (filtros.categoria_id) {
+    valores.push(filtros.categoria_id);
+    condicoes.push(`p.categoria_id = $${valores.length}`);
+  }
+  if (filtros.com_saldo) {
+    condicoes.push(`EXISTS (
+      SELECT 1 FROM estoque.lotes lx
+       WHERE lx.produto_id = p.id AND lx.quantidade > 0 AND lx.data_validade >= current_date
+    )`);
+  }
+
+  const onde = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";
+
   const { rows } = await consultar(
-    `SELECT p.nome, p.principio_ativo, p.fabricante, p.tipo_controle,
+    `SELECT p.codigo, p.nome, p.principio_ativo, p.fabricante, p.tipo_controle,
             p.classe_terapeutica, p.unidade_venda, p.codigo_barras,
             c.nome AS categoria_nome, f.nome AS fornecedor_nome,
             p.preco_custo, p.preco_venda, p.estoque_minimo,
@@ -274,10 +376,12 @@ export async function listarPosicaoEstoque() {
        LEFT JOIN estoque.categorias c ON c.id = p.categoria_id
        LEFT JOIN estoque.fornecedores f ON f.id = p.fornecedor_id
        LEFT JOIN estoque.lotes l ON l.produto_id = p.id
-      GROUP BY p.id, p.nome, p.principio_ativo, p.fabricante, p.tipo_controle,
+       ${onde}
+      GROUP BY p.id, p.codigo, p.nome, p.principio_ativo, p.fabricante, p.tipo_controle,
                p.classe_terapeutica, p.unidade_venda, p.codigo_barras,
                c.nome, f.nome, p.preco_custo, p.preco_venda, p.estoque_minimo
-      ORDER BY p.nome`
+      ORDER BY p.codigo`,
+    valores
   );
   return rows;
 }
@@ -286,17 +390,36 @@ export async function listarPosicaoEstoque() {
  * Movimentações de um período, para auditoria em planilha.
  * @param {{ de: string, ate: string }} intervalo
  */
-export async function listarMovimentacoesNoPeriodo({ de, ate }) {
+export async function listarMovimentacoesNoPeriodo({ de, ate, tipo, produto_id, busca }) {
+  const valores = [de, ate];
+  const condicoes = [`m.criado_em::date BETWEEN $1::date AND $2::date`];
+
+  if (tipo) {
+    valores.push(tipo);
+    condicoes.push(`m.tipo = $${valores.length}`);
+  }
+  if (produto_id) {
+    valores.push(produto_id);
+    condicoes.push(`m.produto_id = $${valores.length}`);
+  }
+  if (busca) {
+    valores.push(`%${busca}%`);
+    condicoes.push(
+      `(p.nome ILIKE $${valores.length} OR p.codigo ILIKE $${valores.length}
+        OR m.motivo ILIKE $${valores.length} OR l.numero_lote ILIKE $${valores.length})`
+    );
+  }
+
   const { rows } = await consultar(
     `SELECT m.criado_em, m.tipo, m.quantidade, m.motivo, m.usuario_id,
-            p.nome AS produto_nome, p.tipo_controle,
+            p.codigo AS produto_codigo, p.nome AS produto_nome, p.tipo_controle,
             l.numero_lote, l.data_validade
        FROM estoque.movimentacoes_estoque m
        JOIN estoque.produtos p ON p.id = m.produto_id
        LEFT JOIN estoque.lotes l ON l.id = m.lote_id
-      WHERE m.criado_em::date BETWEEN $1::date AND $2::date
+      WHERE ${condicoes.join(" AND ")}
       ORDER BY m.criado_em`,
-    [de, ate]
+    valores
   );
   return rows;
 }

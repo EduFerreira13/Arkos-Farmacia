@@ -40,7 +40,9 @@ import {
   listarPosicaoEstoque,
   listarProdutos,
   listarProdutosAVencer,
+  proximoCodigoProduto,
 } from "./repositorio.js";
+import { consultarCnpj, ErroCnpj } from "./cnpj.js";
 
 const auth = criarAutenticacao({ secret: env.JWT_SECRET });
 
@@ -88,14 +90,32 @@ export async function registrarRotas(app) {
   app.addHook("preHandler", auth.autenticar);
 
   app.get("/produtos", async (requisicao, resposta) => {
-    const { nome, codigo_barras, categoria_id, tipo_controle } = requisicao.query ?? {};
+    const { nome, busca, codigo_barras, categoria_id, tipo_controle, com_saldo } =
+      requisicao.query ?? {};
 
     if (tipo_controle && !TIPO_CONTROLE_LISTA.includes(tipo_controle)) {
       return invalido(resposta, `tipo_controle inválido. Use: ${TIPO_CONTROLE_LISTA.join(", ")}.`);
     }
 
-    return { produtos: await listarProdutos({ nome, codigo_barras, categoria_id, tipo_controle }) };
+    return {
+      produtos: await listarProdutos({
+        // `busca` é o nome novo do filtro livre; `nome` continua valendo para
+        // quem já chamava assim (o PDV, entre outros).
+        nome: busca ?? nome,
+        codigo_barras,
+        categoria_id,
+        tipo_controle,
+        // Inventário e perda só listam o que existe fisicamente.
+        com_saldo: com_saldo === "true" || com_saldo === true,
+      }),
+    };
   });
+
+  /**
+   * Código sugerido para o próximo cadastro. É a primeira coisa que a tela de
+   * novo produto mostra: sequencial e legível, no lugar do UUID.
+   */
+  app.get("/produtos/proximo-codigo", async () => ({ codigo: await proximoCodigoProduto() }));
 
   app.get("/produtos/:id", async (requisicao, resposta) => {
     const produto = await buscarProduto(requisicao.params.id);
@@ -171,6 +191,8 @@ export async function registrarRotas(app) {
     try {
       const produto = await inserirProduto({
         ...corpo,
+        // Sem código informado, o serviço gera o próximo da sequência.
+        codigo: String(corpo.codigo ?? "").trim() || (await proximoCodigoProduto()),
         tipo_controle: tipoControle,
         preco_venda: precoVenda,
         preco_custo: precoCusto,
@@ -182,9 +204,12 @@ export async function registrarRotas(app) {
     } catch (erro) {
       // 23505 = unique_violation, 23503 = foreign_key_violation no Postgres.
       if (erro.code === "23505") {
+        const porCodigo = String(erro.detail ?? "").includes("(codigo)");
         return resposta.code(409).send({
           erro: ERROS.DADOS_INVALIDOS,
-          mensagem: "Já existe produto com este código de barras.",
+          mensagem: porCodigo
+            ? "Já existe produto com este código."
+            : "Já existe produto com este código de barras.",
         });
       }
       if (erro.code === "23503") {
@@ -335,12 +360,19 @@ export async function registrarRotas(app) {
     }
   });
 
-  app.get("/movimentacoes", async (requisicao) => {
-    const { produto_id, limite } = requisicao.query ?? {};
+  app.get("/movimentacoes", async (requisicao, resposta) => {
+    const { produto_id, tipo, de, ate, busca, limite } = requisicao.query ?? {};
+    if (tipo && !TIPO_MOVIMENTACAO_LISTA.includes(tipo)) {
+      return invalido(resposta, `tipo inválido. Use: ${TIPO_MOVIMENTACAO_LISTA.join(", ")}.`);
+    }
     const limiteValido = numeroPositivo(limite) ?? 100;
     return {
       movimentacoes: await listarMovimentacoes({
         produtoId: produto_id,
+        tipo,
+        de,
+        ate,
+        busca,
         limite: Math.min(limiteValido, 500),
       }),
     };
@@ -362,11 +394,23 @@ export async function registrarRotas(app) {
 
   /** Posição de estoque em planilha (CSV que o Excel abre direto). */
   app.get("/relatorios/estoque", async (requisicao, resposta) => {
-    const linhas = await listarPosicaoEstoque();
+    const { busca, tipo_controle, categoria_id, com_saldo } = requisicao.query ?? {};
+    if (tipo_controle && !TIPO_CONTROLE_LISTA.includes(tipo_controle)) {
+      return invalido(resposta, `tipo_controle inválido. Use: ${TIPO_CONTROLE_LISTA.join(", ")}.`);
+    }
+
+    // O arquivo sai com o que está na tela: mesmos filtros, mesma lista.
+    const linhas = await listarPosicaoEstoque({
+      busca,
+      tipo_controle,
+      categoria_id,
+      com_saldo: com_saldo === "true" || com_saldo === true,
+    });
     const valorEmEstoque = (linha) => linha.saldo_disponivel * Number(linha.preco_custo);
 
     const csv = gerarCsv(
       [
+        { titulo: "Codigo", valor: (l) => l.codigo ?? "" },
         { titulo: "Produto", valor: (l) => l.nome },
         { titulo: "Categoria", valor: (l) => l.categoria_nome ?? "" },
         { titulo: "Principio ativo", valor: (l) => l.principio_ativo ?? "" },
@@ -422,7 +466,12 @@ export async function registrarRotas(app) {
     const intervalo = periodo(requisicao.query);
     if (intervalo.erro) return invalido(resposta, intervalo.erro);
 
-    const linhas = await listarMovimentacoesNoPeriodo(intervalo);
+    const { tipo, produto_id, busca } = requisicao.query ?? {};
+    if (tipo && !TIPO_MOVIMENTACAO_LISTA.includes(tipo)) {
+      return invalido(resposta, `tipo inválido. Use: ${TIPO_MOVIMENTACAO_LISTA.join(", ")}.`);
+    }
+
+    const linhas = await listarMovimentacoesNoPeriodo({ ...intervalo, tipo, produto_id, busca });
     const soma = (tipo) =>
       linhas.filter((l) => l.tipo === tipo).reduce((t, l) => t + l.quantidade, 0);
 
@@ -430,6 +479,7 @@ export async function registrarRotas(app) {
       [
         { titulo: "Data e hora", valor: (l) => formatarDataHora(l.criado_em) },
         { titulo: "Tipo", valor: (l) => l.tipo },
+        { titulo: "Codigo do produto", valor: (l) => l.produto_codigo ?? "" },
         { titulo: "Produto", valor: (l) => l.produto_nome },
         { titulo: "Tipo de controle", valor: (l) => l.tipo_controle },
         { titulo: "Lote", valor: (l) => l.numero_lote ?? "" },
@@ -453,7 +503,11 @@ export async function registrarRotas(app) {
       .header("Content-Type", "text/csv; charset=utf-8")
       .header(
         "Content-Disposition",
-        `attachment; filename="${nomeArquivo("movimentacoes_estoque", intervalo.de, intervalo.ate)}"`
+        `attachment; filename="${nomeArquivo(
+          tipo ? `movimentacoes_${tipo}` : "movimentacoes_estoque",
+          intervalo.de,
+          intervalo.ate
+        )}"`
       )
       .send(csv);
   });
@@ -467,7 +521,53 @@ export async function registrarRotas(app) {
     return resposta.code(201).send({ categoria: await inserirCategoria(nome) });
   });
 
-  app.get("/fornecedores", async () => ({ fornecedores: await listarFornecedores() }));
+  app.get("/fornecedores", async (requisicao) => ({
+    fornecedores: await listarFornecedores({ busca: requisicao.query?.busca }),
+  }));
+
+  /**
+   * Consulta pública de CNPJ (Receita Federal via BrasilAPI). Fica no serviço,
+   * e não no navegador, porque o endpoint público não libera CORS — e assim a
+   * tela não precisa saber qual provedor está sendo usado.
+   */
+  app.get("/fornecedores/consulta-cnpj/:cnpj", async (requisicao, resposta) => {
+    try {
+      return { fornecedor: await consultarCnpj(requisicao.params.cnpj) };
+    } catch (erro) {
+      if (erro instanceof ErroCnpj) {
+        return resposta
+          .code(erro.status)
+          .send({ erro: erro.codigo, mensagem: erro.message });
+      }
+      throw erro;
+    }
+  });
+
+  /** Fornecedores em planilha, com o mesmo filtro da tela. */
+  app.get("/relatorios/fornecedores", async (requisicao, resposta) => {
+    const linhas = await listarFornecedores({ busca: requisicao.query?.busca });
+
+    const csv = gerarCsv(
+      [
+        { titulo: "Fornecedor", valor: (l) => l.nome },
+        { titulo: "CNPJ", valor: (l) => l.cnpj ?? "" },
+        { titulo: "Telefone", valor: (l) => l.telefone ?? "" },
+        { titulo: "Email", valor: (l) => l.email ?? "" },
+        { titulo: "Produtos vinculados", valor: (l) => l.total_produtos },
+      ],
+      linhas,
+      [
+        { titulo: "Fornecedores na lista", valor: linhas.length },
+        { titulo: "Com CNPJ cadastrado", valor: linhas.filter((l) => l.cnpj).length },
+        { titulo: "Sem produto vinculado", valor: linhas.filter((l) => !l.total_produtos).length },
+      ]
+    );
+
+    return resposta
+      .header("Content-Type", "text/csv; charset=utf-8")
+      .header("Content-Disposition", `attachment; filename="fornecedores_${hojeNoFuso()}.csv"`)
+      .send(csv);
+  });
 
   app.patch("/fornecedores/:id", { preHandler: auth.exigirPermissao("ajustar_estoque") }, async (requisicao, resposta) => {
     try {

@@ -15,6 +15,10 @@ export const env = {
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN ?? "8h",
   NODE_ENV: process.env.NODE_ENV ?? "development",
   TZ_NEGOCIO: process.env.TZ_NEGOCIO ?? "America/Sao_Paulo",
+
+  // Consulta pública de CNPJ usada no cadastro de fornecedor (src/cnpj.js).
+  // Sem chave e sem custo; trocar de provedor é trocar esta URL.
+  CNPJ_API_URL: process.env.CNPJ_API_URL ?? "https://brasilapi.com.br/api/cnpj/v1",
 };
 
 export function validarEnv() {
