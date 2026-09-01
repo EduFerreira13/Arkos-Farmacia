@@ -36,9 +36,6 @@ function FormularioEntrada({ aoEsquecer }) {
   return (
     <>
       <h1 className="text-h1 text-texto">Entrar</h1>
-      <p className="mt-1 text-corpo text-secundario">
-        Use as credenciais cadastradas pelo administrador.
-      </p>
 
       <form onSubmit={submeter} className="mt-7 space-y-4">
         <CampoTexto
@@ -256,14 +253,12 @@ export function Login() {
   return (
     <div className="flex h-full">
       {/* Gradiente da marca como destaque da tela de login (§6). A marca fica no
-          centro do painel, que é onde o olho cai primeiro, com o texto logo
+          centro do painel, que é onde o olho cai primeiro, com a frase logo
           abaixo; a assinatura do rodapé sai do fluxo para não puxar o bloco. */}
       <div className="relative hidden w-[42%] flex-col items-center justify-center bg-marca p-10 text-center text-white lg:flex">
         <LogoCompleta altura={140} variante="monocromatico" className="text-white" />
-        <p className="mt-10 text-h1 leading-tight">Gestão da farmácia em um só lugar</p>
-        <p className="mt-3 max-w-md text-corpo-espacoso text-white/85">
-          Vendas, estoque com controle de lote e validade, financeiro e controlados — com as
-          travas de segurança que a operação exige.
+        <p className="mt-10 max-w-md text-h1 leading-tight">
+          Gestão farmacêutica em um único lugar!
         </p>
         <p className="absolute inset-x-0 bottom-10 text-rotulo text-white/70">Arkos MVP</p>
       </div>

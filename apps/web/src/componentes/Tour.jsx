@@ -26,14 +26,14 @@ const PASSOS = [
     id: "boas-vindas",
     titulo: "Bem-vindo ao Arkos",
     texto:
-      "São seis áreas no menu à esquerda e um painel com os números do dia. Em menos de um minuto eu mostro onde fica cada coisa — dá para sair quando quiser.",
+      "São seis áreas no menu à esquerda e um painel com os números do dia. Em menos de um minuto mostramos onde fica cada coisa. A apresentação pode ser encerrada a qualquer momento.",
   },
   {
     id: "indicadores",
     alvo: "[data-tour='indicadores']",
     titulo: "Os números do dia",
     texto:
-      "Vendas de hoje, lotes vencendo, produtos abaixo do mínimo e ticket médio — com a variação contra ontem.",
+      "Vendas de hoje, lotes vencendo, produtos abaixo do mínimo e ticket médio.",
   },
   {
     id: "vendas",
