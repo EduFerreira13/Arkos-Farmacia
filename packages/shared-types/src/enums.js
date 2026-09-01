@@ -149,3 +149,47 @@ export const ERROS = {
   CAIXA_FECHADO: "caixa_fechado",
   FALHA_INTEGRACAO: "falha_integracao",
 };
+
+/**
+ * compras.pedidos.status — o pedido nasce já valendo como pedido feito ao
+ * fornecedor, esperando a entrega. Não existe mais rascunho: criar meio pedido
+ * e deixar guardado só gerava lista de pedido que ninguém mandou.
+ */
+export const STATUS_PEDIDO_COMPRA = {
+  PENDENTE_ENTREGA: "pendente_entrega",
+  RECEBIDO: "recebido",
+  CANCELADO: "cancelado",
+};
+
+export const STATUS_PEDIDO_COMPRA_LISTA = Object.values(STATUS_PEDIDO_COMPRA);
+
+export const STATUS_PEDIDO_COMPRA_LABEL = {
+  [STATUS_PEDIDO_COMPRA.PENDENTE_ENTREGA]: "Pendente de entrega",
+  [STATUS_PEDIDO_COMPRA.RECEBIDO]: "Recebido",
+  [STATUS_PEDIDO_COMPRA.CANCELADO]: "Cancelado",
+};
+
+/**
+ * Forma de pagamento combinada com o fornecedor. É outra lista que a da venda:
+ * ninguém paga distribuidora em cartão de débito, e boleto/prazo não existem
+ * no balcão.
+ */
+export const FORMA_PAGAMENTO_COMPRA = {
+  BOLETO: "boleto",
+  PIX: "pix",
+  TRANSFERENCIA: "transferencia",
+  DINHEIRO: "dinheiro",
+  CARTAO: "cartao",
+  PRAZO: "prazo",
+};
+
+export const FORMA_PAGAMENTO_COMPRA_LISTA = Object.values(FORMA_PAGAMENTO_COMPRA);
+
+export const FORMA_PAGAMENTO_COMPRA_LABEL = {
+  [FORMA_PAGAMENTO_COMPRA.BOLETO]: "Boleto",
+  [FORMA_PAGAMENTO_COMPRA.PIX]: "Pix",
+  [FORMA_PAGAMENTO_COMPRA.TRANSFERENCIA]: "Transferência bancária",
+  [FORMA_PAGAMENTO_COMPRA.DINHEIRO]: "Dinheiro",
+  [FORMA_PAGAMENTO_COMPRA.CARTAO]: "Cartão",
+  [FORMA_PAGAMENTO_COMPRA.PRAZO]: "A prazo (faturado)",
+};
