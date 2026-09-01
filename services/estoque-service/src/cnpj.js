@@ -17,6 +17,14 @@ import { ERROS } from "@arkos/shared-types";
 
 const TEMPO_LIMITE_MS = 8000;
 
+/**
+ * A borda da BrasilAPI recusa com 403 qualquer requisição sem User-Agent — e o
+ * fetch do Node não manda nenhum por padrão. Identificar quem está chamando é
+ * o mínimo de educação com um serviço público e gratuito, e é o que faz a
+ * consulta responder.
+ */
+const IDENTIFICACAO = "Arkos/0.1 (sistema de gestao para farmacia)";
+
 export class ErroCnpj extends Error {
   constructor(status, codigo, mensagem) {
     super(mensagem);
@@ -84,7 +92,7 @@ export async function consultarCnpj(cnpj) {
   let resposta;
   try {
     resposta = await fetch(`${env.CNPJ_API_URL}/${digitos}`, {
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", "User-Agent": IDENTIFICACAO },
       signal: AbortSignal.timeout(TEMPO_LIMITE_MS),
     });
   } catch {
@@ -99,10 +107,14 @@ export async function consultarCnpj(cnpj) {
     throw new ErroCnpj(404, ERROS.NAO_ENCONTRADO, "Nenhuma empresa encontrada com este CNPJ.");
   }
   if (!resposta.ok) {
+    // O status vai na mensagem de propósito: sem ele, "respondeu com erro" não
+    // distingue bloqueio (403), limite de uso (429) e provedor fora do ar (5xx),
+    // e quem for investigar começa do zero.
     throw new ErroCnpj(
       502,
       ERROS.FALHA_INTEGRACAO,
-      "A consulta de CNPJ respondeu com erro. Tente de novo em instantes."
+      `A consulta de CNPJ respondeu com erro (HTTP ${resposta.status}). ` +
+        "Tente de novo em instantes ou preencha à mão."
     );
   }
 
