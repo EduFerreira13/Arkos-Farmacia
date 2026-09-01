@@ -8,7 +8,8 @@ import { formatarData, formatarMoeda, formatarNumero } from "../lib/formato.js";
 import { temPermissao, usarAutenticacao } from "../lib/autenticacao.jsx";
 import { Botao, BotaoIcone } from "../componentes/Botao.jsx";
 import { ExportarRelatorio } from "../componentes/ExportarRelatorio.jsx";
-import { CampoSelect, CampoTexto } from "../componentes/Campos.jsx";
+import { BarraDePesquisa, LimparFiltros, LinhaDeFiltros } from "../componentes/Filtros.jsx";
+import { CampoSelect } from "../componentes/Campos.jsx";
 import { Modal } from "../componentes/Modal.jsx";
 import { Tabela } from "../componentes/Tabela.jsx";
 import {
@@ -26,13 +27,6 @@ function badgeControle(tipo) {
   if (tipo === TIPO_CONTROLE.TARJA_PRETA) return <Badge tom="erro">Tarja preta</Badge>;
   if (tipo === TIPO_CONTROLE.TARJA_VERMELHA) return <Badge tom="alerta">Tarja vermelha</Badge>;
   return <Badge>Venda livre</Badge>;
-}
-
-function badgeEstoque(produto) {
-  const quantidade = produto.quantidade_atual ?? 0;
-  if (quantidade === 0) return <Badge tom="erro">Sem estoque</Badge>;
-  if (quantidade <= produto.estoque_minimo) return <Badge tom="alerta">Abaixo do mínimo</Badge>;
-  return <Badge tom="sucesso">{formatarNumero(quantidade)}</Badge>;
 }
 
 function DetalheProduto({ produtoId, aoFechar, aoEditar, podeEditar }) {
@@ -66,11 +60,11 @@ function DetalheProduto({ produtoId, aoFechar, aoEditar, podeEditar }) {
         <div className="space-y-6">
           <div className="grid grid-cols-3 gap-4">
             {[
+              ["Código", dados.produto.codigo || "—"],
               ["Nome", dados.produto.nome],
               ["Princípio ativo", dados.produto.principio_ativo || "—"],
               ["Fabricante", dados.produto.fabricante || "—"],
               ["Categoria", dados.produto.categoria_nome || "—"],
-              ["Fornecedor", dados.produto.fornecedor_nome || "—"],
               ["Código de barras", dados.produto.codigo_barras || "—"],
               ["Unidade de venda", dados.produto.unidade_venda],
               ["Preço de custo", formatarMoeda(dados.produto.preco_custo)],
@@ -164,17 +158,27 @@ export function Produtos() {
   const [parametros, definirParametros] = useSearchParams();
   const [busca, definirBusca] = useState(parametros.get("busca") ?? "");
   const [tipoControle, definirTipoControle] = useState("");
+  const [categoriaId, definirCategoriaId] = useState("");
   const [formularioAberto, definirFormularioAberto] = useState(false);
   const [produtoEmEdicao, definirProdutoEmEdicao] = useState(null);
   const [produtoSelecionado, definirProdutoSelecionado] = useState(null);
 
+  const categorias = usarBusca(() => api.estoque.get("/categorias"), []);
+
+  // Um objeto só de filtros serve a tela e o relatório — o arquivo sai com o
+  // mesmo recorte da lista que está sendo olhada.
+  const filtros = useMemo(() => {
+    const limpos = {};
+    if (busca.trim()) limpos.busca = busca.trim();
+    if (tipoControle) limpos.tipo_controle = tipoControle;
+    if (categoriaId) limpos.categoria_id = categoriaId;
+    return limpos;
+  }, [busca, tipoControle, categoriaId]);
+
   const consulta = useMemo(() => {
-    const query = new URLSearchParams();
-    if (busca.trim()) query.set("nome", busca.trim());
-    if (tipoControle) query.set("tipo_controle", tipoControle);
-    const texto = query.toString();
+    const texto = new URLSearchParams(filtros).toString();
     return texto ? `?${texto}` : "";
-  }, [busca, tipoControle]);
+  }, [filtros]);
 
   const { dados, carregando, erro, recarregar } = usarBusca(
     () => api.estoque.get(`/produtos${consulta}`),
@@ -183,31 +187,43 @@ export function Produtos() {
 
   const podeCadastrar = temPermissao(usuario, "ajustar_estoque");
 
-  function aoBuscar(evento) {
-    definirBusca(evento.target.value);
-    definirParametros(evento.target.value ? { busca: evento.target.value } : {}, { replace: true });
+  const resumoDosFiltros = useMemo(() => {
+    const linhas = [];
+    if (busca.trim()) linhas.push(`Pesquisa: ${busca.trim()}`);
+    if (tipoControle) linhas.push(`Controle: ${TIPO_CONTROLE_LABEL[tipoControle]}`);
+    if (categoriaId) {
+      const categoria = categorias.dados?.categorias.find((item) => item.id === categoriaId);
+      if (categoria) linhas.push(`Categoria: ${categoria.nome}`);
+    }
+    return linhas;
+  }, [busca, tipoControle, categoriaId, categorias.dados]);
+
+  function aoBuscar(valor) {
+    definirBusca(valor);
+    definirParametros(valor ? { busca: valor } : {}, { replace: true });
+  }
+
+  function limpar() {
+    aoBuscar("");
+    definirTipoControle("");
+    definirCategoriaId("");
   }
 
   return (
     <>
       <TituloPagina
         titulo="Produtos"
-        descricao="Cadastro, preços e estoque disponível por produto."
         acoes={
           <>
             <ExportarRelatorio
               servico="estoque"
               caminho="/relatorios/estoque"
-              titulo="Exportar posição de estoque"
+              titulo="Relatório de produtos"
+              descricao="Cadastro completo, saldo por produto e valor em estoque."
+              rotulo="Relatório"
               comPeriodo={false}
-              rotulo="Exportar estoque"
-            />
-            <ExportarRelatorio
-              servico="estoque"
-              caminho="/relatorios/movimentacoes"
-              titulo="Exportar movimentações"
-              descricao="Entradas, saídas, ajustes, perdas e devoluções do período."
-              rotulo="Exportar movimentações"
+              parametros={filtros}
+              resumoDosFiltros={resumoDosFiltros}
             />
             {podeCadastrar ? (
               <Botao
@@ -225,13 +241,14 @@ export function Produtos() {
       />
 
       <Card>
-        <div className="flex items-end gap-3 border-b border-borda px-5 py-4">
-          <CampoTexto
-            rotulo="Buscar por nome ou princípio ativo"
-            className="w-80"
-            value={busca}
-            onChange={aoBuscar}
-            placeholder="Ex: dipirona"
+        <LinhaDeFiltros
+          acoes={<LimparFiltros ativo={Boolean(resumoDosFiltros.length)} aoLimpar={limpar} />}
+        >
+          <BarraDePesquisa
+            rotulo="Pesquisar produto"
+            placeholder="Código, nome, princípio ativo, fabricante ou EAN"
+            valor={busca}
+            aoMudar={aoBuscar}
           />
           <CampoSelect
             rotulo="Tipo de controle"
@@ -246,7 +263,20 @@ export function Produtos() {
               })),
             ]}
           />
-        </div>
+          <CampoSelect
+            rotulo="Categoria"
+            className="w-56"
+            value={categoriaId}
+            onChange={(evento) => definirCategoriaId(evento.target.value)}
+            opcoes={[
+              { valor: "", rotulo: "Todas" },
+              ...(categorias.dados?.categorias ?? []).map((categoria) => ({
+                valor: categoria.id,
+                rotulo: categoria.nome,
+              })),
+            ]}
+          />
+        </LinhaDeFiltros>
 
         {carregando ? <Carregando texto="Carregando produtos" /> : null}
         {erro ? (
@@ -258,12 +288,18 @@ export function Produtos() {
         {dados ? (
           <Tabela
             colunas={[
+              // Preço e saldo saíram: preço é assunto do PDV, saldo é do
+              // estoque. Aqui a lista serve para achar e conferir o cadastro,
+              // então o espaço vai para os campos que antes ficavam escondidos
+              // atrás de um clique.
+              { chave: "codigo", titulo: "Código", largura: "104px", renderizar: (p) => p.codigo || "—" },
               { chave: "nome", titulo: "Produto" },
               {
                 chave: "principio_ativo",
                 titulo: "Princípio ativo",
                 renderizar: (p) => p.principio_ativo || "—",
               },
+              { chave: "fabricante", titulo: "Fabricante", renderizar: (p) => p.fabricante || "—" },
               { chave: "categoria_nome", titulo: "Categoria", renderizar: (p) => p.categoria_nome || "—" },
               {
                 chave: "tipo_controle",
@@ -271,16 +307,16 @@ export function Produtos() {
                 renderizar: (p) => badgeControle(p.tipo_controle),
               },
               {
-                chave: "preco_venda",
-                titulo: "Preço",
-                alinhamento: "direita",
-                renderizar: (p) => formatarMoeda(p.preco_venda),
+                chave: "codigo_barras",
+                titulo: "Código de barras",
+                renderizar: (p) => p.codigo_barras || "—",
               },
               {
-                chave: "quantidade_atual",
-                titulo: "Estoque",
-                alinhamento: "direita",
-                renderizar: (p) => badgeEstoque(p),
+                chave: "unidade_venda",
+                titulo: "Unidade",
+                renderizar: (p) => (
+                  <span className="capitalize">{p.unidade_venda}</span>
+                ),
               },
               {
                 chave: "acoes",
@@ -308,7 +344,7 @@ export function Produtos() {
                 icone={Package}
                 titulo="Nenhum produto encontrado"
                 descricao={
-                  busca || tipoControle
+                  resumoDosFiltros.length
                     ? "Ajuste os filtros para ver outros produtos."
                     : "Cadastre o primeiro produto para começar a operar."
                 }

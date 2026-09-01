@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TIPO_CONTROLE, TIPO_CONTROLE_LABEL, TIPO_CONTROLE_LISTA, exigeReceita } from "@arkos/shared-types";
 import { api } from "../lib/api.js";
 import { usarBusca } from "../lib/usarBusca.js";
@@ -8,12 +8,12 @@ import { Modal } from "../componentes/Modal.jsx";
 import { Aviso, Carregando } from "../componentes/Superficies.jsx";
 
 const INICIAL = {
+  codigo: "",
   nome: "",
   principio_ativo: "",
   fabricante: "",
   classe_terapeutica: "",
   categoria_id: "",
-  fornecedor_id: "",
   codigo_barras: "",
   unidade_venda: "unidade",
   tipo_controle: TIPO_CONTROLE.LIVRE,
@@ -30,6 +30,15 @@ const INICIAL = {
  * Cadastro e edição de produto — campos obrigatórios do §1 das regras de
  * negócio. Com `produto`, o formulário edita (PATCH) em vez de criar; mudança
  * de preço gera histórico no serviço de estoque (§8).
+ *
+ * O código do produto é a primeira coisa da tela e vem pronto do serviço, na
+ * sequência do último cadastrado (PRD-00001, PRD-00002...). Fica editável
+ * porque farmácia que já tem uma numeração própria não vai trocar a dela.
+ *
+ * O fornecedor saiu do cadastro: produto não pertence a um fornecedor — o mesmo
+ * genérico vem de três distribuidoras conforme o preço da semana. Quem
+ * abasteceu cada lote fica registrado no pedido de compra, que é onde a
+ * pergunta realmente aparece.
  */
 export function FormularioProduto({ produto, aoFechar, aoSalvar }) {
   const edicao = Boolean(produto);
@@ -53,14 +62,26 @@ export function FormularioProduto({ produto, aoFechar, aoSalvar }) {
 
   const auxiliares = usarBusca(
     () =>
-      Promise.all([api.estoque.get("/categorias"), api.estoque.get("/fornecedores")]).then(
-        ([categorias, fornecedores]) => ({
-          categorias: categorias.categorias,
-          fornecedores: fornecedores.fornecedores,
-        })
-      ),
+      Promise.all([
+        api.estoque.get("/categorias"),
+        // Na edição o código já existe; só o cadastro novo precisa da sugestão.
+        edicao
+          ? Promise.resolve({ codigo: null })
+          : api.estoque.get("/produtos/proximo-codigo"),
+      ]).then(([categorias, sugestao]) => ({
+        categorias: categorias.categorias,
+        codigoSugerido: sugestao.codigo,
+      })),
     []
   );
+
+  // Preenche o código sugerido assim que ele chega, sem sobrescrever o que a
+  // pessoa já tiver digitado por cima.
+  useEffect(() => {
+    const sugerido = auxiliares.dados?.codigoSugerido;
+    if (!sugerido) return;
+    definirCampos((atual) => (atual.codigo ? atual : { ...atual, codigo: sugerido }));
+  }, [auxiliares.dados?.codigoSugerido]);
 
   const controlado = exigeReceita(campos.tipo_controle);
 
@@ -78,9 +99,9 @@ export function FormularioProduto({ produto, aoFechar, aoSalvar }) {
     try {
       const corpo = {
         ...campos,
+        codigo: campos.codigo.trim(),
         principio_ativo: campos.principio_ativo || null,
         classe_terapeutica: campos.classe_terapeutica || null,
-        fornecedor_id: campos.fornecedor_id || null,
         ncm: campos.ncm || null,
         cfop: campos.cfop || null,
         preco_custo: Number(campos.preco_custo || 0),
@@ -128,6 +149,17 @@ export function FormularioProduto({ produto, aoFechar, aoSalvar }) {
       {auxiliares.dados ? (
         <form id="formulario-produto" onSubmit={submeter} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
+            <CampoTexto
+              rotulo="Código do produto"
+              required
+              value={campos.codigo}
+              onChange={atualizar("codigo")}
+              ajuda={
+                edicao
+                  ? "Mudar o código muda como o produto é encontrado na conferência."
+                  : "Sugerido na sequência do último cadastrado. Dá para trocar."
+              }
+            />
             <CampoTexto rotulo="Nome do produto" required value={campos.nome} onChange={atualizar("nome")} />
             <CampoTexto
               rotulo="Fabricante"
@@ -143,15 +175,6 @@ export function FormularioProduto({ produto, aoFechar, aoSalvar }) {
               opcoes={[
                 { valor: "", rotulo: "Selecione" },
                 ...auxiliares.dados.categorias.map((c) => ({ valor: c.id, rotulo: c.nome })),
-              ]}
-            />
-            <CampoSelect
-              rotulo="Fornecedor"
-              value={campos.fornecedor_id}
-              onChange={atualizar("fornecedor_id")}
-              opcoes={[
-                { valor: "", rotulo: "Sem fornecedor definido" },
-                ...auxiliares.dados.fornecedores.map((f) => ({ valor: f.id, rotulo: f.nome })),
               ]}
             />
             <CampoTexto
