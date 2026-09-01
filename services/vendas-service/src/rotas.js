@@ -9,6 +9,7 @@ import { criarAutenticacao, descontoMaximoPct } from "@arkos/auth-middleware";
 import { env } from "./env.js";
 import { ErroServico, estoque, financeiro, fiscal } from "./servicos.js";
 import {
+  formatarData,
   formatarDataHora,
   gerarCsv,
   hojeNoFuso,
@@ -474,14 +475,36 @@ export async function registrarRotas(app) {
     return { contato };
   });
 
+  /** Filtros da tela de clientes — os mesmos que o relatório aceita. */
+  function filtrosDeCliente(query = {}) {
+    return {
+      busca: query.busca,
+      convenio: query.convenio,
+      min_compras: query.min_compras,
+      min_valor: query.min_valor,
+      ordenar: query.ordenar,
+    };
+  }
+
   app.get("/clientes", async (requisicao) => ({
-    clientes: await listarClientes({ busca: requisicao.query?.busca }),
+    clientes: await listarClientes(filtrosDeCliente(requisicao.query)),
   }));
+
+  /**
+   * §5 — nome, CPF e telefone são obrigatórios: o CPF identifica a pessoa na
+   * nota e no convênio, e o telefone é o que permite o retorno do
+   * relacionamento. O resto do cadastro é opcional.
+   */
+  const OBRIGATORIOS_CLIENTE = [
+    ["nome", "Informe o nome do cliente."],
+    ["cpf", "Informe o CPF do cliente."],
+    ["telefone", "Informe o telefone do cliente."],
+  ];
 
   app.post("/clientes", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
     const corpo = requisicao.body ?? {};
-    if (!corpo.nome || !String(corpo.nome).trim()) {
-      return invalido(resposta, "Informe o nome do cliente.");
+    for (const [campo, mensagem] of OBRIGATORIOS_CLIENTE) {
+      if (!corpo[campo] || !String(corpo[campo]).trim()) return invalido(resposta, mensagem);
     }
     try {
       return resposta.code(201).send({ cliente: await inserirCliente(corpo) });
@@ -496,8 +519,17 @@ export async function registrarRotas(app) {
   });
 
   app.patch("/clientes/:id", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
+    const corpo = requisicao.body ?? {};
+    // Na edição, os obrigatórios só valem se vierem no corpo — quem manda só
+    // `observacao` não precisa reenviar CPF e telefone.
+    for (const [campo, mensagem] of OBRIGATORIOS_CLIENTE) {
+      if (corpo[campo] !== undefined && !String(corpo[campo]).trim()) {
+        return invalido(resposta, mensagem);
+      }
+    }
+
     try {
-      const cliente = await atualizarCliente(requisicao.params.id, requisicao.body ?? {});
+      const cliente = await atualizarCliente(requisicao.params.id, corpo);
       if (!cliente) return invalido(resposta, "Informe algum campo para atualizar.");
       return { cliente };
     } catch (erro) {
@@ -508,6 +540,55 @@ export async function registrarRotas(app) {
       }
       throw erro;
     }
+  });
+
+  /**
+   * Clientes em planilha, com os filtros que estão valendo na tela. Traz dado
+   * pessoal (CPF, telefone, endereço) — quem exporta passa a ser responsável
+   * pelo arquivo, então a finalidade tem de justificar a extração (LGPD).
+   */
+  app.get("/relatorios/clientes", async (requisicao, resposta) => {
+    const linhas = await listarClientes(filtrosDeCliente(requisicao.query));
+
+    const csv = gerarCsv(
+      [
+        { titulo: "Cliente", valor: (l) => l.nome },
+        { titulo: "CPF", valor: (l) => l.cpf ?? "" },
+        { titulo: "Telefone", valor: (l) => l.telefone ?? "" },
+        { titulo: "Email", valor: (l) => l.email ?? "" },
+        { titulo: "Convenio", valor: (l) => l.convenio ?? "Particular" },
+        { titulo: "Data de nascimento", valor: (l) => formatarData(l.data_nascimento) },
+        { titulo: "Endereco", valor: (l) => l.endereco ?? "" },
+        { titulo: "Aceita contato", valor: (l) => (l.aceita_contato ? "Sim" : "Nao") },
+        { titulo: "Compras", valor: (l) => l.total_compras },
+        { titulo: "Total gasto (R$)", valor: (l) => Number(l.total_gasto) },
+        {
+          titulo: "Ticket medio (R$)",
+          valor: (l) => (l.total_compras ? Number(l.total_gasto) / l.total_compras : 0),
+        },
+        { titulo: "Ultima compra", valor: (l) => formatarDataHora(l.ultima_compra) },
+        { titulo: "Cadastrado em", valor: (l) => formatarDataHora(l.criado_em) },
+        { titulo: "Observacao", valor: (l) => l.observacao ?? "" },
+      ],
+      linhas,
+      [
+        { titulo: "Clientes na lista", valor: linhas.length },
+        { titulo: "Com ao menos uma compra", valor: linhas.filter((l) => l.total_compras).length },
+        {
+          titulo: "Compras somadas",
+          valor: linhas.reduce((total, l) => total + l.total_compras, 0),
+        },
+        {
+          titulo: "Valor gasto somado (R$)",
+          valor: linhas.reduce((total, l) => total + Number(l.total_gasto), 0),
+        },
+      ]
+    );
+
+    return resposta
+      .header("Content-Type", "text/csv; charset=utf-8")
+      .header("Content-Disposition", `attachment; filename="clientes_${hojeNoFuso()}.csv"`)
+      .send(csv);
   });
 
   app.get("/relatorio", async (requisicao, resposta) => {

@@ -73,24 +73,69 @@ export async function listarVendas({ de, ate, status, controlado, busca, limite 
 
 // -------------------------------------------------------------------- clientes
 
-export async function listarClientes({ busca } = {}) {
+/**
+ * Clientes com o resumo de compra de cada um. Os filtros são os mesmos da tela
+ * (e do relatório): busca livre, convênio, e piso de compras e de valor gasto —
+ * é assim que se separa quem sustenta a farmácia de quem passou uma vez.
+ *
+ * @param {{ busca?: string, convenio?: string, min_compras?: number,
+ *   min_valor?: number, ordenar?: "nome"|"compras"|"valor" }} filtros
+ */
+export async function listarClientes({ busca, convenio, min_compras, min_valor, ordenar } = {}) {
+  const condicoes = [];
   const valores = [];
-  let onde = "";
+
   if (busca) {
     valores.push(`%${busca}%`);
-    onde = `WHERE cl.nome ILIKE $1 OR cl.cpf ILIKE $1 OR cl.convenio ILIKE $1`;
+    condicoes.push(
+      `(cl.nome ILIKE $${valores.length} OR cl.cpf ILIKE $${valores.length}
+        OR cl.convenio ILIKE $${valores.length} OR cl.telefone ILIKE $${valores.length}
+        OR cl.email ILIKE $${valores.length})`
+    );
   }
+
+  // "particular" é a ausência de convênio, não um convênio chamado assim.
+  if (convenio === "particular") condicoes.push(`cl.convenio IS NULL`);
+  else if (convenio === "com_convenio") condicoes.push(`cl.convenio IS NOT NULL`);
+  else if (convenio) {
+    valores.push(convenio);
+    condicoes.push(`cl.convenio = $${valores.length}`);
+  }
+
+  const onde = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";
+
+  // Compras e valor gasto são agregados: filtram no HAVING, não no WHERE.
+  const tendo = [];
+  if (Number.isFinite(Number(min_compras)) && Number(min_compras) > 0) {
+    valores.push(Number(min_compras));
+    tendo.push(`compras.total_compras >= $${valores.length}`);
+  }
+  if (Number.isFinite(Number(min_valor)) && Number(min_valor) > 0) {
+    valores.push(Number(min_valor));
+    tendo.push(`compras.total_gasto >= $${valores.length}`);
+  }
+
+  const ORDENS = {
+    nome: "cl.nome",
+    compras: "compras.total_compras DESC, cl.nome",
+    valor: "compras.total_gasto DESC, cl.nome",
+  };
 
   const { rows } = await consultar(
     `SELECT cl.id, cl.nome, cl.cpf, cl.telefone, cl.email, cl.convenio, cl.observacao,
-            cl.ativo, cl.aceita_contato, cl.data_nascimento, cl.criado_em,
-            (SELECT COUNT(*) FROM vendas.vendas v
-              WHERE v.cliente_id = cl.id AND v.status = 'finalizada')::int AS total_compras,
-            (SELECT COALESCE(SUM(v.valor_total), 0) FROM vendas.vendas v
-              WHERE v.cliente_id = cl.id AND v.status = 'finalizada') AS total_gasto
+            cl.endereco, cl.ativo, cl.aceita_contato, cl.data_nascimento, cl.criado_em,
+            compras.total_compras, compras.total_gasto, compras.ultima_compra
        FROM vendas.clientes cl
+       CROSS JOIN LATERAL (
+         SELECT COUNT(*)::int AS total_compras,
+                COALESCE(SUM(v.valor_total), 0) AS total_gasto,
+                MAX(v.criado_em) AS ultima_compra
+           FROM vendas.vendas v
+          WHERE v.cliente_id = cl.id AND v.status = 'finalizada'
+       ) compras
        ${onde}
-      ORDER BY cl.nome
+       ${tendo.length ? `${onde ? "AND" : "WHERE"} ${tendo.join(" AND ")}` : ""}
+      ORDER BY ${ORDENS[ordenar] ?? ORDENS.nome}
       LIMIT 300`,
     valores
   );
@@ -100,10 +145,11 @@ export async function listarClientes({ busca } = {}) {
 export async function inserirCliente(dados) {
   const { rows } = await consultar(
     `INSERT INTO vendas.clientes
-       (nome, cpf, telefone, email, convenio, observacao, data_nascimento, aceita_contato)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, true))
-     RETURNING id, nome, cpf, telefone, email, convenio, observacao, ativo, aceita_contato,
-               data_nascimento, criado_em`,
+       (nome, cpf, telefone, email, convenio, observacao, endereco, data_nascimento,
+        aceita_contato)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, true))
+     RETURNING id, nome, cpf, telefone, email, convenio, observacao, endereco, ativo,
+               aceita_contato, data_nascimento, criado_em`,
     [
       dados.nome,
       dados.cpf ?? null,
@@ -111,6 +157,7 @@ export async function inserirCliente(dados) {
       dados.email ?? null,
       dados.convenio ?? null,
       dados.observacao ?? null,
+      dados.endereco ?? null,
       dados.data_nascimento ?? null,
       dados.aceita_contato ?? null,
     ]
@@ -125,6 +172,7 @@ const CAMPOS_CLIENTE = [
   "email",
   "convenio",
   "observacao",
+  "endereco",
   "ativo",
   "aceita_contato",
   "data_nascimento",
@@ -145,8 +193,8 @@ export async function atualizarCliente(id, campos) {
   const { rows } = await consultar(
     `UPDATE vendas.clientes SET ${partes.join(", ")}
       WHERE id = $${valores.length}
-      RETURNING id, nome, cpf, telefone, email, convenio, observacao, ativo, aceita_contato,
-                data_nascimento, criado_em`,
+      RETURNING id, nome, cpf, telefone, email, convenio, observacao, endereco, ativo,
+                aceita_contato, data_nascimento, criado_em`,
     valores
   );
   return rows[0] ?? null;
