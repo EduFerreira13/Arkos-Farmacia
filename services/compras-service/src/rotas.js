@@ -100,6 +100,10 @@ export async function registrarRotas(app) {
   /**
    * Sugestão automática de compra (§4): monta a lista a partir dos produtos
    * abaixo do mínimo, sugerindo repor até o dobro do estoque mínimo.
+   *
+   * **Não há tela para isso.** A funcionalidade saiu do MVP — ainda não é hora
+   * dela. A rota fica no ar, coberta pela suíte de integração, para quando a
+   * tela voltar; nada no sistema a chama hoje.
    */
   app.get("/sugestao", async (requisicao, resposta) => {
     const token = requisicao.headers.authorization;
