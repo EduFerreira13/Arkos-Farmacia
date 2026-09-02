@@ -11,7 +11,6 @@ import { Perdas } from "./paginas/Perdas.jsx";
 import { Inventario } from "./paginas/Inventario.jsx";
 import { Alertas } from "./paginas/Alertas.jsx";
 import { Compras } from "./paginas/Compras.jsx";
-import { SugestaoCompra } from "./paginas/SugestaoCompra.jsx";
 import { FinanceiroVisaoGeral } from "./paginas/FinanceiroVisaoGeral.jsx";
 import { Caixa } from "./paginas/Caixa.jsx";
 import { Contas } from "./paginas/Contas.jsx";
@@ -59,7 +58,9 @@ export default function App() {
         <Route path="/alertas" element={comPermissao("consultar_estoque", <Alertas />)} />
 
         <Route path="/compras" element={comPermissao("ajustar_estoque", <Compras />)} />
-        <Route path="/compras/sugestao" element={comPermissao("ajustar_estoque", <SugestaoCompra />)} />
+        {/* A sugestão automática de compra saiu do MVP — ainda não é hora dela.
+            O redirecionamento evita link salvo quebrado. */}
+        <Route path="/compras/sugestao" element={<Navigate to="/compras" replace />} />
 
         <Route path="/financeiro" element={comPermissao("ver_financeiro", <FinanceiroVisaoGeral />)} />
         <Route path="/caixa" element={comPermissao("vender", <Caixa />)} />

@@ -80,19 +80,15 @@ export const SECOES = [
       { para: "/alertas", rotulo: "Alertas", icone: AlertTriangle, permissao: "consultar_estoque" },
     ],
   },
+  // Com a sugestão de compra fora do ar, Compras ficou com uma tela só — e
+  // grupo de um item é uma gaveta que a pessoa abre para achar o que já estava
+  // à vista. Volta a ser grupo quando a sugestão entrar.
   {
     id: "compras",
     rotulo: "Compras",
     icone: Truck,
-    itens: [
-      { para: "/compras", rotulo: "Pedidos", icone: Truck, permissao: "ajustar_estoque" },
-      {
-        para: "/compras/sugestao",
-        rotulo: "Sugestão de compra",
-        icone: ClipboardList,
-        permissao: "ajustar_estoque",
-      },
-    ],
+    para: "/compras",
+    permissao: "ajustar_estoque",
   },
   {
     id: "financeiro",

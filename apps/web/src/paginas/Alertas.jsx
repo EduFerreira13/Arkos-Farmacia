@@ -34,7 +34,7 @@ export function Alertas() {
       <Card>
         <CardCabecalho
           titulo="Estoque abaixo do mínimo"
-          descricao="Base para o pedido de compra sugerido."
+          descricao="O que precisa entrar no próximo pedido de compra."
           icone={AlertTriangle}
         />
         {estoqueBaixo.carregando ? <Carregando /> : null}

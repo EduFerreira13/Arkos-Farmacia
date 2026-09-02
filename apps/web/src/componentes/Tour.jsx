@@ -57,7 +57,7 @@ const PASSOS = [
     permissao: "ajustar_estoque",
     titulo: "Compras",
     texto:
-      "Pedido ao fornecedor e conferência do recebimento. O que chega entra no estoque e vira conta a pagar sozinho — e a sugestão de compra já vem pronta do estoque baixo.",
+      "Pedido ao fornecedor e conferência do recebimento. O que chega entra no estoque e vira conta a pagar sozinho.",
   },
   {
     id: "financeiro",

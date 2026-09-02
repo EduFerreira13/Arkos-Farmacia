@@ -900,7 +900,7 @@ export function Compras() {
                 descricao={
                   filtrosAtivos
                     ? "Ajuste os filtros para ver outros pedidos."
-                    : "Crie um pedido ou use a sugestão de compra a partir do estoque baixo."
+                    : "Crie o primeiro pedido para começar a abastecer."
                 }
                 acao={
                   filtrosAtivos ? null : (

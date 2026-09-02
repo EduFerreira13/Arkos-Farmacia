@@ -57,7 +57,6 @@ const paginas = {
   HistoricoVendas: (await import("../src/paginas/HistoricoVendas.jsx")).HistoricoVendas,
   Relacionamento: (await import("../src/paginas/Relacionamento.jsx")).Relacionamento,
   Compras: (await import("../src/paginas/Compras.jsx")).Compras,
-  SugestaoCompra: (await import("../src/paginas/SugestaoCompra.jsx")).SugestaoCompra,
   FinanceiroVisaoGeral: (await import("../src/paginas/FinanceiroVisaoGeral.jsx"))
     .FinanceiroVisaoGeral,
   Caixa: (await import("../src/paginas/Caixa.jsx")).Caixa,
@@ -574,23 +573,6 @@ const RESPOSTAS = [
     },
   ],
   [
-    /\/api\/compras\/sugestao/,
-    {
-      sugestoes: [
-        {
-          produto_id: PRODUTO.id,
-          produto_nome: PRODUTO.nome,
-          saldo_atual: 2,
-          estoque_minimo: 4,
-          quantidade_sugerida: 6,
-          preco_custo: 4.2,
-          fornecedor_id: PRODUTO.fornecedor_id,
-          fornecedor_nome: "Distribuidora Panvel Norte",
-        },
-      ],
-    },
-  ],
-  [
     /\/api\/financeiro\/visao-geral/,
     {
       a_pagar: { total: 10443.25, por_faixa: { vencido: { valor: 2310.4, quantidade: 1 } } },
@@ -967,7 +949,7 @@ for (const grupo of ["Vendas", "Estoque", "Compras", "Financeiro", "Fiscal", "Ca
 }
 ok2(
   "as telas ficam escondidas até abrir o grupo",
-  !menuGerente.includes("Ponto de venda") && !menuGerente.includes("Sugestão de compra")
+  !menuGerente.includes("Ponto de venda") && !menuGerente.includes("Perdas e avarias")
 );
 
 const menuNoPdv = await textoDaRota("gerente", "/pdv");
