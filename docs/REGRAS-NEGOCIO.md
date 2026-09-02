@@ -38,7 +38,8 @@
 
 ## 4. Compras / Fornecedores
 
-- Pedido de compra gerado manualmente ou por sugestão automática (quando estoque atinge o mínimo).
+- Pedido de compra gerado manualmente. A sugestão automática a partir do estoque baixo **ficou fora do MVP** — a regra está descrita aqui e a rota existe no serviço, mas não há tela para ela.
+- A tela de alertas mostra o que está abaixo do mínimo; por enquanto o pedido a partir daí é montado à mão.
 - **Não existe rascunho**: o pedido é criado quando a compra está decidida e nasce `pendente_entrega`, saindo desse estado só ao ser recebido ou cancelado. Criar meio pedido e deixar guardado só gerava lista de pedido que ninguém mandou.
 - Todo pedido recebe um **número** sequencial e legível (`PC-2026-00001`) — é por ele que se procura o pedido no telefone com o fornecedor.
 - O pedido registra **forma de pagamento**, **frete** e **desconto** combinados com o fornecedor. O total é itens + frete − desconto, e é esse valor que vira conta a pagar.

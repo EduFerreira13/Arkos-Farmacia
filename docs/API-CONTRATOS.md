@@ -266,7 +266,7 @@ com chave de acesso simulada de 44 dígitos derivada do ID da venda.
 | GET | `/compras/pedidos/:id/ordem-de-compra.pdf` | Ordem de compra em PDF |
 | POST | `/compras/pedidos/:id/cancelar` | Cancela — exige motivo |
 | POST | `/compras/pedidos/:id/receber` | Conferência item a item, `entregue_em`, entrada no estoque e conta a pagar |
-| GET | `/compras/sugestao` | Sugestão de compra a partir do estoque baixo |
+| GET | `/compras/sugestao` | Sugestão de compra a partir do estoque baixo — **sem tela no MVP** |
 | GET | `/compras/relatorios/pedidos` | Planilha dos pedidos, com os mesmos filtros da lista |
 
 **Situações do pedido**: `pendente_entrega` (nasce assim), `recebido`,
