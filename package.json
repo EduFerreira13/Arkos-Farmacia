@@ -24,7 +24,8 @@
     "test:fluxo": "node scripts/teste-fluxo-mvp.mjs",
     "dev:compras": "npm run dev --workspace=services/compras-service",
     "test:integracao": "node scripts/teste-integracao.mjs",
-    "test:telas": "npm run testar:telas --workspace=apps/web"
+    "test:telas": "npm run testar:telas --workspace=apps/web",
+    "test:pdf": "node services/compras-service/testes/layout-da-ordem.mjs"
   },
   "engines": {
     "node": ">=20"

@@ -42,16 +42,21 @@ Nunca editar `database/schema/` manualmente — esses arquivos são gerados pelo
 
 ## Testes
 
-Três suítes, todas contra o banco de desenvolvimento:
+Quatro suítes:
 
 ```bash
-npm run test:integracao   # 121 verificações nas APIs dos 6 serviços
+npm run test:integracao   # verificações nas APIs dos 6 serviços
 npm run test:fluxo        # o fluxo do MVP ponta a ponta
 npm run test:telas        # renderiza cada tela e testa o acesso por perfil
+npm run test:pdf          # layout da ordem de compra em PDF
 ```
 
-As duas primeiras precisam dos serviços no ar (`npm run dev:services`). A de
-telas roda sozinha, em jsdom, e é a que pega erro de runtime que o build não vê.
+As duas primeiras precisam do banco e dos serviços no ar (`npm run dev:services`).
+A de telas roda sozinha, em jsdom, e é a que pega erro de runtime que o build
+não vê. A de PDF também roda sozinha: mede cada trecho de texto do arquivo
+gerado e reprova sobreposição de coluna ou texto fora da folha — ela mede com
+tabela de larguras própria, de propósito, para discordar do gerador quando ele
+errar.
 
 Mexeu em regra de negócio? Acrescente a verificação na suíte de integração junto
 com a mudança — é lá que fica registrado o que o sistema promete não deixar
@@ -61,7 +66,7 @@ do limite do perfil).
 ## Antes de abrir o PR, confirme
 
 - [ ] Rodei `npm run sync:schema` se mexi em alguma tabela
-- [ ] Rodei as três suítes de teste e todas passaram
+- [ ] Rodei as quatro suítes de teste e todas passaram
 - [ ] Segui as regras de negócio em `docs/REGRAS-NEGOCIO.md`
 - [ ] Segui o design system em `docs/REGRAS-VISUAIS.md` (se mexi em UI)
 - [ ] Não misturei mudanças de mais de um serviço no mesmo PR
