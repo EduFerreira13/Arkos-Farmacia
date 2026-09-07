@@ -165,6 +165,45 @@ npm run sync:schema
 
 Isso varre o banco, atualiza `database/schema/` e já commita a mudança automaticamente (ver detalhes em [`docs/ARQUITETURA.md`](./docs/ARQUITETURA.md)).
 
+## Versionamento
+
+Cada pacote do monorepo (`apps/web`, cada `services/*`, cada `packages/*`) tem
+sua própria versão (semver), controlada com [`@changesets/cli`](https://github.com/changesets/changesets).
+Nenhum pacote é publicado no npm — todos são `private: true` — então o único
+objetivo do versionamento é registrar, de forma legível, o que mudou em cada
+serviço e gerar um `CHANGELOG.md` por pacote.
+
+**No dia a dia, ao terminar uma mudança que deve contar para a versão:**
+
+```bash
+npx changeset
+```
+
+O CLI pergunta quais pacotes mudaram (você marca só os afetados, respeitando a
+regra de nunca misturar serviços na mesma mudança) e o tipo de bump para cada
+um:
+
+- **patch** — correção de bug, ajuste que não muda contrato nem comportamento visível;
+- **minor** — funcionalidade nova, compatível com o que já existia;
+- **major** — mudança que quebra contrato (ex.: endpoint de `docs/API-CONTRATOS.md` mudando formato de resposta).
+
+Isso grava um arquivo `.md` novo em `.changeset/` descrevendo a mudança — esse
+arquivo entra no mesmo commit/PR da mudança de código.
+
+**Quando quiser fechar uma versão** (ex.: antes de um deploy), rode:
+
+```bash
+npx changeset version
+```
+
+Isso consome todos os `.changeset/*.md` pendentes, sobe a versão no
+`package.json` de cada pacote afetado (patch/minor/major, conforme registrado)
+e escreve/atualiza o `CHANGELOG.md` de cada um. Revise o diff e commite o
+resultado.
+
+Não usamos `npx changeset publish` — não há registry para publicar, já que
+todos os pacotes são privados.
+
 ## Relacionamento com clientes
 
 A farmácia já sabe o que cada pessoa compra e de quanto em quanto tempo. A tela
