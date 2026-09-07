@@ -3,7 +3,7 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { ArrowLeft, KeyRound, LogIn } from "lucide-react";
 import { LogoCompleta } from "../componentes/Logo.jsx";
 import { Botao } from "../componentes/Botao.jsx";
-import { CampoTexto } from "../componentes/Campos.jsx";
+import { CampoSenha, CampoTexto } from "../componentes/Campos.jsx";
 import { Aviso } from "../componentes/Superficies.jsx";
 import { api } from "../lib/api.js";
 import { usarAutenticacao } from "../lib/autenticacao.jsx";
@@ -47,9 +47,8 @@ function FormularioEntrada({ aoEsquecer }) {
           onChange={(evento) => definirEmail(evento.target.value)}
           placeholder="seu.email@arkos.com"
         />
-        <CampoTexto
+        <CampoSenha
           rotulo="Senha"
-          type="password"
           autoComplete="current-password"
           required
           value={senha}
@@ -209,9 +208,8 @@ function FormularioRecuperacao({ emailInicial, aoVoltar }) {
               onChange={(evento) => definirCodigo(evento.target.value)}
               ajuda="Recebido por email quando o envio estiver configurado."
             />
-            <CampoTexto
+            <CampoSenha
               rotulo="Nova senha"
-              type="password"
               autoComplete="new-password"
               required
               minLength={6}
@@ -219,9 +217,8 @@ function FormularioRecuperacao({ emailInicial, aoVoltar }) {
               onChange={(evento) => definirSenha(evento.target.value)}
               ajuda="Ao menos 6 caracteres."
             />
-            <CampoTexto
+            <CampoSenha
               rotulo="Repita a nova senha"
-              type="password"
               autoComplete="new-password"
               required
               value={confirmacao}

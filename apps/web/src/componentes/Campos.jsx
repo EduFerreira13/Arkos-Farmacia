@@ -1,4 +1,5 @@
-import { useId } from "react";
+import { useId, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 
 /** Inputs do design system: radius 8px, label 12px/500, sem emoji. */
 
@@ -36,6 +37,36 @@ export function CampoTexto({ rotulo, erro, ajuda, className, ...resto }) {
         aria-invalid={erro ? "true" : undefined}
         {...resto}
       />
+    </Envolvente>
+  );
+}
+
+/** Senha com botão para revelar o texto — o padrão do olho, sem reinventar. */
+export function CampoSenha({ rotulo, erro, ajuda, className, ...resto }) {
+  const id = useId();
+  const [revelada, definirRevelada] = useState(false);
+  const Icone = revelada ? EyeOff : Eye;
+
+  return (
+    <Envolvente id={id} rotulo={rotulo} erro={erro} ajuda={ajuda} className={className}>
+      <div className="relative">
+        <input
+          id={id}
+          type={revelada ? "text" : "password"}
+          className={`${BASE_CONTROLE} h-10 pr-10 ${erro ? "border-erro" : ""}`}
+          aria-invalid={erro ? "true" : undefined}
+          {...resto}
+        />
+        <button
+          type="button"
+          onClick={() => definirRevelada((atual) => !atual)}
+          aria-label={revelada ? "Esconder senha" : "Mostrar senha"}
+          title={revelada ? "Esconder senha" : "Mostrar senha"}
+          className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-secundario hover:text-texto focus-visible:foco-arkos"
+        >
+          <Icone size={18} strokeWidth={2} aria-hidden="true" />
+        </button>
+      </div>
     </Envolvente>
   );
 }
