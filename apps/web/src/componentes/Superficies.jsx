@@ -90,7 +90,7 @@ export function EstadoVazio({ titulo, descricao, icone: Icone, acao }) {
         </span>
       ) : null}
       <div>
-        <p className="text-h3 text-texto">{titulo}</p>
+        <p className="text-h3 font-display text-texto">{titulo}</p>
         {descricao ? <p className="mt-1 text-corpo text-secundario">{descricao}</p> : null}
       </div>
       {acao}

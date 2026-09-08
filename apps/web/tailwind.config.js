@@ -32,7 +32,9 @@ export default {
         info: "var(--cor-info)",
       },
       fontFamily: {
+        // §3 — Sora nos títulos, Inter no corpo e no resto da interface
         sans: ["Inter", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
+        display: ["Sora", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
       },
       fontSize: {
         // §3 — hierarquia tipográfica

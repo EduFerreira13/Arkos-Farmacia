@@ -11,7 +11,7 @@
 - **Logo:** pico estilizado em degradê azul → ciano, com wordmark em azul escuro sólido, sem serifa.
 - **Conceito:** solidez (montanha), tecnologia (gradiente), clareza (clean/corporativo).
 - **Arquivos:** os vetores oficiais estão em [`marca/`](../marca/) — `elemento-arkos.svg` é o símbolo, `tipografia-arkos.svg` é o wordmark, `logo-arkos.svg` é a marca completa.
-- **Na interface:** usar sempre o componente `apps/web/src/componentes/Logo.jsx`, que traz esses traçados inline. Nunca redesenhar a marca na mão nem apontar para um `.png`. `Logo` é o lockup horizontal de barra e cabeçalho; `LogoCompleta` é o arco com o wordmark dentro, para telas onde a marca é o assunto — hoje, o login.
+- **Na interface:** usar sempre o componente `apps/web/src/componentes/Logo.jsx`, que traz esses traçados inline. Nunca redesenhar a marca na mão nem apontar para um `.png`. `Logo` é o lockup horizontal usado no topo da sidebar (com `mostrarNome` ligado a ela estar expandida ou recolhida); `LogoCompleta` é o arco com o wordmark dentro, para telas onde a marca é o assunto — hoje, o login.
 - **Sobre fundo escuro ou colorido:** o degradê perde contraste, então o símbolo vira silhueta sólida — branca no modo escuro (automático, via CSS) e em `currentColor` na variante `monocromatico`, que é a usada no painel da tela de login.
 
 ---
@@ -66,18 +66,23 @@ Extraída do logo + expandida para uso em UI (light e dark mode).
 
 ## 3. Tipografia
 
-- **Fonte:** Inter (padrão sugerido — moderna, excelente legibilidade em telas densas, gratuita).
-- **Fallback:** `-apple-system, Segoe UI, Roboto, sans-serif`
+Duas fontes, conforme o manual de marca (`marca/originais/manual-de-marca-arkos.html`):
 
-| Estilo | Tamanho | Peso | Uso |
-|---|---|---|---|
-| H1 | 28px | 700 | Título de página |
-| H2 | 22px | 600 | Título de seção/card |
-| H3 | 18px | 600 | Subtítulo |
-| Body | 14px | 400 | Texto padrão (modo denso) |
-| Body (espaçoso) | 15px | 400 | Texto padrão (modo confortável) |
-| Small/Label | 12px | 500 | Labels, legendas, badges |
-| Números de indicadores | 32px | 700 | Cards do dashboard |
+- **Sora** nos títulos (`h1`/`h2`/`h3`) — pesos 400/600/700/800.
+- **Inter** no corpo de texto e no restante da interface (labels, botões, tabelas, números de indicador) — pesos 400/500/600/700.
+- **Fallback de cada uma:** `-apple-system, Segoe UI, Roboto, sans-serif`.
+- **Sem as fontes da marca** (e-mail, documento compartilhado fora do app): usar **Arial** no lugar das duas.
+- O logotipo (`Tipografia`/`LogoCompleta` em `Logo.jsx`) é um desenho fixo, não texto — nunca digitar "Arkos" com Sora, Inter ou qualquer outra fonte para representar a marca.
+
+| Estilo | Tamanho | Peso | Fonte | Uso |
+|---|---|---|---|---|
+| H1 | 28px | 700 | Sora | Título de página |
+| H2 | 22px | 600 | Sora | Título de seção/card |
+| H3 | 18px | 600 | Sora | Subtítulo |
+| Body | 14px | 400 | Inter | Texto padrão (modo denso) |
+| Body (espaçoso) | 15px | 400 | Inter | Texto padrão (modo confortável) |
+| Small/Label | 12px | 500 | Inter | Labels, legendas, badges |
+| Números de indicadores | 32px | 700 | Inter | Cards do dashboard |
 
 ---
 

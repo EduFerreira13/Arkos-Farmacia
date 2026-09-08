@@ -44,13 +44,13 @@
   }
 
   h1 {
-    @apply text-h1;
+    @apply text-h1 font-display;
   }
   h2 {
-    @apply text-h2;
+    @apply text-h2 font-display;
   }
   h3 {
-    @apply text-h3;
+    @apply text-h3 font-display;
   }
 
   ::-webkit-scrollbar {
