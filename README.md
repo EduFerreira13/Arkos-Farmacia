@@ -225,6 +225,25 @@ para as áreas da tela. O roteiro é filtrado pela permissão do perfil — o op
 de caixa não é apresentado a telas que ele não pode abrir. Dá para pular, navegar
 pelas setas do teclado e rever depois pelo ícone de ajuda na barra de cima.
 
+## Leitor de código de barras (PDV)
+
+Leitor USB comum funciona como teclado (emulação HID): ele "digita" o código
+sozinho, bem mais rápido que uma pessoa, e fecha com Enter. O PDV escuta isso
+na tela inteira, sem precisar clicar em nenhum campo antes — um texto discreto
+com um ícone de código de barras (que pisca) avisa que o leitor está ativo.
+Reconhecido o código, o produto vem do `estoque-service` e entra sozinho no
+carrinho; código que não bate com nenhum produto vira um aviso de erro claro,
+sem travar a tela nem derrubar o que já estava no carrinho.
+
+**Testando sem o leitor físico.** Digitar manualmente não dispara a leitura de
+propósito — é assim que o sistema distingue alguém digitando com calma de um
+leitor de verdade (intervalo entre teclas maior que ~80ms reinicia a captura).
+Pra testar sem o aparelho, o card "Buscar produto" do PDV tem um campo **"Simular
+leitura (teste sem leitor físico)"**: digite o código de barras ali e aperte
+Enter (ou clique em "Simular") — funciona em qualquer velocidade de digitação,
+sem passar pela checagem de tempo, chamando exatamente o mesmo caminho que um
+leitor de verdade chamaria.
+
 ## Status
 
 MVP funcional de ponta a ponta: login com os 4 perfis, cadastro de produto e

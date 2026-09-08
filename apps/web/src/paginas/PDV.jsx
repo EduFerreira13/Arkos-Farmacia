@@ -6,6 +6,7 @@ import {
   Megaphone,
   Minus,
   Plus,
+  ScanBarcode,
   Search,
   ShieldAlert,
   ShoppingCart,
@@ -22,6 +23,7 @@ import {
 } from "@arkos/shared-types";
 import { api } from "../lib/api.js";
 import { usarBusca } from "../lib/usarBusca.js";
+import { usarLeitorCodigoBarras } from "../lib/usarLeitorCodigoBarras.js";
 import { formatarData, formatarMoeda, formatarNumero, hojeISO } from "../lib/formato.js";
 import { descontoMaximoPct, usarAutenticacao } from "../lib/autenticacao.jsx";
 import { Botao, BotaoIcone } from "../componentes/Botao.jsx";
@@ -462,6 +464,7 @@ export function PDV() {
   const [valorPagamento, definirValorPagamento] = useState("");
   const [resultado, definirResultado] = useState(null);
   const [cadastrandoCliente, definirCadastrandoCliente] = useState(false);
+  const [codigoTeste, definirCodigoTeste] = useState("");
 
   const produtos = usarBusca(() => api.estoque.get("/produtos"), []);
   const clientes = usarBusca(() => api.vendas.get("/clientes"), []);
@@ -553,6 +556,34 @@ export function PDV() {
       definirVenda(resposta.venda);
     });
   }
+
+  /**
+   * Vem do leitor de código de barras (ou do campo de teste manual, que chama
+   * isto direto). Busca o produto pelo EAN no estoque-service e já adiciona ao
+   * carrinho — código que não bate com nenhum produto vira o mesmo aviso de
+   * erro das outras ações, sem travar a tela nem perder o que já estava no
+   * carrinho.
+   */
+  async function lerCodigoDeBarras(codigo) {
+    await executar(async () => {
+      const { produto } = await api.estoque.get(
+        `/produtos/codigo-barras/${encodeURIComponent(codigo)}`
+      );
+      const atual = await garantirVenda();
+      const resposta = await api.vendas.post(`/${atual.id}/itens`, {
+        produto_id: produto.id,
+        quantidade: 1,
+      });
+      definirVenda(resposta.venda);
+    });
+  }
+
+  // Pausa com qualquer modal aberto: escanear por cima do comprovante tentaria
+  // mexer numa venda já finalizada, e o aviso de erro ficaria escondido atrás
+  // do modal — melhor não escutar do que falhar sem a pessoa ver por quê.
+  const { escutando } = usarLeitorCodigoBarras(lerCodigoDeBarras, {
+    ativo: !resultado && !cadastrandoCliente,
+  });
 
   async function alterarQuantidade(item, quantidade) {
     if (quantidade < 1) return;
@@ -698,6 +729,17 @@ export function PDV() {
           <Card>
             <CardCabecalho titulo="Buscar produto" icone={Search} />
             <CardCorpo>
+              <div className="mb-3 flex items-center gap-1.5 text-rotulo text-secundario">
+                <ScanBarcode
+                  size={14}
+                  aria-hidden="true"
+                  className={escutando ? "animate-pulse text-sucesso" : "text-secundario"}
+                />
+                {escutando
+                  ? "Leitor de código de barras ativo — escaneie a qualquer momento"
+                  : "Leitor de código de barras pausado"}
+              </div>
+
               <CampoTexto
                 rotulo="Nome, princípio ativo ou código de barras"
                 value={busca}
@@ -705,6 +747,34 @@ export function PDV() {
                 placeholder="Ex: dipirona ou 7891234567890"
                 autoFocus
               />
+
+              {/* Sem leitor físico ainda: aqui o Enter dispara igual ao leitor,
+                  não importa a velocidade de quem digitou (docs/README). */}
+              <form
+                className="mt-2 flex items-end gap-2"
+                onSubmit={(evento) => {
+                  evento.preventDefault();
+                  const codigo = codigoTeste.trim();
+                  if (!codigo) return;
+                  definirCodigoTeste("");
+                  lerCodigoDeBarras(codigo);
+                }}
+              >
+                <CampoTexto
+                  rotulo="Simular leitura (teste sem leitor físico)"
+                  placeholder="Digite o código e aperte Enter"
+                  value={codigoTeste}
+                  onChange={(evento) => definirCodigoTeste(evento.target.value)}
+                  className="flex-1"
+                />
+                <Botao
+                  type="submit"
+                  variante="secundario"
+                  disabled={ocupado || !codigoTeste.trim()}
+                >
+                  Simular
+                </Botao>
+              </form>
 
               {produtos.carregando ? <Carregando texto="Carregando catálogo" /> : null}
               {produtos.erro ? (
