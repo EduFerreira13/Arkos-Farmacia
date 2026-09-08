@@ -23,6 +23,7 @@
     "dev": "concurrently -n servicos,web -c blue,magenta \"npm:dev:services\" \"npm:dev:web\"",
     "test:fluxo": "node scripts/teste-fluxo-mvp.mjs",
     "dev:compras": "npm run dev --workspace=services/compras-service",
+    "dev:impressora": "escpos-emulator",
     "test:integracao": "node scripts/teste-integracao.mjs",
     "test:telas": "npm run testar:telas --workspace=apps/web",
     "test:pdf": "node services/compras-service/testes/layout-da-ordem.mjs"
@@ -37,6 +38,7 @@
   },
   "devDependencies": {
     "@changesets/cli": "^3.0.2",
-    "concurrently": "^10.0.5"
+    "concurrently": "^10.0.5",
+    "escpos-emulator": "^0.2.0"
   }
 }

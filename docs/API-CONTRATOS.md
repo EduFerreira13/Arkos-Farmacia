@@ -205,6 +205,15 @@ pagamentos abaixo do total (`pagamento_insuficiente`) e item acima do estoque
 disponível. Cancelamento de venda **já finalizada** não está no MVP (estorno de
 estoque e caixa) — ver `docs/PENDENCIAS.md`.
 
+**Recibo térmico.** Depois da venda finalizada, o `vendas-service` tenta
+imprimir o recibo (ESC/POS, endereço em `PRINTER_URL`). Isso nunca bloqueia
+nem desfaz a venda: a resposta de `POST /vendas/:id/finalizar` traz
+`recibo: { impresso: boolean, motivo: string | null, texto: string }` — `texto`
+é o recibo em texto puro (sem os comandos ESC/POS), preenchido mesmo quando
+`impresso` é `false`, porque o PDV mostra essa pré-visualização na tela de
+qualquer forma. O front mostra um aviso ao operador quando `impresso` é
+`false`, mas a venda já está salva de qualquer forma.
+
 **Regra crítica (§3)**: `POST /vendas/:id/finalizar` **bloqueia** (HTTP 422) se houver item com `tipo_controle` diferente de `livre` e nenhuma receita vinculada. Essa validação é feita no `vendas-service`, consultando o `estoque-service` para saber o `tipo_controle` de cada item.
 
 **Exemplo — bloqueio de controlado sem receita:**

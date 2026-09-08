@@ -8,6 +8,7 @@ import {
 import { criarAutenticacao, descontoMaximoPct } from "@arkos/auth-middleware";
 import { env } from "./env.js";
 import { ErroServico, estoque, financeiro, fiscal } from "./servicos.js";
+import { imprimirRecibo } from "./lib/impressora.js";
 import {
   formatarData,
   formatarDataHora,
@@ -1167,7 +1168,18 @@ export async function registrarRotas(app) {
       );
     }
 
-    // 5) Fecha o ciclo do relacionamento: se havia uma oferta em aberto para
+    // 5) Recibo térmico do PDV. A venda já está salva e paga — se a impressora
+    // estiver offline ou o papel tiver acabado, isso não desfaz a venda, só
+    // fica registrado no log para o operador tentar reimprimir depois.
+    const impressao = await imprimirRecibo(completa);
+    if (!impressao.impresso) {
+      requisicao.log.warn(
+        { motivo: impressao.motivo, vendaId: venda.id },
+        "recibo nao foi impresso"
+      );
+    }
+
+    // 6) Fecha o ciclo do relacionamento: se havia uma oferta em aberto para
     // este cliente, ela vira convertida com esta venda anexada. Depois da venda
     // já registrada, e sem derrubar a resposta se falhar — a venda aconteceu de
     // qualquer forma, e o vínculo é informação de acompanhamento.
@@ -1193,6 +1205,11 @@ export async function registrarRotas(app) {
       })),
       contato_convertido: contatoConvertido,
       troco: Number((totalPago - completa.valor_total).toFixed(2)),
+      recibo: {
+        impresso: impressao.impresso,
+        motivo: impressao.motivo ?? null,
+        texto: impressao.texto,
+      },
     };
   });
 

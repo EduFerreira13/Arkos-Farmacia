@@ -20,6 +20,20 @@ export const env = {
   ESTOQUE_URL: `http://localhost:${process.env.ESTOQUE_SERVICE_PORT ?? 3002}`,
   FINANCEIRO_URL: `http://localhost:${process.env.FINANCEIRO_SERVICE_PORT ?? 3004}`,
   FISCAL_URL: `http://localhost:${process.env.FISCAL_SERVICE_PORT ?? 3005}`,
+
+  // Impressora térmica do PDV (ESC/POS). Sem impressora física ainda: aponta
+  // para o emulador local (`npm run dev:impressora`, na raiz do monorepo) por
+  // padrão. Quando a impressora chegar, só troca essa variável no .env — o
+  // código de impressao.js nunca muda.
+  PRINTER_URL: process.env.PRINTER_URL ?? "tcp://localhost:9100",
+
+  // Mesmo dado que já vai na ordem de compra (docs/API-CONTRATOS.md não cobre
+  // isso — é identificação impressa, não contrato entre serviços).
+  FARMACIA: {
+    nome: process.env.FARMACIA_NOME ?? "Farmácia Arkos",
+    endereco: process.env.FARMACIA_ENDERECO ?? "",
+    telefone: process.env.FARMACIA_TELEFONE ?? "",
+  },
 };
 
 export function validarEnv() {
