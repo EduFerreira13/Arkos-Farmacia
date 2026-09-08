@@ -23,6 +23,10 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       port: porta("WEB_PORT", 5173),
+      // Sem isso, porta ocupada faz o Vite subir silencioso na próxima livre
+      // (5174, 5175...) — parece que funcionou, mas era outro processo velho
+      // ainda preso na 5173. Falhando alto, o erro já aponta a causa.
+      strictPort: true,
       proxy: {
         "/api/auth": alvo(porta("AUTH_SERVICE_PORT", 3001), "/api/auth", "/auth"),
         "/api/estoque": alvo(porta("ESTOQUE_SERVICE_PORT", 3002), "/api/estoque", ""),
