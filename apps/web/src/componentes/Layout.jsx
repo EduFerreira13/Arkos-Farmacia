@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   BarChart3,
   Bell,
+  Check,
   ChevronDown,
   ChevronsLeft,
   ChevronsRight,
+  ChevronsUpDown,
   CircleHelp,
   ClipboardList,
   Eye,
@@ -28,7 +30,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { PERFIL_LABEL, PERFIS, PERFIS_LISTA } from "@arkos/shared-types";
-import { Simbolo, Tipografia } from "./Logo.jsx";
+import { Logo } from "./Logo.jsx";
 import { Botao, BotaoIcone } from "./Botao.jsx";
 import { Tour, chaveDoTour } from "./Tour.jsx";
 import { usarPreferencias } from "../lib/preferencias.jsx";
@@ -181,7 +183,18 @@ const estiloLink = ({ isActive }) =>
     isActive ? "bg-primario text-white" : "text-secundario hover:bg-borda/60 hover:text-texto",
   ].join(" ");
 
-function Sidebar({ recolhida, aoAlternar, usuario, aoExpandir }) {
+function Sidebar({
+  recolhida,
+  aoAlternar,
+  usuario,
+  aoExpandir,
+  perfilReal,
+  simulando,
+  aoSair,
+  aoSimular,
+  aoVerTour,
+  ocupado,
+}) {
   const local = useLocation();
   const menu = useMemo(() => filtrarMenu(usuario), [usuario]);
 
@@ -211,15 +224,17 @@ function Sidebar({ recolhida, aoAlternar, usuario, aoExpandir }) {
           centrado na barra recolhida, encostado à esquerda quando ela abre. Como
           quem desliza é a margem, e não um componente que some e volta, o
           movimento acompanha a animação da barra em vez de piscar no meio dela.
-          O wordmark saiu daqui — agora vive no cabeçalho, sobre o conteúdo. */}
+          Sem header, a marca (símbolo + nome) mora só aqui. */}
       <div className="flex h-16 items-center border-b border-borda">
-        <div
-          className={`transition-all duration-200 ease-out ${
+        <Link
+          to="/"
+          aria-label="Arkos — ir para o início"
+          className={`flex items-center overflow-hidden rounded-botao text-azul-marca focus-visible:foco-arkos dark:text-white transition-all duration-200 ease-out ${
             recolhida ? "ml-3" : "ml-4"
           }`}
         >
-          <Simbolo tamanho={28} />
-        </div>
+          <Logo tamanho={28} mostrarNome={!recolhida} />
+        </Link>
 
         {/* O controle de recolher fica junto da marca, no alto: é onde a pessoa
             procura, e não some no rodapé de uma lista longa. */}
@@ -332,92 +347,219 @@ function Sidebar({ recolhida, aoAlternar, usuario, aoExpandir }) {
         })}
       </nav>
 
+      <MenuConta
+        recolhida={recolhida}
+        usuario={usuario}
+        perfilReal={perfilReal}
+        simulando={simulando}
+        aoSair={aoSair}
+        aoSimular={aoSimular}
+        aoVerTour={aoVerTour}
+        ocupado={ocupado}
+      />
     </aside>
   );
 }
 
-/** Seletor de simulação de perfil — aparece só para o administrador. */
-function SeletorDeVisao({ usuario, perfilReal, simulando, aoSimular, ocupado }) {
-  const navegar = useNavigate();
-  if (perfilReal !== PERFIS.ADMINISTRADOR) return null;
+/** Duas iniciais do nome, para o círculo de avatar do rodapé da sidebar. */
+function iniciais(nome) {
+  if (!nome) return "";
+  const partes = nome.trim().split(/\s+/);
+  const primeira = partes[0]?.[0] ?? "";
+  const ultima = partes.length > 1 ? partes[partes.length - 1][0] : "";
+  return `${primeira}${ultima}`.toUpperCase();
+}
 
-  const valorAtual = simulando ? usuario.perfil : PERFIS.ADMINISTRADOR;
-
+function Avatar({ nome }) {
   return (
-    <label className="flex items-center gap-2">
-      <Eye size={16} aria-hidden="true" className="text-secundario" />
-      <span className="sr-only">Ver o sistema como outro perfil</span>
-      <select
-        value={valorAtual}
-        disabled={ocupado}
-        onChange={async (evento) => {
-          await aoSimular(evento.target.value);
-          navegar("/");
-        }}
-        className="h-9 rounded-botao border border-borda bg-fundo px-2 text-rotulo text-texto focus-visible:foco-arkos"
-      >
-        <option value={PERFIS.ADMINISTRADOR}>Ver como: Administrador</option>
-        {PERFIS_LISTA.filter((perfil) => perfil !== PERFIS.ADMINISTRADOR).map((perfil) => (
-          <option key={perfil} value={perfil}>
-            Ver como: {PERFIL_LABEL[perfil]}
-          </option>
-        ))}
-      </select>
-    </label>
+    <span
+      aria-hidden="true"
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primario text-rotulo font-medium text-white"
+    >
+      {iniciais(nome)}
+    </span>
   );
 }
 
-function Topbar({ usuario, perfilReal, simulando, aoSair, aoSimular, aoVerTour, ocupado }) {
+const estiloItemMenu =
+  "flex w-full items-center gap-2.5 rounded-botao px-2.5 py-2 text-left text-corpo text-texto transition-colors hover:bg-borda/60 disabled:cursor-not-allowed disabled:text-secundario disabled:hover:bg-transparent";
+
+/**
+ * Rodapé da sidebar: só o usuário e o perfil — tema, notificações, ajuda,
+ * simulação de perfil e logout ficam atrás de um clique, num menu flutuante.
+ * Sem isso, o rodapé virava uma fileira de ícones soltos competindo com o
+ * cartão do usuário pela atenção.
+ */
+function MenuConta({
+  recolhida,
+  usuario,
+  perfilReal,
+  simulando,
+  aoSair,
+  aoSimular,
+  aoVerTour,
+  ocupado,
+}) {
+  const [aberto, definirAberto] = useState(false);
+  const containerRef = useRef(null);
+  const navegar = useNavigate();
   const { tema, alternarTema } = usarPreferencias();
 
+  useEffect(() => {
+    if (!aberto) return;
+    const aoClicarFora = (evento) => {
+      if (!containerRef.current?.contains(evento.target)) definirAberto(false);
+    };
+    const aoTeclar = (evento) => {
+      if (evento.key === "Escape") definirAberto(false);
+    };
+    document.addEventListener("mousedown", aoClicarFora);
+    document.addEventListener("keydown", aoTeclar);
+    return () => {
+      document.removeEventListener("mousedown", aoClicarFora);
+      document.removeEventListener("keydown", aoTeclar);
+    };
+  }, [aberto]);
+
+  // Sidebar recolhendo no meio do caminho não deve deixar o menu pendurado.
+  useEffect(() => {
+    if (recolhida) definirAberto(false);
+  }, [recolhida]);
+
+  async function selecionarVisao(perfil) {
+    definirAberto(false);
+    await aoSimular(perfil);
+    navegar("/");
+  }
+
+  const ehAdmin = perfilReal === PERFIS.ADMINISTRADOR;
+  const valorAtual = simulando ? usuario?.perfil : PERFIS.ADMINISTRADOR;
+
   return (
-    <header className="relative flex h-16 shrink-0 items-center border-b border-borda bg-card px-5">
-      {/* O wordmark é posicionado contra a janela inteira, não contra o
-          cabeçalho: o cabeçalho começa depois da barra lateral, então centrar
-          nele faria a marca escorregar 88px para o lado toda vez que o menu
-          fosse recolhido. Fixo no meio da janela, ela fica parada. */}
-      <Link
-        to="/"
-        aria-label="Arkos — ir para o início"
-        className="fixed left-1/2 top-0 z-10 flex h-16 -translate-x-1/2 items-center rounded-botao px-2 text-azul-marca focus-visible:foco-arkos dark:text-white"
+    <div ref={containerRef} className="relative border-t border-borda p-2">
+      <button
+        type="button"
+        data-tour="ajuda"
+        aria-haspopup="menu"
+        aria-expanded={aberto}
+        title={recolhida ? usuario?.nome : undefined}
+        onClick={() => definirAberto((atual) => !atual)}
+        className={`flex w-full items-center gap-2.5 rounded-botao py-1.5 transition-colors hover:bg-borda/60 ${
+          recolhida ? "justify-center px-0" : "px-1.5"
+        }`}
       >
-        <Tipografia altura={17} rotulo={null} />
-      </Link>
+        <Avatar nome={usuario?.nome} />
+        {recolhida ? null : (
+          <>
+            <div className="min-w-0 flex-1 text-left">
+              <p className="truncate text-corpo font-medium text-texto">{usuario?.nome}</p>
+              <p className="truncate text-rotulo text-secundario">
+                {PERFIL_LABEL[usuario?.perfil] ?? usuario?.perfil}
+              </p>
+            </div>
+            <ChevronsUpDown size={16} aria-hidden="true" className="shrink-0 text-secundario" />
+          </>
+        )}
+      </button>
 
-      <div className="ml-auto flex items-center gap-1">
-        <SeletorDeVisao
-          usuario={usuario}
-          perfilReal={perfilReal}
-          simulando={simulando}
-          aoSimular={aoSimular}
-          ocupado={ocupado}
-        />
+      {aberto ? (
+        <div
+          role="menu"
+          aria-label="Menu da conta"
+          className={`absolute bottom-full z-20 mb-2 overflow-hidden rounded-card border border-borda bg-card shadow-flutuante ${
+            recolhida ? "left-full ml-2 w-64" : "left-2 right-2"
+          }`}
+        >
+          {recolhida ? (
+            <div className="border-b border-borda px-3 py-2.5">
+              <p className="truncate text-corpo font-medium text-texto">{usuario?.nome}</p>
+              <p className="truncate text-rotulo text-secundario">
+                {PERFIL_LABEL[usuario?.perfil] ?? usuario?.perfil}
+              </p>
+            </div>
+          ) : null}
 
-        <div className="mx-2 h-8 w-px bg-borda" aria-hidden="true" />
+          {ehAdmin ? (
+            <div className="border-b border-borda p-1.5">
+              <p className="px-2.5 pb-1 pt-1.5 text-rotulo text-secundario">Ver sistema como</p>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={ocupado}
+                onClick={() => selecionarVisao(PERFIS.ADMINISTRADOR)}
+                className={estiloItemMenu}
+              >
+                <Eye size={16} aria-hidden="true" className="shrink-0 text-secundario" />
+                <span className="flex-1 truncate">Administrador</span>
+                {valorAtual === PERFIS.ADMINISTRADOR ? (
+                  <Check size={16} aria-hidden="true" className="shrink-0 text-primario" />
+                ) : null}
+              </button>
+              {PERFIS_LISTA.filter((perfil) => perfil !== PERFIS.ADMINISTRADOR).map((perfil) => (
+                <button
+                  key={perfil}
+                  type="button"
+                  role="menuitem"
+                  disabled={ocupado}
+                  onClick={() => selecionarVisao(perfil)}
+                  className={estiloItemMenu}
+                >
+                  <Eye size={16} aria-hidden="true" className="shrink-0 text-secundario" />
+                  <span className="flex-1 truncate">{PERFIL_LABEL[perfil]}</span>
+                  {valorAtual === perfil ? (
+                    <Check size={16} aria-hidden="true" className="shrink-0 text-primario" />
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
 
-        <BotaoIcone icone={Bell} rotulo="Notificações" />
-        <span data-tour="ajuda" className="flex items-center gap-1">
-          <BotaoIcone
-            icone={tema === "claro" ? Moon : Sun}
-            rotulo={tema === "claro" ? "Ativar modo escuro" : "Ativar modo claro"}
-            onClick={alternarTema}
-          />
-          <BotaoIcone icone={CircleHelp} rotulo="Rever o tour do sistema" onClick={aoVerTour} />
-        </span>
-
-        <div className="mx-2 h-8 w-px bg-borda" aria-hidden="true" />
-
-        <div className="flex items-center gap-3">
-          <div className="text-right">
-            <p className="text-corpo font-medium text-texto">{usuario?.nome}</p>
-            <p className="text-rotulo text-secundario">
-              {PERFIL_LABEL[usuario?.perfil] ?? usuario?.perfil}
-            </p>
+          <div className="border-b border-borda p-1.5">
+            <button type="button" role="menuitem" onClick={alternarTema} className={estiloItemMenu}>
+              {tema === "claro" ? (
+                <Moon size={16} aria-hidden="true" className="shrink-0 text-secundario" />
+              ) : (
+                <Sun size={16} aria-hidden="true" className="shrink-0 text-secundario" />
+              )}
+              <span className="flex-1 truncate">
+                {tema === "claro" ? "Modo escuro" : "Modo claro"}
+              </span>
+            </button>
+            <button type="button" role="menuitem" className={estiloItemMenu}>
+              <Bell size={16} aria-hidden="true" className="shrink-0 text-secundario" />
+              <span className="flex-1 truncate">Notificações</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                definirAberto(false);
+                aoVerTour();
+              }}
+              className={estiloItemMenu}
+            >
+              <CircleHelp size={16} aria-hidden="true" className="shrink-0 text-secundario" />
+              <span className="flex-1 truncate">Rever o tour do sistema</span>
+            </button>
           </div>
-          <BotaoIcone icone={LogOut} rotulo="Sair" onClick={aoSair} />
+
+          <div className="p-1.5">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                definirAberto(false);
+                aoSair();
+              }}
+              className={`${estiloItemMenu} text-erro hover:bg-erro/10`}
+            >
+              <LogOut size={16} aria-hidden="true" className="shrink-0" />
+              <span className="flex-1 truncate">Sair</span>
+            </button>
+          </div>
         </div>
-      </div>
-    </header>
+      ) : null}
+    </div>
   );
 }
 
@@ -478,18 +620,14 @@ export function Layout() {
         aoAlternar={() => definirRecolhida((atual) => !atual)}
         aoExpandir={() => definirRecolhida(false)}
         usuario={usuario}
+        perfilReal={perfilReal}
+        simulando={simulando}
+        aoSair={sair}
+        aoSimular={trocarVisao}
+        aoVerTour={abrirTour}
+        ocupado={ocupado}
       />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar
-          usuario={usuario}
-          perfilReal={perfilReal}
-          simulando={simulando}
-          aoSair={sair}
-          aoSimular={trocarVisao}
-          aoVerTour={abrirTour}
-          ocupado={ocupado}
-        />
-
         {/* Enquanto o administrador simula outro perfil, fica claro na tela. */}
         {simulando ? (
           <div className="flex shrink-0 items-center justify-between gap-4 bg-alerta/20 px-5 py-2">

@@ -77,9 +77,9 @@ const PASSOS = [
   {
     id: "ajuda",
     alvo: "[data-tour='ajuda']",
-    titulo: "Tema e ajuda",
+    titulo: "Sua conta",
     texto:
-      "Modo claro ou escuro fica guardado no seu navegador, e o ponto de interrogação reabre este tour quando quiser.",
+      "Clique aqui para trocar entre modo claro e escuro, ver notificações, reabrir este tour ou sair. A preferência de tema fica guardada no seu navegador.",
   },
 ];
 

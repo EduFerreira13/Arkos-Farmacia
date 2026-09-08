@@ -84,8 +84,7 @@ Extraída do logo + expandida para uso em UI (light e dark mode).
 ## 4. Layout
 
 ### Estrutura geral
-- **Menu:** lateral (sidebar), **recolhível** (expandido ~240px / recolhido ~64px, mostrando apenas ícones).
-- **Topbar:** fixa, com busca global, notificações, perfil do usuário e toggle de tema (claro/escuro).
+- **Menu:** lateral (sidebar), **recolhível** (expandido ~240px / recolhido ~64px, mostrando apenas ícones). Sem header/topbar — o topo da sidebar mostra o logo (símbolo + nome "Arkos" quando expandida, só o símbolo quando recolhida) e o rodapé da sidebar concentra notificações, tema, ajuda, simulação de perfil, usuário e logout. Isso deixa toda a largura restante livre para o conteúdo da página.
 - **Arquitetura horizontal:** módulos (Vendas, Estoque, Financeiro, etc.) como seções independentes acessadas pela sidebar, cada uma com seu próprio layout interno — evita acoplamento entre módulos.
 
 ### Tela inicial (pós-login)
@@ -128,7 +127,7 @@ Extraída do logo + expandida para uso em UI (light e dark mode).
 
 ## 6. Modo Claro / Escuro
 
-- Toggle na topbar, com persistência da preferência do usuário.
+- Toggle no rodapé da sidebar, com persistência da preferência do usuário.
 - Gradiente da marca (`#152A54 → #1E4E9C → #20B8C4`) pode ser usado em ambos os modos como elemento de destaque (ex: header da tela de login, banner de boas-vindas).
 
 ---
