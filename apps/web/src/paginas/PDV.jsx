@@ -27,7 +27,6 @@ import { descontoMaximoPct, usarAutenticacao } from "../lib/autenticacao.jsx";
 import { Botao, BotaoIcone } from "../componentes/Botao.jsx";
 import { CampoCheckbox, CampoSelect, CampoTexto } from "../componentes/Campos.jsx";
 import { Modal } from "../componentes/Modal.jsx";
-import { Tabela } from "../componentes/Tabela.jsx";
 import {
   Aviso,
   Badge,
@@ -402,62 +401,28 @@ function ComprovanteVenda({ resultado, aoFechar }) {
       rodape={<Botao onClick={aoFechar}>Nova venda</Botao>}
     >
       <div className="space-y-4">
-        <Aviso tom="sucesso" titulo="Venda finalizada">
-          Baixa de estoque por FEFO (primeiro a vencer, primeiro a sair) e valor lançado no
-          caixa do dia.
-        </Aviso>
+        {resultado.recibo && !resultado.recibo.impresso ? (
+          <Aviso tom="alerta" titulo="Venda finalizada, recibo não impresso">
+            Baixa de estoque por FEFO (primeiro a vencer, primeiro a sair) e valor lançado no
+            caixa do dia — a venda foi salva normalmente. O recibo térmico não saiu
+            ({resultado.recibo.motivo}); avise o cliente ou reimprima assim que a impressora
+            voltar.
+          </Aviso>
+        ) : (
+          <Aviso tom="sucesso" titulo="Venda finalizada">
+            Baixa de estoque por FEFO (primeiro a vencer, primeiro a sair), valor lançado no
+            caixa do dia e recibo impresso.
+          </Aviso>
+        )}
 
-        <Tabela
-          colunas={[
-            { chave: "produto_nome", titulo: "Item" },
-            {
-              chave: "quantidade",
-              titulo: "Qtd.",
-              alinhamento: "direita",
-              renderizar: (item) => formatarNumero(item.quantidade),
-            },
-            {
-              chave: "preco_unitario",
-              titulo: "Unitário",
-              alinhamento: "direita",
-              renderizar: (item) => formatarMoeda(item.preco_unitario),
-            },
-            {
-              chave: "total",
-              titulo: "Total",
-              alinhamento: "direita",
-              renderizar: (item) =>
-                formatarMoeda(item.quantidade * item.preco_unitario - Number(item.desconto ?? 0)),
-            },
-          ]}
-          linhas={venda.itens}
-          chave={(item) => item.id}
-        />
-
-        <div className="space-y-1 border-t border-borda pt-3 text-corpo">
-          {venda.desconto > 0 ? (
-            <div className="flex justify-between text-secundario">
-              <span>Desconto</span>
-              <span>- {formatarMoeda(venda.desconto)}</span>
-            </div>
-          ) : null}
-          <div className="flex justify-between text-h3 text-texto">
-            <span>Total</span>
-            <span>{formatarMoeda(venda.valor_total)}</span>
-          </div>
-          {venda.pagamentos.map((pagamento) => (
-            <div key={pagamento.id} className="flex justify-between text-secundario">
-              <span>{FORMA_PAGAMENTO_LABEL[pagamento.forma_pagamento]}</span>
-              <span>{formatarMoeda(pagamento.valor)}</span>
-            </div>
-          ))}
-          {resultado.troco > 0 ? (
-            <div className="flex justify-between text-corpo font-semibold text-texto">
-              <span>Troco</span>
-              <span>{formatarMoeda(resultado.troco)}</span>
-            </div>
-          ) : null}
-        </div>
+        {resultado.recibo?.texto ? (
+          <pre
+            className="whitespace-pre-wrap break-words rounded-card border border-borda
+              bg-white px-4 py-3 font-mono text-rotulo leading-relaxed text-[#1a1a1a] shadow-card"
+          >
+            {resultado.recibo.texto}
+          </pre>
+        ) : null}
 
         {venda.cliente_nome ? (
           <p className="text-rotulo text-secundario">
