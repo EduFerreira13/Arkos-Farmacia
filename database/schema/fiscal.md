@@ -24,4 +24,5 @@
 | status | character varying | NO | 'simulado'::character varying |
 | xml_url | text | YES | - |
 | emitida_em | timestamp with time zone | NO | now() |
+| cpf_nota | character varying | YES | - |
 
