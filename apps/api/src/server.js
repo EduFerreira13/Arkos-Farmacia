@@ -1,3 +1,4 @@
+// teste de deploy automático
 import { construirApp } from "./app.js";
 import { env, validarEnv } from "./env.js";
 import { encerrarPool } from "./db.js";
