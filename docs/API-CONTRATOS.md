@@ -1,12 +1,12 @@
-# Arkos — Contratos de API entre serviços
+# Arkos — Contratos de API entre módulos
 
-> Cada serviço expõe sua própria API REST. Comunicação entre serviços é sempre via HTTP — nunca acesso direto a schema de outro serviço (ver `docs/ARQUITETURA.md`).
+> O backend é um processo só (`apps/api`), mas cada módulo expõe sua própria API REST no seu prefixo. Comunicação entre módulos é sempre via HTTP — nunca acesso direto a schema de outro módulo (ver `docs/ARQUITETURA.md`).
 >
-> Autenticação: o `auth-service` emite o JWT no login. Os demais serviços **validam o token localmente** (mesmo `JWT_SECRET`, compartilhado via `.env`) — não fazem uma chamada de rede ao `auth-service` a cada requisição, por performance. Toda rota autenticada espera `Authorization: Bearer <token>`.
+> Autenticação: o módulo `auth` emite o JWT no login. Os demais **validam o token localmente** (mesmo `JWT_SECRET`) — não fazem uma chamada de rede ao módulo `auth` a cada requisição, por performance. Toda rota autenticada espera `Authorization: Bearer <token>`.
 
 ---
 
-## auth-service (porta 3001)
+## auth (prefixo /auth)
 
 | Método | Rota | Descrição |
 |---|---|---|
@@ -42,7 +42,7 @@ original que guardou.
 
 ---
 
-## estoque-service (porta 3002)
+## estoque (prefixo /estoque)
 
 | Método | Rota | Descrição |
 |---|---|---|
@@ -100,7 +100,7 @@ quem ainda não tem histórico.
 
 ---
 
-## vendas-service (porta 3003)
+## vendas (prefixo /vendas)
 
 | Método | Rota | Descrição |
 |---|---|---|
@@ -225,7 +225,7 @@ qualquer forma. O front mostra um aviso ao operador quando `impresso` é
 
 ---
 
-## financeiro-service (porta 3004)
+## financeiro (prefixo /financeiro)
 
 | Método | Rota | Descrição |
 |---|---|---|
@@ -249,7 +249,7 @@ por consequência, a venda não finaliza antes de o operador abrir o caixa (§5)
 
 ---
 
-## fiscal-service (porta 3005)
+## fiscal (prefixo /fiscal)
 
 | Método | Rota | Descrição |
 |---|---|---|
@@ -265,7 +265,7 @@ com chave de acesso simulada de 44 dígitos derivada do ID da venda.
 
 ---
 
-## compras-service (porta 3006)
+## compras (prefixo /compras)
 
 | Método | Rota | Descrição |
 |---|---|---|
@@ -314,7 +314,7 @@ chegou de verdade): a resposta traz `aviso_conta` pedindo o lançamento manual.
 
 ---
 
-## Relacionamento com clientes (CRM) — vendas-service
+## Relacionamento com clientes (CRM) — módulo de vendas
 
 | Método | Rota | Descrição |
 |---|---|---|
@@ -371,7 +371,7 @@ validade, período padrão dos relatórios) é o dia local, definido por
 Postgres já nesse fuso — sem isso `current_date` viraria à meia-noite UTC e a
 venda das 21h cairia no movimento do dia seguinte.
 
-## Fluxo entre serviços — exemplo completo (finalizar uma venda)
+## Fluxo entre módulos — exemplo completo (finalizar uma venda)
 
 1. Front chama `POST /vendas/:id/finalizar` no `vendas-service`.
 2. `vendas-service` consulta `estoque-service` (`GET /produtos/:id`) para conferir `tipo_controle` de cada item.

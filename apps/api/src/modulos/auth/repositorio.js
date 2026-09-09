@@ -1,0 +1,162 @@
+import { consultar, emTransacao } from "../../db.js";
+
+/** Acesso ao schema `auth` — nenhum outro serviço toca nessas tabelas. */
+
+export async function buscarUsuarioPorEmail(email) {
+  const { rows } = await consultar(
+    `SELECT u.id, u.nome, u.email, u.senha_hash, u.ativo, u.criado_em,
+            p.nome AS perfil, p.permissoes
+       FROM auth.usuarios u
+       JOIN auth.perfis p ON p.id = u.perfil_id
+      WHERE lower(u.email) = lower($1)`,
+    [email]
+  );
+  return rows[0] ?? null;
+}
+
+export async function buscarUsuarioPorId(id) {
+  const { rows } = await consultar(
+    `SELECT u.id, u.nome, u.email, u.ativo, u.criado_em,
+            p.nome AS perfil, p.permissoes
+       FROM auth.usuarios u
+       JOIN auth.perfis p ON p.id = u.perfil_id
+      WHERE u.id = $1`,
+    [id]
+  );
+  return rows[0] ?? null;
+}
+
+export async function listarPerfis() {
+  const { rows } = await consultar(
+    `SELECT id, nome, permissoes FROM auth.perfis ORDER BY nome`
+  );
+  return rows;
+}
+
+export async function buscarPerfilPorNome(nome) {
+  const { rows } = await consultar(
+    `SELECT id, nome, permissoes FROM auth.perfis WHERE nome = $1`,
+    [nome]
+  );
+  return rows[0] ?? null;
+}
+
+export async function criarUsuario({ perfilId, nome, email, senhaHash }) {
+  const { rows } = await consultar(
+    `INSERT INTO auth.usuarios (perfil_id, nome, email, senha_hash)
+          VALUES ($1, $2, $3, $4)
+       RETURNING id, nome, email, ativo, criado_em`,
+    [perfilId, nome, email, senhaHash]
+  );
+  return rows[0];
+}
+
+/**
+ * Atualiza só o que veio no corpo (ativo e/ou perfil).
+ * @param {string} id
+ * @param {{ ativo?: boolean, perfilId?: string }} campos
+ */
+export async function atualizarUsuario(id, campos) {
+  const partes = [];
+  const valores = [];
+
+  if (campos.ativo !== undefined) {
+    valores.push(campos.ativo);
+    partes.push(`ativo = $${valores.length}`);
+  }
+  if (campos.perfilId !== undefined) {
+    valores.push(campos.perfilId);
+    partes.push(`perfil_id = $${valores.length}`);
+  }
+  if (!partes.length) return buscarUsuarioPorId(id);
+
+  valores.push(id);
+  await consultar(
+    `UPDATE auth.usuarios SET ${partes.join(", ")} WHERE id = $${valores.length}`,
+    valores
+  );
+  return buscarUsuarioPorId(id);
+}
+
+/** Lista de usuários para a tela de cadastro (administrador). */
+/**
+ * Usuários com os filtros da tela: busca por nome ou email, perfil e situação.
+ * Nunca traz senha_hash — a coluna nem entra no SELECT.
+ *
+ * @param {{ busca?: string, perfil?: string, ativo?: "true"|"false" }} filtros
+ */
+export async function listarUsuarios({ busca, perfil, ativo } = {}) {
+  const condicoes = [];
+  const valores = [];
+
+  if (busca) {
+    valores.push(`%${busca}%`);
+    condicoes.push(`(u.nome ILIKE $${valores.length} OR u.email ILIKE $${valores.length})`);
+  }
+  if (perfil) {
+    valores.push(perfil);
+    condicoes.push(`p.nome = $${valores.length}`);
+  }
+  if (ativo === "true" || ativo === true) condicoes.push(`u.ativo`);
+  else if (ativo === "false" || ativo === false) condicoes.push(`NOT u.ativo`);
+
+  const onde = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";
+
+  const { rows } = await consultar(
+    `SELECT u.id, u.nome, u.email, u.ativo, u.criado_em, p.nome AS perfil
+       FROM auth.usuarios u
+       JOIN auth.perfis p ON p.id = u.perfil_id
+       ${onde}
+      ORDER BY u.nome`,
+    valores
+  );
+  return rows;
+}
+
+// ------------------------------------------------------- recuperação de senha
+
+/**
+ * Guarda só o hash do token: quem tiver acesso ao banco não consegue usar o
+ * link de recuperação de ninguém.
+ */
+export async function criarTokenRecuperacao({ usuarioId, tokenHash, minutosDeValidade }) {
+  // Pedido novo invalida os anteriores do mesmo usuário.
+  await consultar(
+    `UPDATE auth.tokens_recuperacao SET usado_em = now()
+      WHERE usuario_id = $1 AND usado_em IS NULL`,
+    [usuarioId]
+  );
+
+  const { rows } = await consultar(
+    `INSERT INTO auth.tokens_recuperacao (usuario_id, token_hash, expira_em)
+          VALUES ($1, $2, now() + ($3 || ' minutes')::interval)
+       RETURNING id, expira_em`,
+    [usuarioId, tokenHash, String(minutosDeValidade)]
+  );
+  return rows[0];
+}
+
+export async function buscarTokenValido(tokenHash) {
+  const { rows } = await consultar(
+    `SELECT t.id, t.usuario_id, t.expira_em, u.email, u.ativo
+       FROM auth.tokens_recuperacao t
+       JOIN auth.usuarios u ON u.id = t.usuario_id
+      WHERE t.token_hash = $1
+        AND t.usado_em IS NULL
+        AND t.expira_em > now()`,
+    [tokenHash]
+  );
+  return rows[0] ?? null;
+}
+
+export async function trocarSenha({ usuarioId, senhaHash, tokenId }) {
+  return emTransacao(async (cliente) => {
+    await cliente.query(`UPDATE auth.usuarios SET senha_hash = $2 WHERE id = $1`, [
+      usuarioId,
+      senhaHash,
+    ]);
+    await cliente.query(`UPDATE auth.tokens_recuperacao SET usado_em = now() WHERE id = $1`, [
+      tokenId,
+    ]);
+  });
+}

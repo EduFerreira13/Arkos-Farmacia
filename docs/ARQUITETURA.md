@@ -2,19 +2,24 @@
 
 ## Princípio central
 
-Cada domínio de negócio é um **serviço independente** (não um monolito modular). Frontend e backend ficam em pastas raiz separadas para nunca haver dúvida sobre o que é o quê.
+O backend é um **monolito modular**: um só processo Node/Fastify (`apps/api`), com um módulo por domínio de negócio, cada um isolado em sua própria pasta e no seu próprio prefixo de rota. Frontend e backend ficam em pastas raiz separadas para nunca haver dúvida sobre o que é o quê.
 
 ```
 arkos/
 ├── apps/
-│   └── web/                     # FRONTEND
-├── services/                    # BACKEND — cada um roda e é deployado separado
-│   ├── vendas-service/
-│   ├── estoque-service/
-│   ├── compras-service/
-│   ├── financeiro-service/
-│   ├── fiscal-service/
-│   └── auth-service/
+│   ├── web/                     # FRONTEND
+│   └── api/                     # BACKEND — processo único
+│       └── src/
+│           ├── modulos/
+│           │   ├── auth/
+│           │   ├── estoque/
+│           │   ├── vendas/
+│           │   ├── financeiro/
+│           │   ├── fiscal/
+│           │   └── compras/
+│           ├── app.js           # registra cada módulo no seu prefixo
+│           ├── db.js            # pool do Postgres, compartilhado
+│           └── env.js
 ├── database/
 │   ├── schema/                  # docs auto-geradas — nunca editar à mão
 │   ├── migrations/
@@ -24,28 +29,44 @@ arkos/
 └── docs/
 ```
 
+## Por que consolidamos
+
+Os seis serviços (`auth`, `estoque`, `vendas`, `financeiro`, `fiscal`, `compras`) nasceram como processos independentes, pensando num deploy com escala e times por domínio. No estágio de MVP isso custava mais do que valia: seis processos para subir e derrubar em dev, seis portas para gerenciar, seis pontos de rede para expor e proteger. Um processo só reduz a superfície de ataque (uma porta, um binário) e a complexidade operacional (um `npm run dev`, um log, um deploy) sem abrir mão do isolamento entre módulos — cada um continua no seu schema lógico e só enxerga o do outro por HTTP.
+
 ## Frontend (`apps/web`)
 
 - React + Vite + Tailwind.
-- Consome os serviços de backend via API REST (cada serviço expõe sua própria API).
+- Consome o backend via API REST — cada módulo mantém seu prefixo de rota (o proxy do Vite manda tudo para o mesmo host:porta).
 - Segue o design system em [`REGRAS-VISUAIS.md`](./REGRAS-VISUAIS.md).
 
-## Backend (`services/*`)
+## Backend (`apps/api`)
 
-Cada serviço:
+Um processo Fastify só, um módulo por domínio dentro de `src/modulos/`:
 
-- Tem seu próprio `package.json`, roda em processo separado, pode subir/cair sem afetar os demais.
-- Tem seu **próprio schema lógico** dentro do mesmo PostgreSQL (ex: `estoque.produtos`, `vendas.pedidos`) — isolamento real de dados sem o custo de manter 5 bancos físicos no MVP. Migrar para bancos físicos separados no futuro é só trocar a connection string.
-- Só se comunica com outro serviço via API HTTP — nunca acessando o schema de outro serviço diretamente. Isso é o que garante que "cada um fica no seu quadrado".
+- Cada módulo é registrado em `app.js` com o prefixo correspondente ao seu nome (`/auth`, `/estoque`, `/vendas`, `/financeiro`, `/fiscal`, `/compras`) — sem exceção, mesmo os que antes respondiam na raiz.
+- Cada módulo tem seu **próprio schema lógico** dentro do mesmo PostgreSQL (ex: `estoque.produtos`, `vendas.pedidos`) — isolamento real de dados sem o custo de manter 5 bancos físicos no MVP. Migrar para bancos físicos separados no futuro é só trocar a connection string.
+- Um módulo nunca acessa o schema de outro diretamente: quando precisa (ex: vendas conferindo o `tipo_controle` de um item no estoque), chama a rota do outro módulo por HTTP, como antes — só que agora sempre para o mesmo host:porta (`ESTOQUE_URL`, `FINANCEIRO_URL`, `FISCAL_URL`, `VENDAS_URL` em `env.js` já apontam pra si mesmo). Isso é o que garante que "cada um fica no seu quadrado", mesmo dividindo processo.
+- `db.js` e `env.js` são compartilhados (um pool de conexão só, não seis) — o resto de cada módulo (rotas, repositório, regras) é o mesmo código de antes, só reorganizado de pasta.
 
-| Serviço | Responsabilidade |
+| Módulo | Responsabilidade |
 |---|---|
-| `vendas-service` | PDV, cupom, formas de pagamento, clientes, histórico, relacionamento (CRM) |
-| `estoque-service` | entrada/saída, lotes, validade, alertas, inventário |
-| `compras-service` | pedido de compra, recebimento com conferência, sugestão |
-| `financeiro-service` | contas a pagar/receber, fluxo de caixa |
-| `fiscal-service` | NF-e, SNGPC, controlados |
-| `auth-service` | login, usuários, permissões (RBAC) |
+| `vendas` | PDV, cupom, formas de pagamento, clientes, histórico, relacionamento (CRM) |
+| `estoque` | entrada/saída, lotes, validade, alertas, inventário |
+| `compras` | pedido de compra, recebimento com conferência, sugestão |
+| `financeiro` | contas a pagar/receber, fluxo de caixa |
+| `fiscal` | NF-e, SNGPC, controlados |
+| `auth` | login, usuários, permissões (RBAC) |
+
+## Como voltar a separar em microsserviços, se um dia for necessário
+
+Cada módulo em `src/modulos/<nome>/` já é praticamente independente — só compartilha `db.js`, `env.js` e o pacote `packages/auth-middleware`. Para extrair um módulo de volta a um serviço próprio:
+
+1. Criar `services/<nome>-service/` com seu próprio `package.json`, `app.js`, `server.js`, `env.js` e `db.js` (o padrão que existia antes da consolidação está no histórico do git, antes deste commit).
+2. Mover `src/modulos/<nome>/*` para `services/<nome>-service/src/`, restaurando os imports relativos de `./db.js`/`./env.js`.
+3. Trocar, no `env.js` do módulo consolidado que ainda chama esse módulo por HTTP, a URL fixa (`http://localhost:${PORT}/<nome>`) por uma variável de porta própria do serviço extraído.
+4. Repetir para cada módulo que precisar virar serviço de novo — não precisa ser tudo de uma vez.
+
+Não há trava técnica que impeça isso: a separação por módulo e a comunicação por HTTP entre eles (nunca acesso direto a schema) foram mantidas de propósito.
 
 ## Banco de dados e documentação auto-sincronizada
 
@@ -72,35 +93,38 @@ Pré-requisito: variável de ambiente `DATABASE_URL` apontando para o banco loca
 
 O único lugar com código compartilhado entre frontend e serviços — tipos de dados e contratos de API (ex: o formato de um "Produto" ou "Venda"). Evita duplicar a mesma interface em 5 lugares diferentes, sem criar acoplamento de lógica de negócio entre os serviços.
 
-## Serviços e portas
+## Porta e prefixos
 
-| Serviço | Porta | Schema |
+Um processo só, na porta `PORT` do `.env` (padrão `3000`). Cada módulo mantém
+seu prefixo e seu schema:
+
+| Módulo | Prefixo | Schema |
 |---|---|---|
-| `auth-service` | 3001 | `auth` |
-| `estoque-service` | 3002 | `estoque` |
-| `vendas-service` | 3003 | `vendas` |
-| `financeiro-service` | 3004 | `financeiro` |
-| `fiscal-service` | 3005 | `fiscal` |
-| `compras-service` | 3006 | `compras` |
+| `auth` | `/auth` | `auth` |
+| `estoque` | `/estoque` | `estoque` |
+| `vendas` | `/vendas` | `vendas` |
+| `financeiro` | `/financeiro` | `financeiro` |
+| `fiscal` | `/fiscal` | `fiscal` |
+| `compras` | `/compras` | `compras` |
 
-O frontend fala com todos por `/api/<serviço>/...`; o proxy do Vite resolve a
-porta. Nenhum serviço lê o schema de outro — o recebimento de compra, por
-exemplo, dá entrada no estoque e cria a conta a pagar por HTTP.
+O frontend fala com todos por `/api/<módulo>/...`; o proxy do Vite manda tudo
+para a mesma porta. Nenhum módulo lê o schema de outro — o recebimento de
+compra, por exemplo, dá entrada no estoque e cria a conta a pagar por HTTP.
 
 ## Fuso do negócio
 
 O dia da farmácia é o dia local (`TZ_NEGOCIO` no `.env`, `America/Sao_Paulo`).
-Cada serviço abre a conexão com o Postgres nesse fuso, senão `current_date`
+O backend abre a conexão com o Postgres nesse fuso, senão `current_date`
 viraria à meia-noite UTC e a venda das 21h cairia no movimento do dia seguinte.
 
 ## Onde mora a inteligência do relacionamento
 
-A análise de recompra fica no `vendas-service`, junto do dado que a sustenta: as
-vendas e os itens de cada cliente. Ela não consulta outro serviço.
+A análise de recompra fica no módulo de vendas, junto do dado que a sustenta:
+as vendas e os itens de cada cliente. Ela não consulta outro módulo.
 
 O cruzamento com preço e saldo do produto sugerido acontece **na borda** — a tela
-pede o catálogo ao `estoque-service` e junta as duas respostas. Isso mantém o
-isolamento (nenhum serviço lê o schema do outro) sem criar uma conversa de
+pede o catálogo ao módulo de estoque e junta as duas respostas. Isso mantém o
+isolamento (nenhum módulo lê o schema do outro) sem criar uma conversa de
 serviço para serviço a cada linha da lista. O mesmo vale para a margem e a curva
 ABC dos relatórios: a receita vem de vendas, o custo vem do estoque, e a conta é
 feita onde os dois se encontram.

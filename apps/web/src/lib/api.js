@@ -1,6 +1,8 @@
 /**
- * Cliente HTTP único do front. Cada serviço tem seu prefixo (o proxy do Vite
- * resolve a porta — ver vite.config.js e docs/API-CONTRATOS.md).
+ * Cliente HTTP único do front. O backend é um processo só (`apps/api`), mas
+ * cada módulo continua no seu prefixo (o proxy do Vite manda tudo para o
+ * mesmo host:porta — ver vite.config.js e docs/API-CONTRATOS.md). Manter os
+ * prefixos aqui evita reescrever as chamadas dentro das telas.
  */
 
 const PREFIXOS = {

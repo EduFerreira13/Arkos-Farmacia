@@ -1,0 +1,22 @@
+{
+  "name": "@arkos/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Monolito modular do Arkos — auth, estoque, vendas, financeiro, fiscal e compras num só processo",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@arkos/auth-middleware": "0.1.0",
+    "@arkos/shared-types": "0.1.0",
+    "@fastify/cors": "^10.0.1",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.2.3",
+    "fastify": "^5.2.0",
+    "node-thermal-printer": "^4.6.1",
+    "pg": "^8.13.1"
+  }
+}

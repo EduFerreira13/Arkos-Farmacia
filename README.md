@@ -4,7 +4,7 @@ Sistema de gestão para farmácia — MVP.
 
 ## Sobre
 
-Arkos é um sistema fullstack para farmácia cobrindo vendas (PDV), estoque, financeiro, compras e controle de medicamentos controlados. Este repositório é um **monorepo**: o frontend e cada serviço de backend são independentes, mas versionados juntos para facilitar o desenvolvimento em dupla.
+Arkos é um sistema fullstack para farmácia cobrindo vendas (PDV), estoque, financeiro, compras e controle de medicamentos controlados. Este repositório é um **monorepo**: o frontend (`apps/web`) e o backend (`apps/api`, um monolito modular — um processo só, um módulo por domínio) são versionados juntos para facilitar o desenvolvimento em dupla.
 
 ## Documentação
 
@@ -20,14 +20,15 @@ Antes de mexer em qualquer coisa, leia (nessa ordem):
 ```
 arkos/
 ├── apps/
-│   └── web/                     # Frontend — React + Vite + Tailwind
-├── services/                    # Backend — cada domínio é um serviço isolado
-│   ├── vendas-service/
-│   ├── estoque-service/
-│   ├── compras-service/
-│   ├── financeiro-service/
-│   ├── fiscal-service/
-│   └── auth-service/
+│   ├── web/                     # Frontend — React + Vite + Tailwind
+│   └── api/                     # Backend — processo único, um módulo por domínio
+│       └── src/modulos/
+│           ├── vendas/
+│           ├── estoque/
+│           ├── compras/
+│           ├── financeiro/
+│           ├── fiscal/
+│           └── auth/
 ├── database/
 │   ├── schema/                  # Documentação AUTO-GERADA do banco (não editar manualmente)
 │   ├── migrations/
@@ -44,8 +45,8 @@ arkos/
 | Camada | Tecnologia |
 |---|---|
 | Frontend | React + Vite + Tailwind CSS |
-| Backend | Node.js (Fastify), um processo por serviço |
-| Banco de dados | PostgreSQL (schema isolado por serviço) |
+| Backend | Node.js (Fastify), processo único, um módulo por domínio |
+| Banco de dados | PostgreSQL (schema isolado por módulo) |
 | Cache | Redis |
 | Autenticação | JWT + RBAC (perfis de acesso) |
 
@@ -65,16 +66,14 @@ npm run seed
 # 3. Opcional: dados fictícios para navegar com o sistema já populado
 npm run seed:demo
 
-# 4. Backend — sobe os 5 serviços juntos (portas 3001 a 3005)
-npm run dev:services
+# 4. Backend — processo único, todos os módulos juntos (porta 3000)
+npm run dev:api
 
 # 5. Frontend em outro terminal (http://localhost:5173)
 npm run dev:web
 ```
 
-`npm run dev` sobe backend e frontend de uma vez. Para um serviço só:
-`npm run dev:estoque` (ou `dev:auth`, `dev:vendas`, `dev:financeiro`, `dev:fiscal`,
-`dev:compras`).
+`npm run dev` sobe backend e frontend de uma vez.
 
 Conferência automática das telas (renderiza cada uma e testa o acesso por perfil):
 
@@ -94,12 +93,12 @@ npm run testar:telas --workspace=apps/web
 ### Conferência automática
 
 ```bash
-npm run test:integracao   # 121 verificações contra as APIs dos 6 serviços
+npm run test:integracao   # 121 verificações contra as APIs dos 6 módulos
 npm run test:fluxo        # o fluxo do MVP ponta a ponta
 npm run test:telas        # renderiza cada tela e testa o acesso por perfil
 ```
 
-O de integração e o de fluxo precisam dos serviços rodando (`npm run dev:services`).
+O de integração e o de fluxo precisam do backend rodando (`npm run dev:api`).
 Os três criam dados no banco de desenvolvimento.
 
 ### Dados de demonstração
@@ -129,7 +128,7 @@ cenário.
 
 ### Conferindo o fluxo completo
 
-Com os serviços rodando:
+Com o backend rodando:
 
 ```bash
 npm run test:fluxo
@@ -142,18 +141,13 @@ caixa e fechamento com divergência.
 
 ### Portas
 
-| Serviço | Porta |
+| Processo | Porta |
 |---|---|
-| auth-service | 3001 |
-| estoque-service | 3002 |
-| vendas-service | 3003 |
-| financeiro-service | 3004 |
-| fiscal-service | 3005 |
-| compras-service | 3006 |
+| backend (`apps/api`) | 3000 |
 | frontend (Vite) | 5173 |
 
-O frontend fala com os serviços por `/api/<serviço>/...` e o proxy do Vite
-resolve a porta — não há CORS no desenvolvimento.
+O frontend fala com o backend por `/api/<módulo>/...` e o proxy do Vite manda
+tudo para a mesma porta — não há CORS no desenvolvimento.
 
 ## Sincronizando a documentação do banco
 

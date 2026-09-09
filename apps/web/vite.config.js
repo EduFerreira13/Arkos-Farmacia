@@ -3,21 +3,26 @@ import react from "@vitejs/plugin-react";
 import path from "node:path";
 
 /**
- * Cada serviço roda numa porta própria (docs/API-CONTRATOS.md). O front fala
- * sempre com `/api/<servico>/...` e o proxy do Vite entrega na porta certa —
- * evita CORS no desenvolvimento e mantém uma origem só no navegador.
+ * O backend é um processo só (`apps/api`), com um módulo por domínio, cada um
+ * no seu prefixo (docs/API-CONTRATOS.md). O front fala sempre com
+ * `/api/<módulo>/...` e o proxy do Vite reescreve para o prefixo real do
+ * backend, sempre no mesmo destino — evita CORS no desenvolvimento e mantém
+ * uma origem só no navegador.
  */
 export default defineConfig(({ mode }) => {
   const raiz = path.join(process.cwd(), "..", "..");
   const env = loadEnv(mode, raiz, "");
 
   const porta = (nome, padrao) => Number(env[nome] ?? padrao);
+  const alvo = `http://localhost:${porta("PORT", 3000)}`;
 
-  const alvo = (portaServico, prefixo, destino) => ({
-    target: `http://localhost:${portaServico}`,
+  // Todo módulo cai no mesmo destino agora: só tira o "/api" da frente e o
+  // que sobra já é o prefixo que o backend espera (/auth, /estoque...).
+  const modulo = {
+    target: alvo,
     changeOrigin: true,
-    rewrite: (caminho) => caminho.replace(new RegExp(`^${prefixo}`), destino),
-  });
+    rewrite: (caminho) => caminho.replace(/^\/api/, ""),
+  };
 
   return {
     plugins: [react()],
@@ -28,12 +33,12 @@ export default defineConfig(({ mode }) => {
       // ainda preso na 5173. Falhando alto, o erro já aponta a causa.
       strictPort: true,
       proxy: {
-        "/api/auth": alvo(porta("AUTH_SERVICE_PORT", 3001), "/api/auth", "/auth"),
-        "/api/estoque": alvo(porta("ESTOQUE_SERVICE_PORT", 3002), "/api/estoque", ""),
-        "/api/vendas": alvo(porta("VENDAS_SERVICE_PORT", 3003), "/api/vendas", "/vendas"),
-        "/api/financeiro": alvo(porta("FINANCEIRO_SERVICE_PORT", 3004), "/api/financeiro", ""),
-        "/api/fiscal": alvo(porta("FISCAL_SERVICE_PORT", 3005), "/api/fiscal", ""),
-        "/api/compras": alvo(porta("COMPRAS_SERVICE_PORT", 3006), "/api/compras", "/compras"),
+        "/api/auth": modulo,
+        "/api/estoque": modulo,
+        "/api/vendas": modulo,
+        "/api/financeiro": modulo,
+        "/api/fiscal": modulo,
+        "/api/compras": modulo,
       },
     },
   };

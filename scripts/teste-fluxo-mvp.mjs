@@ -5,7 +5,7 @@
  * venda com item controlado (bloqueio sem receita e conclusao com receita) ->
  * nota fiscal simulada -> lancamento e fechamento de caixa.
  *
- * Uso: com os 5 servicos rodando (`npm run dev:services`), `npm run test:fluxo`.
+ * Uso: com o backend rodando (`npm run dev:api`), `npm run test:fluxo`.
  * Cria dados de demonstracao no banco de desenvolvimento — nao rodar em producao.
  */
 
@@ -17,13 +17,16 @@ const aqui = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(aqui, "..", ".env"), quiet: true });
 
 const porta = (nome, padrao) => process.env[nome] ?? padrao;
+const BASE = `http://localhost:${porta("PORT", 3000)}`;
 
+// O backend e um processo so agora, mas cada modulo continua no seu prefixo
+// (docs/API-CONTRATOS.md) — so muda pra quem ja chamava sem prefixo antes.
 const S = {
-  auth: `http://localhost:${porta("AUTH_SERVICE_PORT", 3001)}`,
-  estoque: `http://localhost:${porta("ESTOQUE_SERVICE_PORT", 3002)}`,
-  vendas: `http://localhost:${porta("VENDAS_SERVICE_PORT", 3003)}`,
-  financeiro: `http://localhost:${porta("FINANCEIRO_SERVICE_PORT", 3004)}`,
-  fiscal: `http://localhost:${porta("FISCAL_SERVICE_PORT", 3005)}`,
+  auth: BASE,
+  estoque: `${BASE}/estoque`,
+  vendas: BASE,
+  financeiro: `${BASE}/financeiro`,
+  fiscal: `${BASE}/fiscal`,
 };
 
 let falhas = 0;
@@ -47,11 +50,9 @@ async function req(url, { metodo = "GET", corpo, token } = {}) {
   return { status: r.status, dados: d };
 }
 
-// 0) health de todos os serviços
-for (const [nome, base] of Object.entries(S)) {
-  const h = await req(`${base}/health`);
-  ok(`health ${nome}`, h.status === 200 && h.dados.banco === "ok");
-}
+// 0) health do backend
+const h = await req(`${BASE}/health`);
+ok("health backend", h.status === 200 && h.dados.banco === "ok");
 
 // 1) login
 const login = await req(`${S.auth}/auth/login`, {

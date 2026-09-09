@@ -5,7 +5,6 @@
   "description": "Sistema de gestão para farmácia — MVP",
   "workspaces": [
     "apps/*",
-    "services/*",
     "packages/*"
   ],
   "scripts": {
@@ -13,20 +12,14 @@
     "migrate": "node database/scripts/run-migrations.js",
     "seed": "node database/scripts/seed.js",
     "seed:demo": "node database/scripts/seed-demo.js",
-    "dev:auth": "npm run dev --workspace=services/auth-service",
-    "dev:estoque": "npm run dev --workspace=services/estoque-service",
-    "dev:vendas": "npm run dev --workspace=services/vendas-service",
-    "dev:financeiro": "npm run dev --workspace=services/financeiro-service",
-    "dev:fiscal": "npm run dev --workspace=services/fiscal-service",
+    "dev:api": "npm run dev --workspace=apps/api",
     "dev:web": "npm run dev --workspace=apps/web",
-    "dev:services": "concurrently -n auth,estoque,vendas,financeiro,fiscal,compras -c blue,green,magenta,yellow,cyan,white \"npm:dev:auth\" \"npm:dev:estoque\" \"npm:dev:vendas\" \"npm:dev:financeiro\" \"npm:dev:fiscal\" \"npm:dev:compras\"",
-    "dev": "concurrently -n servicos,web -c blue,magenta \"npm:dev:services\" \"npm:dev:web\"",
+    "dev": "concurrently -n api,web -c blue,magenta \"npm:dev:api\" \"npm:dev:web\"",
     "test:fluxo": "node scripts/teste-fluxo-mvp.mjs",
-    "dev:compras": "npm run dev --workspace=services/compras-service",
-    "dev:impressora": "escpos-emulator",
+    "dev:impressora": "node --env-file=.env node_modules/escpos-emulator/dist/index.js",
     "test:integracao": "node scripts/teste-integracao.mjs",
     "test:telas": "npm run testar:telas --workspace=apps/web",
-    "test:pdf": "node services/compras-service/testes/layout-da-ordem.mjs"
+    "test:pdf": "node apps/api/testes/layout-da-ordem.mjs"
   },
   "engines": {
     "node": ">=20"

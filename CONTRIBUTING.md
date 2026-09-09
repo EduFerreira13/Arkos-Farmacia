@@ -27,14 +27,14 @@ Tipos principais: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`.
 ## Pull Requests
 
 1. Abrir a branch a partir da `main` atualizada.
-2. Trabalhar apenas dentro do serviço/módulo relacionado à tarefa — evita PRs gigantes mexendo em vários serviços ao mesmo tempo.
+2. Trabalhar apenas dentro do módulo relacionado à tarefa — evita PRs gigantes mexendo em vários módulos ao mesmo tempo.
 3. Abrir o PR (pode ser como *draft* se ainda estiver em andamento, pra o outro acompanhar).
 4. Pelo menos **um dos dois revisa antes do merge** — mesmo sendo só dois devs, isso evita bug bobo passar direto.
 5. Merge por **squash** — mantém o histórico da `main` limpo (um commit por feature).
 
-## Regra de ouro dos serviços
+## Regra de ouro dos módulos
 
-Se sua tarefa está no `estoque-service`, não mexa no `vendas-service` no mesmo PR — mesmo que pareça mais rápido. Cada serviço é independente por design (ver [`docs/ARQUITETURA.md`](./docs/ARQUITETURA.md)); misturar mudanças de serviços diferentes num PR só quebra esse isolamento.
+Se sua tarefa está no módulo de estoque, não mexa no de vendas no mesmo PR — mesmo que pareça mais rápido. O backend é um processo só, mas cada módulo é independente por design (ver [`docs/ARQUITETURA.md`](./docs/ARQUITETURA.md)); misturar mudanças de módulos diferentes num PR só quebra esse isolamento.
 
 ## Banco de dados
 
@@ -45,13 +45,13 @@ Nunca editar `database/schema/` manualmente — esses arquivos são gerados pelo
 Quatro suítes:
 
 ```bash
-npm run test:integracao   # verificações nas APIs dos 6 serviços
+npm run test:integracao   # verificações nas APIs dos 6 módulos
 npm run test:fluxo        # o fluxo do MVP ponta a ponta
 npm run test:telas        # renderiza cada tela e testa o acesso por perfil
 npm run test:pdf          # layout da ordem de compra em PDF
 ```
 
-As duas primeiras precisam do banco e dos serviços no ar (`npm run dev:services`).
+As duas primeiras precisam do banco e do backend no ar (`npm run dev:api`).
 A de telas roda sozinha, em jsdom, e é a que pega erro de runtime que o build
 não vê. A de PDF também roda sozinha: mede cada trecho de texto do arquivo
 gerado e reprova sobreposição de coluna ou texto fora da folha — ela mede com
@@ -69,4 +69,4 @@ do limite do perfil).
 - [ ] Rodei as quatro suítes de teste e todas passaram
 - [ ] Segui as regras de negócio em `docs/REGRAS-NEGOCIO.md`
 - [ ] Segui o design system em `docs/REGRAS-VISUAIS.md` (se mexi em UI)
-- [ ] Não misturei mudanças de mais de um serviço no mesmo PR
+- [ ] Não misturei mudanças de mais de um módulo no mesmo PR

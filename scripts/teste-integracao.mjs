@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
- * Teste de integração dos seis serviços: exercita cada rota da API contra o
- * banco de desenvolvimento e confere as regras de negócio que não podem falhar.
+ * Teste de integração dos seis módulos do backend: exercita cada rota da API
+ * contra o banco de desenvolvimento e confere as regras de negócio que não
+ * podem falhar.
  *
- * Uso: com os serviços rodando (`npm run dev:services`), `npm run test:integracao`.
+ * Uso: com o backend rodando (`npm run dev:api`), `npm run test:integracao`.
  *
  * Cria e movimenta dados reais no banco de desenvolvimento (produto de teste,
  * vendas, pedido de compra, contato de CRM). Não rodar contra produção.
@@ -17,14 +18,17 @@ const aqui = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(aqui, "..", ".env"), quiet: true });
 
 const porta = (nome, padrao) => process.env[nome] ?? padrao;
+const BASE = `http://localhost:${porta("PORT", 3000)}`;
 
+// O backend é um processo só agora, mas cada módulo continua no seu prefixo
+// (docs/API-CONTRATOS.md) — só muda pra quem já chamava sem prefixo antes.
 const S = {
-  auth: `http://localhost:${porta("AUTH_SERVICE_PORT", 3001)}`,
-  estoque: `http://localhost:${porta("ESTOQUE_SERVICE_PORT", 3002)}`,
-  vendas: `http://localhost:${porta("VENDAS_SERVICE_PORT", 3003)}`,
-  financeiro: `http://localhost:${porta("FINANCEIRO_SERVICE_PORT", 3004)}`,
-  fiscal: `http://localhost:${porta("FISCAL_SERVICE_PORT", 3005)}`,
-  compras: `http://localhost:${porta("COMPRAS_SERVICE_PORT", 3006)}`,
+  auth: BASE,
+  estoque: `${BASE}/estoque`,
+  vendas: BASE,
+  financeiro: `${BASE}/financeiro`,
+  fiscal: `${BASE}/fiscal`,
+  compras: BASE,
 };
 
 let falhas = 0;
@@ -75,11 +79,9 @@ const sufixo = String(Date.now()).slice(-6);
 
 // ------------------------------------------------------------------ execução
 
-secao("Saúde dos serviços");
-for (const [nome, base] of Object.entries(S)) {
-  const saude = await req(`${base}/health`);
-  ok(`${nome} responde e alcança o banco`, saude.status === 200 && saude.dados?.banco === "ok");
-}
+secao("Saúde do backend");
+const saude = await req(`${BASE}/health`);
+ok("backend responde e alcança o banco", saude.status === 200 && saude.dados?.banco === "ok");
 
 secao("auth-service");
 const entrar = async (email) => {
