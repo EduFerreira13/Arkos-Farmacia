@@ -91,11 +91,11 @@ export const financeiro = {
 };
 
 export const fiscal = {
-  emitirNota: ({ vendaId }, token) =>
+  emitirNota: ({ vendaId, cpfNota }, token) =>
     chamarServico("fiscal", "/notas-fiscais", {
       metodo: "POST",
       token,
-      corpo: { venda_id: vendaId },
+      corpo: { venda_id: vendaId, cpf_nota: cpfNota ?? null },
     }),
 
   registrarControlado: ({ vendaId, produtoId, receitaId }, token) =>

@@ -369,11 +369,15 @@ const clienteNovo = await req(`${S.vendas}/vendas/clientes`, {
 ok("cadastra cliente", clienteNovo.status === 201);
 const clienteId = clienteNovo.dados.cliente.id;
 
+// CPF é opcional (minimização de dados, LGPD) — o cadastro não pode exigi-lo.
 const clienteSemCpf = await req(`${S.vendas}/vendas/clientes`, {
   metodo: "POST", token: caixa,
   corpo: { nome: `Sem CPF ${sufixo}`, telefone: "(11) 90000-0001" },
 });
-ok("cliente sem CPF é recusado", clienteSemCpf.status === 400);
+ok(
+  "cliente sem CPF é aceito",
+  clienteSemCpf.status === 201 && clienteSemCpf.dados.cliente.cpf === null
+);
 
 const clienteSemTelefone = await req(`${S.vendas}/vendas/clientes`, {
   metodo: "POST", token: caixa,

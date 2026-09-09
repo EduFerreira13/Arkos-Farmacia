@@ -73,6 +73,11 @@ export function FiscalNotas() {
                 ),
               },
               {
+                chave: "cpf_nota",
+                titulo: "CPF na nota",
+                renderizar: (nota) => nota.cpf_nota || "—",
+              },
+              {
                 chave: "status",
                 titulo: "Status",
                 renderizar: (nota) => (

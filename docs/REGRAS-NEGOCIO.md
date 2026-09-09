@@ -50,7 +50,8 @@
 
 ## 5. Financeiro
 
-- Cadastro de cliente exige **nome, CPF e telefone**: o CPF identifica a pessoa na nota e no convênio, o telefone é o que permite o retorno do relacionamento. Email, data de nascimento, convênio, endereço e observações são opcionais.
+- Cadastro de cliente exige **nome e telefone** — o telefone é o que permite o retorno do relacionamento. **CPF é opcional** (minimização de dados, LGPD): o identificador do cliente no sistema é o `id` interno, nunca o CPF. Email, data de nascimento, convênio, endereço e observações também são opcionais.
+- Na finalização da venda, o operador pode informar um **CPF só para constar na nota fiscal**, independente de haver cliente vinculado — não é obrigatório para concluir a venda, e não cria nem exige cadastro de cliente.
 - Contas a pagar: vinculadas a fornecedores e compras.
 - Contas a receber: geradas automaticamente por vendas a prazo (se houver) ou por convênios.
 - Fluxo de caixa diário: soma automática das vendas do PDV (por forma de pagamento) + lançamentos manuais.

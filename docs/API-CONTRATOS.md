@@ -126,10 +126,11 @@ quem ainda não tem histórico.
 | GET | `/vendas/crm/retornos` | Retornos combinados e ainda não atendidos |
 | PATCH | `/vendas/clientes/:id` | Atualiza cliente |
 
-**Obrigatórios do cliente (§5)**: `nome`, `cpf` e `telefone`. No `PATCH` a
-exigência só vale para o campo que vier no corpo. A planilha de clientes leva
-dado pessoal (CPF, telefone, endereço) — a finalidade precisa justificar a
-extração (LGPD).
+**Obrigatórios do cliente (§5)**: `nome` e `telefone`. `cpf` é opcional
+(minimização de dados, LGPD) — o identificador do cliente é sempre o `id`
+interno, nunca o CPF. No `PATCH` a exigência só vale para o campo que vier no
+corpo. A planilha de clientes leva dado pessoal (CPF, telefone, endereço) — a
+finalidade precisa justificar a extração (LGPD).
 | POST | `/vendas/:id/cliente` | Vincula (ou desvincula) o cliente da venda |
 | DELETE | `/vendas/:id/pagamentos/:pagamentoId` | Remove forma de pagamento antes de finalizar |
 
@@ -216,6 +217,13 @@ qualquer forma. O front mostra um aviso ao operador quando `impresso` é
 
 **Regra crítica (§3)**: `POST /vendas/:id/finalizar` **bloqueia** (HTTP 422) se houver item com `tipo_controle` diferente de `livre` e nenhuma receita vinculada. Essa validação é feita no `vendas-service`, consultando o `estoque-service` para saber o `tipo_controle` de cada item.
 
+**CPF na nota (§5, LGPD).** `POST /vendas/:id/finalizar` aceita `cpf_nota`
+opcional no corpo — só para constar na nota fiscal emitida, a pedido do
+cliente. Não exige cliente cadastrado nem vinculado à venda, e não bloqueia a
+finalização se vier vazio. O valor é repassado ao `fiscal-service`
+(`POST /notas-fiscais`, campo `cpf_nota`) e volta em
+`nota_fiscal.cpf_nota` na resposta.
+
 **Exemplo — bloqueio de controlado sem receita:**
 ```json
 // POST /vendas/:id/finalizar
@@ -261,7 +269,8 @@ por consequência, a venda não finaliza antes de o operador abrir o caixa (§5)
 | POST | `/controlados-sngpc/enviar` | Marca registros como enviados — **simulado**, só grava a data |
 
 `POST /notas-fiscais` é idempotente: a mesma venda devolve sempre a mesma nota,
-com chave de acesso simulada de 44 dígitos derivada do ID da venda.
+com chave de acesso simulada de 44 dígitos derivada do ID da venda. Aceita
+`cpf_nota` opcional (dado pessoal informado só a pedido do cliente — LGPD).
 
 ---
 

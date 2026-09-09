@@ -492,13 +492,13 @@ export async function registrarRotas(app) {
   }));
 
   /**
-   * §5 — nome, CPF e telefone são obrigatórios: o CPF identifica a pessoa na
-   * nota e no convênio, e o telefone é o que permite o retorno do
-   * relacionamento. O resto do cadastro é opcional.
+   * §5 — nome e telefone são obrigatórios: o telefone é o que permite o
+   * retorno do relacionamento. CPF é opcional (minimização de dados, LGPD) —
+   * quem precisa dele na nota informa na finalização da venda, sem exigir
+   * cadastro completo (ver `cpf_nota` em `/:id/finalizar`).
    */
   const OBRIGATORIOS_CLIENTE = [
     ["nome", "Informe o nome do cliente."],
-    ["cpf", "Informe o CPF do cliente."],
     ["telefone", "Informe o telefone do cliente."],
   ];
 
@@ -1072,6 +1072,11 @@ export async function registrarRotas(app) {
     const venda = await carregarVendaAberta(requisicao.params.id, resposta);
     if (!venda) return resposta;
 
+    // CPF na nota: só a pedido do cliente, só para constar na nota fiscal —
+    // não exige cliente cadastrado nem é obrigatório para concluir a venda
+    // (LGPD, minimização de dados).
+    const cpfNota = requisicao.body?.cpf_nota || null;
+
     const token = requisicao.headers.authorization;
     const completa = await buscarVendaCompleta(venda.id);
 
@@ -1142,7 +1147,7 @@ export async function registrarRotas(app) {
     // 3) Nota fiscal (mockada no MVP) e registro dos controlados no SNGPC.
     let nota = null;
     try {
-      const emissao = await fiscal.emitirNota({ vendaId: venda.id }, token);
+      const emissao = await fiscal.emitirNota({ vendaId: venda.id, cpfNota }, token);
       nota = emissao.nota;
 
       for (const item of controlados) {

@@ -32,9 +32,13 @@ export async function registrarRotas(app) {
     const vendaId = requisicao.body?.venda_id;
     if (!vendaId) return invalido(resposta, "Informe venda_id.");
 
+    // CPF na nota: opcional, só a pedido do cliente — não exige cliente
+    // cadastrado (LGPD, minimização de dados; ver docs/PENDENCIAS.md).
+    const cpfNota = requisicao.body?.cpf_nota || null;
+
     // Emissão é idempotente: reemitir a mesma venda devolve a nota existente.
     const { rows: existentes } = await consultar(
-      `SELECT id, venda_id, chave_acesso, status, xml_url, emitida_em
+      `SELECT id, venda_id, chave_acesso, status, xml_url, cpf_nota, emitida_em
          FROM fiscal.notas_fiscais WHERE venda_id = $1`,
       [vendaId]
     );
@@ -44,10 +48,10 @@ export async function registrarRotas(app) {
 
     const chave = chaveAcessoSimulada(vendaId);
     const { rows } = await consultar(
-      `INSERT INTO fiscal.notas_fiscais (venda_id, chave_acesso, status, xml_url)
-            VALUES ($1, $2, $3, $4)
-         RETURNING id, venda_id, chave_acesso, status, xml_url, emitida_em`,
-      [vendaId, chave, STATUS_NOTA_FISCAL.SIMULADO, `/xml-simulado/${chave}.xml`]
+      `INSERT INTO fiscal.notas_fiscais (venda_id, chave_acesso, status, xml_url, cpf_nota)
+            VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, venda_id, chave_acesso, status, xml_url, cpf_nota, emitida_em`,
+      [vendaId, chave, STATUS_NOTA_FISCAL.SIMULADO, `/xml-simulado/${chave}.xml`, cpfNota]
     );
 
     return resposta.code(201).send({ nota: rows[0], reemitida: false });
@@ -70,7 +74,7 @@ export async function registrarRotas(app) {
 
     const onde = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";
     const { rows } = await consultar(
-      `SELECT id, venda_id, chave_acesso, status, xml_url, emitida_em
+      `SELECT id, venda_id, chave_acesso, status, xml_url, cpf_nota, emitida_em
          FROM fiscal.notas_fiscais ${onde}
         ORDER BY emitida_em DESC
         LIMIT 300`,
@@ -82,7 +86,7 @@ export async function registrarRotas(app) {
 
   app.get("/notas-fiscais/:venda_id", async (requisicao, resposta) => {
     const { rows } = await consultar(
-      `SELECT id, venda_id, chave_acesso, status, xml_url, emitida_em
+      `SELECT id, venda_id, chave_acesso, status, xml_url, cpf_nota, emitida_em
          FROM fiscal.notas_fiscais WHERE venda_id = $1`,
       [requisicao.params.venda_id]
     );

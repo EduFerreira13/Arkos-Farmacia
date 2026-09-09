@@ -372,13 +372,15 @@ export function CadastroFornecedores() {
 // ------------------------------------------------------------------ clientes
 
 /**
- * §5 — nome, CPF e telefone identificam a pessoa e permitem o retorno do
- * relacionamento, então são obrigatórios. O resto ajuda, mas não trava o
- * cadastro no balcão.
+ * §5 — nome e telefone identificam a pessoa e permitem o retorno do
+ * relacionamento, então são obrigatórios. CPF é opcional (minimização de
+ * dados, LGPD): quem precisa dele na nota informa na finalização da venda,
+ * sem exigir cadastro completo. O resto ajuda, mas não trava o cadastro no
+ * balcão.
  */
 const CAMPOS_CLIENTE = [
   { nome: "nome", rotulo: "Nome do cliente", obrigatorio: true, largo: true },
-  { nome: "cpf", rotulo: "CPF", obrigatorio: true, exemplo: "000.000.000-00" },
+  { nome: "cpf", rotulo: "CPF", exemplo: "000.000.000-00" },
   { nome: "telefone", rotulo: "Telefone", obrigatorio: true, exemplo: "(11) 90000-0000" },
   { nome: "email", rotulo: "Email", tipo: "email" },
   { nome: "data_nascimento", rotulo: "Data de nascimento", tipo: "date" },

@@ -440,6 +440,12 @@ function ComprovanteVenda({ resultado, aoFechar }) {
             {formatarData(venda.receita.data_emissao)}
           </div>
         ) : null}
+
+        {resultado.nota_fiscal?.cpf_nota ? (
+          <p className="text-rotulo text-secundario">
+            CPF na nota: {resultado.nota_fiscal.cpf_nota}
+          </p>
+        ) : null}
       </div>
     </Modal>
   );
@@ -464,6 +470,9 @@ export function PDV() {
   const [valorPagamento, definirValorPagamento] = useState("");
   const [resultado, definirResultado] = useState(null);
   const [cadastrandoCliente, definirCadastrandoCliente] = useState(false);
+  // CPF só para constar na nota, a pedido do cliente — opcional, não exige
+  // cadastro completo (LGPD, minimização de dados).
+  const [cpfNota, definirCpfNota] = useState("");
   const [codigoTeste, definirCodigoTeste] = useState("");
 
   const produtos = usarBusca(() => api.estoque.get("/produtos"), []);
@@ -684,7 +693,11 @@ export function PDV() {
   }
 
   async function finalizar() {
-    const resposta = await executar(() => api.vendas.post(`/${venda.id}/finalizar`, {}));
+    const resposta = await executar(() =>
+      api.vendas.post(`/${venda.id}/finalizar`, {
+        cpf_nota: somenteDigitos(cpfNota) || null,
+      })
+    );
     if (resposta) {
       definirResultado(resposta);
       produtos.recarregar();
@@ -699,6 +712,7 @@ export function PDV() {
     definirReceitaAberta(false);
     definirDesconto("");
     definirValorPagamento("");
+    definirCpfNota("");
     definirErro(null);
   }
 
@@ -1206,6 +1220,15 @@ export function PDV() {
                     Item controlado sem receita vinculada — a finalização fica bloqueada.
                   </Aviso>
                 ) : null}
+
+                <CampoTexto
+                  rotulo="CPF na nota fiscal"
+                  inputMode="numeric"
+                  placeholder="Só números — deixe em branco se não pedirem"
+                  value={cpfNota}
+                  onChange={(evento) => definirCpfNota(evento.target.value)}
+                  ajuda="Opcional: só preencha se o cliente pedir para constar na nota."
+                />
 
                 {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
 
