@@ -1,6 +1,8 @@
 import Fastify from "fastify";
 import { ERROS } from "@arkos/shared-types";
 import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
+import rateLimit from "@fastify/rate-limit";
 import { env } from "./env.js";
 import { consultar } from "./db.js";
 import { registrarRotas as registrarRotasAuth } from "./modulos/auth/rotas.js";
@@ -43,6 +45,12 @@ function registrarTratamentoDeErro(app) {
         .send({ erro: ERROS.DADOS_INVALIDOS, mensagem: "Corpo da requisição inválido." });
     }
 
+    // @fastify/rate-limit (ver modulos/auth/rotas.js): o erro já vem com a
+    // mensagem certa em `codigoArkos`/`message`, só repassar.
+    if (erro.statusCode === 429) {
+      return resposta.code(429).send({ erro: erro.codigoArkos ?? "limite_excedido", mensagem: erro.message });
+    }
+
     requisicao.log.error(erro);
     return resposta.code(erro.statusCode && erro.statusCode < 500 ? erro.statusCode : 500).send({
       erro: "erro_interno",
@@ -56,7 +64,11 @@ export function construirApp() {
     logger: { level: env.NODE_ENV === "development" ? "info" : "warn" },
   });
 
-  app.register(cors, { origin: true });
+  app.register(cors, { origin: env.FRONTEND_URL });
+  app.register(helmet);
+  // Global false: rate limit só vale nas rotas que pedirem via `config.rateLimit`
+  // (hoje, só o login — ver modulos/auth/rotas.js).
+  app.register(rateLimit, { global: false });
   registrarTratamentoDeErro(app);
 
   app.get("/health", async () => {

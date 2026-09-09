@@ -19,6 +19,10 @@ export const env = {
   NODE_ENV: process.env.NODE_ENV ?? "development",
   TZ_NEGOCIO: process.env.TZ_NEGOCIO ?? "America/Sao_Paulo",
 
+  // Única origem aceita pelo CORS. Em dev aponta pro Vite; em produção define
+  // a URL real do frontend no .env.
+  FRONTEND_URL: process.env.FRONTEND_URL ?? "http://localhost:5173",
+
   // Consulta pública de CNPJ usada no cadastro de fornecedor (modulos/estoque/cnpj.js).
   // Sem chave e sem custo; trocar de provedor é trocar esta URL.
   CNPJ_API_URL: process.env.CNPJ_API_URL ?? "https://brasilapi.com.br/api/cnpj/v1",

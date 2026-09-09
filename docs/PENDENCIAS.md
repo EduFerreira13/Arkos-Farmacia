@@ -23,9 +23,17 @@
 - [ ] Credenciais reais de um provedor de NF-e (ex: Focus NFe, eNotas) para sair do modo mockado — não necessário para o MVP.
 - [ ] Domínio/hospedagem definitivos para deploy (fora do escopo do MVP local).
 
+## Segurança — pendências da auditoria (09/09/2026)
+
+- [ ] **Token JWT fica em `localStorage` no frontend** — `apps/web/src/lib/api.js`. Funciona, mas é mais exposto a XSS do que um cookie `httpOnly`. Trocar exige que o backend passe a emitir cookie de sessão e o frontend pare de ler o token do `localStorage` — mudança de contrato entre frontend e backend, não decidir sozinho.
+- [ ] **Validação de input é manual, campo a campo** — nenhuma lib tipo zod/joi/yup nos módulos de `apps/api`. Funciona hoje, mas cada rota reimplementa suas próprias checagens; uma camada de schema declarativo reduziria o risco de esquecer uma validação numa rota nova.
+- [ ] **CPF e dados de receita (nome do médico, paciente, CRM) ficam em texto puro no banco** — sem criptografia em repouso. Envolve dado pessoal (e, no caso da receita, dado sensível) — decisão de criptografar ou não é melhor tomada considerando também a LGPD (finalidade, necessidade, base legal de manter esse dado assim), não só o lado técnico.
+
 ## Resolvido
 
 <!-- Mover itens para cá conforme forem decididos, com a data e a decisão tomada -->
+
+- [x] **Login sem limite de tentativas, CORS aberto para qualquer origem e sem headers de segurança** — resolvido em 09/09/2026, depois que o backend virou monolito único (`apps/api`). Entrou `@fastify/rate-limit` no `/auth/login` (5 tentativas por minuto, chave por email+IP — não só IP, para não bloquear vários caixas legítimos atrás do mesmo IP entre si — só reduz a força bruta contra UMA conta), com mensagem em português quando estoura (`"Muitas tentativas de login. Aguarde um minuto antes de tentar de novo."`). Entrou `@fastify/helmet` com a configuração padrão em `apps/api/src/app.js` (CSP, HSTS, X-Frame-Options etc.). O CORS deixou de aceitar `origin: true` (qualquer origem) e passou a aceitar só `FRONTEND_URL` (variável de ambiente, com padrão `http://localhost:5173` em dev). Os três pontos vieram da auditoria de segurança anterior; os demais itens levantados nela — RLS (não se aplica, não é Supabase), mass assignment (já coberto na prática pela camada de repositório) e queries parametrizadas (já era assim) — não precisaram de mudança. Verificado manualmente (curl: 6ª tentativa de login para a mesma conta devolve 429; conta diferente no mesmo IP não é afetada) e com `npm run test:fluxo` e `npm run test:integracao` passando inteiros (150 verificações).
 
 - [x] **Ordem de compra em PDF saía com o total colado no rótulo** — resolvido em 01/09/2026. O alinhamento à direita usava largura estimada por contagem de letras, que subestima o negrito, e "TOTAL DO PEDIDO" invadia o valor ("TOTAL DO PEDIDOR$ 55,00"). Entrou `pdf-metricas.js` com as larguras reais da Helvetica, e o documento foi redesenhado: faixa da marca no topo com o símbolo vetorial de `marca/svg/`, blocos de fornecedor e condições, tabela com cabeçalho e listras, e o total em bloco cheio. `npm run test:pdf` mede cada trecho de texto do arquivo e reprova sobreposição ou estouro de margem — conferido também contra a estimativa antiga, que a suíte reprova.
 

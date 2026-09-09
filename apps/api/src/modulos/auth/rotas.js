@@ -44,42 +44,71 @@ function usuarioPublico(registro) {
  * @param {import("fastify").FastifyInstance} app
  */
 export async function registrarRotas(app) {
-  app.post("/login", async (requisicao, resposta) => {
-    const { email, senha } = requisicao.body ?? {};
+  app.post(
+    "/login",
+    {
+      config: {
+        rateLimit: {
+          max: 5,
+          timeWindow: "1 minute",
+          // O hook padrão (onRequest) roda antes do corpo ser interpretado —
+          // preHandler garante que requisicao.body.email já existe aqui.
+          hook: "preHandler",
+          // Chave por email+IP, não só IP: várias contas legítimas atrás do
+          // mesmo IP (farmácia com vários caixas na mesma rede) não se
+          // bloqueiam entre si — o limite é por tentativa contra UMA conta.
+          keyGenerator: (requisicao) => `${requisicao.ip}:${requisicao.body?.email ?? ""}`,
+          // @fastify/rate-limit dá `throw` no retorno desta função (não faz
+          // `reply.send`), então precisa ser um Error com `statusCode` — senão
+          // cai no tratamento genérico de erro do app.js e vira 500.
+          errorResponseBuilder: (_requisicao, contexto) => {
+            const erro = new Error(
+              "Muitas tentativas de login. Aguarde um minuto antes de tentar de novo."
+            );
+            erro.statusCode = contexto.statusCode;
+            erro.codigoArkos = "limite_excedido";
+            return erro;
+          },
+        },
+      },
+    },
+    async (requisicao, resposta) => {
+      const { email, senha } = requisicao.body ?? {};
 
-    if (!email || !senha) {
-      return resposta.code(400).send({
-        erro: ERROS.DADOS_INVALIDOS,
-        mensagem: "Informe email e senha.",
+      if (!email || !senha) {
+        return resposta.code(400).send({
+          erro: ERROS.DADOS_INVALIDOS,
+          mensagem: "Informe email e senha.",
+        });
+      }
+
+      const usuario = await buscarUsuarioPorEmail(email);
+
+      // Mesma resposta para email inexistente e senha errada — não revela quem existe.
+      const senhaConfere = usuario ? await bcrypt.compare(senha, usuario.senha_hash) : false;
+      if (!usuario || !senhaConfere) {
+        return resposta.code(401).send({
+          erro: ERROS.CREDENCIAIS_INVALIDAS,
+          mensagem: "Email ou senha incorretos.",
+        });
+      }
+
+      if (!usuario.ativo) {
+        return resposta.code(403).send({
+          erro: ERROS.SEM_PERMISSAO,
+          mensagem: "Usuário inativo. Procure o administrador.",
+        });
+      }
+
+      const publico = usuarioPublico(usuario);
+      const token = assinarToken(publico, {
+        secret: env.JWT_SECRET,
+        expiresIn: env.JWT_EXPIRES_IN,
       });
+
+      return { token, usuario: publico };
     }
-
-    const usuario = await buscarUsuarioPorEmail(email);
-
-    // Mesma resposta para email inexistente e senha errada — não revela quem existe.
-    const senhaConfere = usuario ? await bcrypt.compare(senha, usuario.senha_hash) : false;
-    if (!usuario || !senhaConfere) {
-      return resposta.code(401).send({
-        erro: ERROS.CREDENCIAIS_INVALIDAS,
-        mensagem: "Email ou senha incorretos.",
-      });
-    }
-
-    if (!usuario.ativo) {
-      return resposta.code(403).send({
-        erro: ERROS.SEM_PERMISSAO,
-        mensagem: "Usuário inativo. Procure o administrador.",
-      });
-    }
-
-    const publico = usuarioPublico(usuario);
-    const token = assinarToken(publico, {
-      secret: env.JWT_SECRET,
-      expiresIn: env.JWT_EXPIRES_IN,
-    });
-
-    return { token, usuario: publico };
-  });
+  );
 
   /**
    * Esqueci minha senha. Responde igual existindo ou não o email — senão a tela
