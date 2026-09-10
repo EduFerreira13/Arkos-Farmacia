@@ -167,10 +167,14 @@ const estoqueDepois = (await req(`${S.estoque}/produtos/${livre.id}`, { token })
 ok("6d. estoque baixado de 14 para 9", estoqueDepois.quantidade_atual === 9,
   `qtd=${estoqueDepois.quantidade_atual}`);
 
-// 7) fiscal
-ok("7. nota fiscal simulada emitida",
-  finalizada.dados?.nota_fiscal?.status === "simulado" &&
-  finalizada.dados?.nota_fiscal?.chave_acesso?.length === 44);
+// 7) fiscal — emissão real (Focus NFe, homologação; ver apps/api/src/modulos/fiscal).
+// Os produtos deste roteiro não têm NCM/CFOP cadastrado (linhas 93-101), então a nota
+// fica com status "erro" sem chamar a Focus NFe de verdade — determinístico (não
+// depende da SEFAZ nem de credencial no ambiente de teste) e cobre a regra de validar
+// o dado fiscal antes de emitir, sem bloquear a venda (6. já confirma isso acima).
+ok("7. nota fiscal tenta emitir de verdade e reporta erro por falta de NCM/CFOP",
+  finalizada.dados?.nota_fiscal?.status === "erro" &&
+  finalizada.dados?.nota_fiscal?.mensagem_erro?.includes("NCM/CFOP"));
 
 const notaConsulta = await req(`${S.fiscal}/notas-fiscais/${venda.id}`, { token });
 ok("7b. nota consultavel pela venda", notaConsulta.status === 200);

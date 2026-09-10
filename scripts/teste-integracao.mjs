@@ -557,7 +557,17 @@ ok(
   finalizada.status === 200 && finalizada.dados.venda.status === "finalizada" && finalizada.dados.troco === 5,
   `troco=${finalizada.dados?.troco}`
 );
-ok("nota fiscal simulada emitida na finalização", finalizada.dados?.nota_fiscal?.status === "simulado");
+// A emissão agora é real (Focus NFe, homologação — ver apps/api/src/modulos/fiscal).
+// `produtoControlado` não tem NCM/CFOP cadastrado de propósito (linha acima), então a
+// nota fica com status "erro" sem nunca chamar a Focus NFe de verdade — isso mantém o
+// teste determinístico (não depende da SEFAZ estar no ar) e cobre exatamente a regra
+// do enunciado: falta de dado fiscal é validada antes da emissão, e não bloqueia a venda
+// (a asserção anterior já confirma que a venda finalizou normalmente).
+ok(
+  "nota fiscal tenta emitir de verdade e reporta erro por falta de NCM/CFOP",
+  finalizada.dados?.nota_fiscal?.status === "erro" &&
+    finalizada.dados.nota_fiscal.mensagem_erro?.includes("NCM/CFOP")
+);
 
 const jaFinalizada = await req(`${S.vendas}/vendas/${vendaId}/itens`, {
   metodo: "POST", token: farmaceutico, corpo: { produto_id: produtoId, quantidade: 1 },
@@ -895,15 +905,23 @@ const periodoInvertido = await req(`${S.financeiro}/relatorios/caixa?de=${hoje}&
 ok("período invertido é recusado", periodoInvertido.status === 400);
 
 secao("fiscal-service");
+// Mesma venda do bloco de vendas acima: tinha item controlado sem NCM/CFOP
+// (produtoControlado, criado sem esses campos de propósito), então a nota
+// ficou com status "erro" — nunca chegou a chamar a Focus NFe de verdade.
 const notaDaVenda = await req(`${S.fiscal}/notas-fiscais/${vendaId}`, { token: gerente });
-ok("nota da venda é consultável", notaDaVenda.status === 200 && notaDaVenda.dados.nota.chave_acesso.length === 44);
+ok(
+  "nota da venda é consultável",
+  notaDaVenda.status === 200 &&
+    notaDaVenda.dados.nota.status === "erro" &&
+    notaDaVenda.dados.nota.mensagem_erro?.includes("NCM/CFOP")
+);
 
 const reemissao = await req(`${S.fiscal}/notas-fiscais`, {
   metodo: "POST", token: gerente, corpo: { venda_id: vendaId },
 });
 ok(
-  "reemitir a mesma venda devolve a mesma nota",
-  reemissao.status === 200 && reemissao.dados.nota.chave_acesso === notaDaVenda.dados.nota.chave_acesso
+  "reemitir uma nota com erro tenta de novo — dado incompleto continua incompleto, mesmo diagnóstico",
+  reemissao.status === 200 && reemissao.dados.reemitida === true && reemissao.dados.nota.status === "erro"
 );
 
 const notas = await req(`${S.fiscal}/notas-fiscais?de=${diasAtras(7)}&ate=${hoje}`, { token: gerente });
