@@ -7,6 +7,9 @@
 
 import jwt from "jsonwebtoken";
 import { ERROS, PERFIS } from "@arkos/shared-types";
+import { descontoMaximoPct } from "@arkos/vendas-core";
+
+export { descontoMaximoPct };
 
 /**
  * Nome do cookie httpOnly que carrega o token (LGPD/segurança: fora do
@@ -99,19 +102,6 @@ export function temPermissao(usuario, chave) {
   if (usuario.perfil === PERFIS.ADMINISTRADOR) return true;
   if (usuario.permissoes?.acesso_total === true) return true;
   return usuario.permissoes?.[chave] === true;
-}
-
-/**
- * Limite de desconto do perfil, em porcentagem (docs/REGRAS-NEGOCIO.md §3).
- * @param {UsuarioAutenticado} usuario
- * @returns {number}
- */
-export function descontoMaximoPct(usuario) {
-  if (!usuario) return 0;
-  if (usuario.perfil === PERFIS.ADMINISTRADOR) return 100;
-  if (usuario.permissoes?.acesso_total === true) return 100;
-  const limite = Number(usuario.permissoes?.desconto_max_pct ?? 0);
-  return Number.isFinite(limite) ? limite : 0;
 }
 
 /**

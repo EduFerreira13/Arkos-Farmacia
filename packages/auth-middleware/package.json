@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@arkos/shared-types": "0.1.0",
+    "@arkos/vendas-core": "0.1.0",
     "jsonwebtoken": "^9.0.2"
   },
   "files": [
