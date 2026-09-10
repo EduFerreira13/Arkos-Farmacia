@@ -39,6 +39,12 @@ export default defineConfig(({ mode }) => {
         "/api/financeiro": modulo,
         "/api/fiscal": modulo,
         "/api/compras": modulo,
+        // GET /health não é um módulo — vive na raiz do backend
+        // (apps/api/src/app.js), fora de qualquer prefixo. Sem esta entrada,
+        // o provider de conectividade (apps/web/src/lib/conectividade.jsx)
+        // não alcança o health-check em dev (em produção funciona porque o
+        // nginx.conf usa um location /api/ genérico).
+        "/api/health": modulo,
       },
     },
   };
