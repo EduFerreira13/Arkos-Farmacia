@@ -5,7 +5,7 @@ import {
   STATUS_VENDA,
   exigeReceita,
 } from "@arkos/shared-types";
-import { assinarToken, criarAutenticacao } from "@arkos/auth-middleware";
+import { criarAutenticacao, tokenInterno } from "@arkos/auth-middleware";
 import {
   descontoPorPercentual,
   validarFinalizacao,
@@ -82,21 +82,6 @@ function naoEncontrado(resposta, mensagem) {
 
 function bloqueado(resposta, codigo, mensagem) {
   return resposta.code(422).send({ erro: codigo, mensagem });
-}
-
-/**
- * Token de vida curta, assinado com o próprio JWT_SECRET, para uma chamada
- * interna a outro módulo autorizar algo que um pedido comum nunca poderia
- * (aqui: estoque indo negativo na sincronização offline). Carrega a
- * identidade real do operador — a movimentação continua rastreável a ele —
- * só acrescenta `interno: true`, que nenhum token emitido no login carrega.
- */
-function tokenInterno(usuario) {
-  return `Bearer ${assinarToken(usuario, {
-    secret: env.JWT_SECRET,
-    expiresIn: "2m",
-    extras: { interno: true },
-  })}`;
 }
 
 /** Erro vindo de outro serviço: preserva o código de negócio quando existir. */
@@ -900,7 +885,10 @@ export async function registrarRotas(app) {
 
     let dadosProduto;
     try {
-      dadosProduto = await estoque.buscarProduto(produto_id, requisicao.headers.authorization);
+      dadosProduto = await estoque.buscarProduto(
+        produto_id,
+        tokenInterno(requisicao.usuario, { secret: env.JWT_SECRET })
+      );
     } catch (erro) {
       if (erro instanceof ErroServico && erro.status === 404) {
         return naoEncontrado(resposta, "Produto não encontrado no estoque.");
@@ -977,7 +965,7 @@ export async function registrarRotas(app) {
       try {
         const { produto } = await estoque.buscarProduto(
           item.produto_id,
-          requisicao.headers.authorization
+          tokenInterno(requisicao.usuario, { secret: env.JWT_SECRET })
         );
         const disponivel = (produto.lotes ?? [])
           .filter((lote) => !lote.vencido && lote.quantidade > 0)
@@ -1211,7 +1199,11 @@ export async function registrarRotas(app) {
     // (LGPD, minimização de dados).
     const { cpf_nota: cpfNota } = requisicao.body;
 
-    const token = requisicao.headers.authorization;
+    // Token de vida curta, não o header cru da requisição original: o
+    // navegador real nunca manda Authorization (o token vive só no cookie
+    // httpOnly), e as chamadas a estoque/financeiro/fiscal aqui embaixo
+    // dependem de credencial própria, não da sessão do request original.
+    const token = tokenInterno(requisicao.usuario, { secret: env.JWT_SECRET });
     const completa = await buscarVendaCompleta(venda.id);
 
     const resultadoItens = validarItensDaVenda(completa.itens);
@@ -1374,7 +1366,7 @@ export async function registrarRotas(app) {
     { preHandler: [auth.exigirPermissao("vender"), validarCorpo(SchemaSincronizarOffline)] },
     async (requisicao, resposta) => {
       const corpo = requisicao.body;
-      const token = requisicao.headers.authorization;
+      const token = tokenInterno(requisicao.usuario, { secret: env.JWT_SECRET });
 
       const validacao = validarFinalizacao({
         itens: corpo.itens,
@@ -1415,7 +1407,6 @@ export async function registrarRotas(app) {
       }
 
       const completa = await buscarVendaCompleta(corpo.id);
-      const tokenParaEstoque = tokenInterno(requisicao.usuario);
 
       // Baixa de estoque, item por item, por FEFO — best-effort: a venda já
       // está gravada, então nem saldo insuficiente nem o estoque-service fora
@@ -1430,7 +1421,7 @@ export async function registrarRotas(app) {
               motivo: `venda offline ${completa.id}`,
               permitirSaldoNegativo: true,
             },
-            tokenParaEstoque
+            token
           );
           if (baixa.saida.saldo_insuficiente) conferenciaPendente = true;
           const primeiroLote = baixa.saida.lotes[0]?.lote_id;
