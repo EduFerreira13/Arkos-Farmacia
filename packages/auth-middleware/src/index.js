@@ -87,6 +87,11 @@ export function verificarToken(token, secret) {
     // Presentes só em token de simulação de perfil.
     simulando: payload.simulando === true,
     perfil_real: payload.perfil_real ?? null,
+    // Token de curta duração assinado pelo próprio backend para uma chamada
+    // interna entre módulos (ex.: vendas autorizando estoque a ir negativo na
+    // sincronização offline) — nunca aceito vindo de fora, porque só quem tem
+    // o JWT_SECRET consegue assinar um com este claim.
+    interno: payload.interno === true,
   };
 }
 
