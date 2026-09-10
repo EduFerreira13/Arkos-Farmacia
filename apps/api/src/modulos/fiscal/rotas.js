@@ -1,5 +1,5 @@
 import { ERROS, STATUS_NOTA_FISCAL } from "@arkos/shared-types";
-import { criarAutenticacao } from "@arkos/auth-middleware";
+import { criarAutenticacao, tokenInterno } from "@arkos/auth-middleware";
 import { env } from "../../env.js";
 import { consultar } from "../../db.js";
 import { textoObrigatorio, textoOpcional, validarCorpo, z } from "../../lib/validacao.js";
@@ -86,7 +86,9 @@ export async function registrarRotas(app) {
    */
   app.post("/notas-fiscais", { preHandler: validarCorpo(SchemaEmitirNota) }, async (requisicao, resposta) => {
     const { venda_id: vendaId, cpf_nota: cpfNota } = requisicao.body;
-    const token = requisicao.headers.authorization;
+    // Não o header cru da requisição original — o navegador real autentica
+    // só por cookie httpOnly, nunca manda Authorization.
+    const token = tokenInterno(requisicao.usuario, { secret: env.JWT_SECRET });
 
     const { rows: existentes } = await consultar(
       `SELECT ${COLUNAS_NOTA} FROM fiscal.notas_fiscais WHERE venda_id = $1`,
