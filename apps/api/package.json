@@ -12,6 +12,7 @@
   "dependencies": {
     "@arkos/auth-middleware": "0.1.0",
     "@arkos/shared-types": "0.1.0",
+    "@arkos/vendas-core": "0.1.0",
     "@fastify/cookie": "^11.1.2",
     "@fastify/cors": "^10.0.1",
     "@fastify/helmet": "^13.1.1",

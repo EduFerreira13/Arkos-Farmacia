@@ -5,7 +5,14 @@ import {
   STATUS_VENDA,
   exigeReceita,
 } from "@arkos/shared-types";
-import { criarAutenticacao, descontoMaximoPct } from "@arkos/auth-middleware";
+import { criarAutenticacao } from "@arkos/auth-middleware";
+import {
+  descontoPorPercentual,
+  validarItens as validarItensDaVenda,
+  validarPagamentoSuficiente,
+  validarReceitaObrigatoria,
+  validarTetoDesconto,
+} from "@arkos/vendas-core";
 import { env } from "../../env.js";
 import { textoObrigatorio, textoOpcional, validarCorpo, z } from "../../lib/validacao.js";
 import { ErroServico, estoque, financeiro, fiscal } from "./servicos.js";
@@ -61,8 +68,6 @@ import {
 } from "./repositorio.js";
 
 const auth = criarAutenticacao({ secret: env.JWT_SECRET });
-
-const CENTAVO = 0.005; // tolerância para comparar dinheiro em ponto flutuante
 
 function invalido(resposta, mensagem) {
   return resposta.code(400).send({ erro: ERROS.DADOS_INVALIDOS, mensagem });
@@ -966,7 +971,7 @@ export async function registrarRotas(app) {
 
     let desconto;
     if (corpo.desconto_pct !== undefined) {
-      desconto = Number(((brutoDoItem * corpo.desconto_pct) / 100).toFixed(2));
+      desconto = descontoPorPercentual(brutoDoItem, corpo.desconto_pct);
     } else if (corpo.desconto !== undefined) {
       desconto = corpo.desconto;
     } else {
@@ -983,13 +988,12 @@ export async function registrarRotas(app) {
       .reduce((soma, linha) => soma + Number(linha.desconto ?? 0), 0);
     const totalDescontado = desconto + outrosDescontos + Number(venda.desconto ?? 0);
 
-    const limitePct = descontoMaximoPct(requisicao.usuario);
-    const pctPedido = bruto > 0 ? (totalDescontado / bruto) * 100 : 0;
-    if (pctPedido - limitePct > 0.01) {
+    const teto = validarTetoDesconto({ bruto, totalDescontado, usuario: requisicao.usuario });
+    if (!teto.valido) {
       return bloqueado(
         resposta,
         ERROS.DESCONTO_ACIMA_DO_LIMITE,
-        `Somando os descontos da venda dá ${pctPedido.toFixed(1)}%, e seu perfil vai até ${limitePct}%.`
+        `Somando os descontos da venda dá ${teto.pctPedido.toFixed(1)}%, e seu perfil vai até ${teto.limitePct}%.`
       );
     }
 
@@ -1016,7 +1020,7 @@ export async function registrarRotas(app) {
     let desconto;
 
     if (corpo.desconto_pct !== undefined) {
-      desconto = Number(((bruto * corpo.desconto_pct) / 100).toFixed(2));
+      desconto = descontoPorPercentual(bruto, corpo.desconto_pct);
     } else if (corpo.desconto !== undefined) {
       desconto = corpo.desconto;
     } else {
@@ -1029,13 +1033,16 @@ export async function registrarRotas(app) {
 
     // O limite do perfil vale para tudo que foi descontado na venda, não só
     // para este campo: senão daria para furar o teto dando desconto item a item.
-    const limitePct = descontoMaximoPct(requisicao.usuario);
-    const pctPedido = bruto > 0 ? ((desconto + descontoNosItens) / bruto) * 100 : 0;
-    if (pctPedido - limitePct > 0.01) {
+    const teto = validarTetoDesconto({
+      bruto,
+      totalDescontado: desconto + descontoNosItens,
+      usuario: requisicao.usuario,
+    });
+    if (!teto.valido) {
       return bloqueado(
         resposta,
         ERROS.DESCONTO_ACIMA_DO_LIMITE,
-        `Seu perfil pode aplicar até ${limitePct}% de desconto (pedido: ${pctPedido.toFixed(1)}%).`
+        `Seu perfil pode aplicar até ${teto.limitePct}% de desconto (pedido: ${teto.pctPedido.toFixed(1)}%).`
       );
     }
 
@@ -1160,22 +1167,23 @@ export async function registrarRotas(app) {
     const token = requisicao.headers.authorization;
     const completa = await buscarVendaCompleta(venda.id);
 
-    if (!completa.itens.length) {
-      return invalido(resposta, "Não é possível finalizar uma venda sem itens.");
+    const resultadoItens = validarItensDaVenda(completa.itens);
+    if (!resultadoItens.valido) {
+      return invalido(resposta, resultadoItens.erro.mensagem);
     }
 
     // Regra crítica §3: item controlado sem receita vinculada bloqueia a venda.
-    const controlados = completa.itens.filter((item) => exigeReceita(item.tipo_controle));
-    if (controlados.length && !completa.receita) {
-      return bloqueado(
-        resposta,
-        ERROS.RECEITA_OBRIGATORIA,
-        "Item controlado sem receita vinculada."
-      );
+    const resultadoReceita = validarReceitaObrigatoria({
+      itens: completa.itens,
+      receita: completa.receita,
+    });
+    if (!resultadoReceita.valido) {
+      return bloqueado(resposta, resultadoReceita.erro.codigo, resultadoReceita.erro.mensagem);
     }
+    const controlados = resultadoReceita.controlados;
 
     const totalPago = completa.pagamentos.reduce((soma, pagamento) => soma + pagamento.valor, 0);
-    if (totalPago + CENTAVO < completa.valor_total) {
+    if (!validarPagamentoSuficiente({ totalPago, valorTotal: completa.valor_total })) {
       return bloqueado(
         resposta,
         ERROS.PAGAMENTO_INSUFICIENTE,
