@@ -231,6 +231,83 @@ finalização se vier vazio. O valor é repassado ao `fiscal-service`
 { "erro": "receita_obrigatoria", "mensagem": "Item controlado sem receita vinculada." }
 ```
 
+### Sincronização offline (PDV sem rede)
+
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/vendas/sincronizar-offline` | Recebe a venda inteira já fechada no caixa e valida/grava tudo de uma vez |
+
+Suporte ao PDV rodando sem rede (docs/PLANO-DE-CONSTRUCAO.md): diferente do
+fluxo de sempre — várias chamadas incrementais (`POST /vendas`, depois um
+`POST /itens` por linha, depois desconto, pagamento, `/finalizar`) —, aqui o
+navegador monta a venda inteira offline (com `@arkos/vendas-core`, a mesma
+lógica de cálculo e validação do servidor) e manda tudo de uma vez só quando
+a conexão volta.
+
+**Corpo esperado:**
+```json
+{
+  "id": "uuid-gerado-no-navegador",
+  "criado_em_offline": "2026-09-10T18:30:00.000Z",
+  "cliente_id": "uuid | null",
+  "itens": [
+    { "produto_id": "uuid", "quantidade": 2, "preco_unitario": 15.90,
+      "desconto": 0, "produto_nome": "...", "tipo_controle": "livre" }
+  ],
+  "desconto_venda": 0,
+  "receita": { "medico_nome": "...", "medico_crm": "...", "paciente_nome": "...", "data_emissao": "2026-09-10" },
+  "pagamentos": [{ "forma_pagamento": "dinheiro", "valor": 31.80 }],
+  "cpf_nota": null
+}
+```
+
+Sem `lote_id` em cada item (o lote de verdade só é decidido na baixa FEFO,
+depois de gravar a venda) e sem `valor_total` (sempre recalculado no
+servidor com `@arkos/vendas-core` — nunca confiando no total que o
+navegador mandar).
+
+**Idempotência.** `id` é gerado no navegador (UUID) e **é a própria chave
+primária da venda** — reenviar a mesma sincronização (a conexão caiu de novo
+no meio da resposta anterior) esbarra num `ON CONFLICT (id) DO NOTHING` e não
+duplica nada: a resposta volta com `ja_sincronizada: true` e o estado atual
+da venda, em vez de gravar de novo.
+
+**Bloqueio duro — igual ao `/finalizar` online.** Receita obrigatória de
+item controlado, teto de desconto do perfil (verificado contra o token real
+de quem está sincronizando, nunca contra o que o navegador cacheou) e
+pagamento insuficiente continuam recusando a sincronização (422, os mesmos
+códigos de `/finalizar`) — **nada é gravado** nesses casos. O PDV offline já
+deveria ter recusado isso antes de fechar a venda no caixa; esta é a segunda
+checagem, do lado do servidor.
+
+**Conflito de estoque nunca bloqueia.** Ao contrário da receita/desconto/
+pagamento, estoque insuficiente **não** impede a sincronização — a venda já
+aconteceu de verdade enquanto o caixa estava sem rede (o produto já saiu da
+farmácia), e outro caixa pode ter vendido o mesmo item nesse meio-tempo.
+Mesmo princípio de nunca desfazer uma operação já concluída que vale para
+falha de NFC-e e divergência de recebimento de compra (docs/REGRAS-NEGOCIO.md):
+a baixa é forçada (o lote correspondente vai negativo), e a venda volta com
+`estoque_conferencia_pendente: true` para o gerente conferir depois.
+
+**Resposta (201 — venda nova; 200 — reenvio idempotente):**
+```json
+{
+  "venda": { "...": "venda completa, com origem_sincronizacao: \"offline\"" },
+  "ja_sincronizada": false,
+  "nota_fiscal": { "...": "mesmo formato de /finalizar, best-effort" },
+  "estoque_conferencia_pendente": false,
+  "troco": 0
+}
+```
+
+Lançamento no caixa e emissão de nota fiscal são best-effort, no mesmo
+espírito do restante do módulo: uma falha aqui vira log para acompanhamento
+manual, nunca motivo para desfazer a venda ou recusar a sincronização.
+
+Fora de escopo (fica para depois, tratado separadamente): contingência
+offline da NFC-e (`forma_emissao=offline` da SEFAZ) — a emissão best-effort
+acima resolve o caso básico sem precisar da contingência formal.
+
 ---
 
 ## financeiro (prefixo /financeiro)
