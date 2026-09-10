@@ -96,6 +96,28 @@ export function verificarToken(token, secret) {
 }
 
 /**
+ * Token de vida curta para uma chamada de um módulo a outro (vendas ->
+ * estoque, financeiro -> vendas, fiscal -> vendas/estoque, compras ->
+ * estoque/financeiro — docs/ARQUITETURA.md). Carrega a mesma identidade do
+ * usuário autenticado (perfil, permissões), mais o claim `interno: true` —
+ * nunca presente num token emitido no login.
+ *
+ * Existe porque `requisicao.headers.authorization` só existe quando o
+ * cliente manda um header `Authorization` — o que o navegador real nunca
+ * faz (o token vive num cookie httpOnly, inacessível a JS). Usar sempre este
+ * token pronto pra chamada interna, nunca o header cru da requisição
+ * original, é o que garante que a identidade se propaga não importa como o
+ * pedido original chegou (cookie ou header).
+ *
+ * @param {UsuarioAutenticado} usuario
+ * @param {{ secret: string, expiresIn?: string }} opcoes
+ * @returns {string} já pronto como valor de header `Authorization` (`Bearer <token>`)
+ */
+export function tokenInterno(usuario, { secret, expiresIn = "2m" }) {
+  return `Bearer ${assinarToken(usuario, { secret, expiresIn, extras: { interno: true } })}`;
+}
+
+/**
  * Administrador tem acesso_total; os outros perfis dependem da chave
  * correspondente em `permissoes` (docs/REGRAS-NEGOCIO.md §6).
  * @param {UsuarioAutenticado} usuario
