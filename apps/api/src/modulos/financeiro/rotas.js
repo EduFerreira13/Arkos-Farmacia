@@ -3,7 +3,7 @@ import {
   ORIGEM_MOVIMENTACAO_CAIXA,
   TIPO_MOVIMENTACAO_CAIXA,
 } from "@arkos/shared-types";
-import { criarAutenticacao } from "@arkos/auth-middleware";
+import { criarAutenticacao, tokenInterno } from "@arkos/auth-middleware";
 import { env } from "../../env.js";
 import {
   textoObrigatorio,
@@ -399,7 +399,7 @@ export async function registrarRotas(app) {
 
     let resumoVendas = null;
     try {
-      resumoVendas = await vendas.resumoDoDia(requisicao.headers.authorization);
+      resumoVendas = await vendas.resumoDoDia(tokenInterno(requisicao.usuario, { secret: env.JWT_SECRET }));
     } catch {
       resumoVendas = null;
     }
@@ -436,7 +436,7 @@ export async function registrarRotas(app) {
     let resumoVendas = null;
     let falhaVendas = null;
     try {
-      resumoVendas = await vendas.resumoDoDia(requisicao.headers.authorization);
+      resumoVendas = await vendas.resumoDoDia(tokenInterno(requisicao.usuario, { secret: env.JWT_SECRET }));
     } catch (erro) {
       // Fluxo de caixa não quebra se o vendas-service estiver fora do ar.
       falhaVendas = erro.message;
