@@ -202,6 +202,11 @@ erDiagram
     uuid venda_id
     string chave_acesso
     string status
+    string numero
+    string serie
+    string url_consulta
+    string mensagem_erro
+    jsonb retorno_focus
     string xml_url
     timestamp emitida_em
   }
@@ -217,7 +222,7 @@ erDiagram
 
 | Tabela | Campo-chave | Observação |
 |---|---|---|
-| `notas_fiscais` | `status` | no MVP fica mockado (`simulado`), estrutura pronta pra integrar provedor real depois (§6) |
+| `notas_fiscais` | `status` | `emitida` (autorizada pela SEFAZ) ou `erro` (rejeição/payload incompleto — motivo em `mensagem_erro`); `simulado` só existe em notas antigas, de antes da integração real com a Focus NFe (§6) |
 | `controlados_sngpc` | `enviado_anvisa` | fica `false` no MVP — campo já existe para quando a integração real for feita |
 
 ---

@@ -136,8 +136,10 @@ npm run test:fluxo
 
 Executa o roteiro da Fase 7 contra as APIs reais: login, abertura de caixa,
 cadastro de produto, entrada de lote, bloqueio de controlado sem receita, venda
-concluída com receita, baixa FEFO, nota fiscal simulada, lançamento automático no
-caixa e fechamento com divergência.
+concluída com receita, baixa FEFO, tentativa real de emissão de nota fiscal
+(Focus NFe, homologação — falha por falta de NCM/CFOP nos produtos do roteiro,
+sem bloquear a venda), lançamento automático no caixa e fechamento com
+divergência.
 
 ### Portas
 

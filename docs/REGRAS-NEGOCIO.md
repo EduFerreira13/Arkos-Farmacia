@@ -70,8 +70,9 @@
 
 ## 7. Regras Fiscais (nível MVP)
 
-- Emissão de cupom fiscal / NFC-e por venda (mesmo que simplificada/simulada no MVP, para já deixar a estrutura pronta).
-- CFOP e NCM associados ao produto (campos previstos no cadastro, mesmo que não usados 100% no MVP).
+- Emissão de NFC-e real por venda, via Focus NFe (ambiente de homologação da SEFAZ — nunca produção no MVP). Ver `docs/API-CONTRATOS.md` (módulo fiscal) e `apps/api/src/modulos/fiscal`.
+- CFOP e NCM são obrigatórios no produto **para a nota sair**: falta de um dos dois é validada antes de chamar a Focus NFe (evita gastar uma tentativa de emissão com payload incompleto) e vira nota com `status: "erro"`, nomeando o produto.
+- Erro de emissão — payload incompleto, rejeição da SEFAZ ou falha ao chamar a Focus NFe — **nunca bloqueia a venda**: fica registrado (`mensagem_erro`) para o operador tentar reemitir depois (reemitir = chamar `POST /notas-fiscais` de novo para a mesma venda; a Focus NFe reprocessa o mesmo `ref` quando a tentativa anterior não foi autorizada).
 - Controlados: previsão de campo para futura integração com **SNGPC** (Sistema Nacional de Gerenciamento de Produtos Controlados) — não obrigatório rodar no MVP, mas a estrutura de dados já contempla.
 
 ## 8. Regras Gerais do Sistema

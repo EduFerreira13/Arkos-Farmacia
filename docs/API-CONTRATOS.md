@@ -261,16 +261,34 @@ por consequência, a venda não finaliza antes de o operador abrir o caixa (§5)
 
 | Método | Rota | Descrição |
 |---|---|---|
-| POST | `/notas-fiscais` | Emite NFC-e — **mockado no MVP**, sempre retorna `status: "simulado"` |
+| POST | `/notas-fiscais` | Emite NFC-e — **real**, via Focus NFe (homologação) |
 | GET | `/notas-fiscais/:venda_id` | Consulta nota de uma venda |
 | POST | `/controlados-sngpc` | Registra envio ao SNGPC — **mockado**, `enviado_anvisa` sempre `false` |
 | GET | `/notas-fiscais` | Lista notas do período — `?de=&ate=` |
 | GET | `/controlados-sngpc` | Lista registros — `?venda_id=&de=&ate=&pendentes=sim` |
 | POST | `/controlados-sngpc/enviar` | Marca registros como enviados — **simulado**, só grava a data |
 
-`POST /notas-fiscais` é idempotente: a mesma venda devolve sempre a mesma nota,
-com chave de acesso simulada de 44 dígitos derivada do ID da venda. Aceita
-`cpf_nota` opcional (dado pessoal informado só a pedido do cliente — LGPD).
+`POST /notas-fiscais` chama a Focus NFe de verdade (`apps/api/src/modulos/fiscal/focusnfe.js`,
+ambiente de homologação — `FOCUS_NFE_URL_BASE`/`FOCUS_NFE_TOKEN_HOMOLOGACAO` no `.env`).
+Idempotente só quando a nota já saiu autorizada (`status: "emitida"`): reemitir a
+mesma venda com `status: "erro"` tenta de novo — é assim que uma emissão que
+falhou é reprocessada, sem endpoint próprio de "reemitir". Aceita `cpf_nota`
+opcional (dado pessoal informado só a pedido do cliente — LGPD), repassado como
+`cpf_destinatario` quando tem 11 dígitos.
+
+**Erro de emissão nunca bloqueia a venda.** Dois casos guardam o motivo em
+`mensagem_erro` sem impedir a finalização (`docs/REGRAS-NEGOCIO.md §7`):
+- **Payload incompleto** — algum item da venda tem produto sem `ncm` ou `cfop`
+  cadastrado (`estoque.produtos`). Verificado *antes* de chamar a Focus NFe, para
+  não gastar uma tentativa de emissão com dado incompleto.
+  `mensagem_erro` nomeia o produto.
+- **Rejeição da SEFAZ ou falha ao chamar a Focus NFe** — `status_sefaz`/`mensagem_sefaz`
+  da resposta (ou o erro de transporte) viram `mensagem_erro`.
+
+Nota emitida com sucesso grava `numero`, `serie`, `chave_acesso` (`chave_nfe`
+da resposta) e `url_consulta` (link da SEFAZ para o consumidor). O corpo bruto
+da resposta da Focus NFe fica em `retorno_focus` (só no `GET /notas-fiscais/:venda_id`,
+não na listagem), para auditoria de rejeição.
 
 ---
 
@@ -387,11 +405,18 @@ venda das 21h cairia no movimento do dia seguinte.
 3. Se houver controlado sem receita → bloqueia (422), fim do fluxo.
 4. Caso contrário, `vendas-service` chama `estoque-service` (`POST /movimentacoes`, tipo `saida`) para cada item.
 5. `vendas-service` chama `financeiro-service` (`POST /caixa/movimentacoes`) para lançar o valor recebido.
-6. `vendas-service` chama `fiscal-service` (`POST /notas-fiscais`) para emitir a nota (mockada).
+6. `vendas-service` chama `fiscal-service` (`POST /notas-fiscais`) para emitir a nota de verdade (Focus NFe).
 7. `vendas-service` marca a venda como `finalizada` e retorna 200 ao front.
 
-Se qualquer chamada de 4 a 6 falhar, a venda **não** é marcada como finalizada:
+Se qualquer chamada de 4 a 5 falhar, a venda **não** é marcada como finalizada:
 o `vendas-service` estorna o que já tinha efeito (devolução dos lotes baixados e
 saída do valor lançado no caixa), devolve o erro do serviço que falhou e deixa a
 venda em `aberta` para nova tentativa. Falha no próprio estorno vira log de erro
 com o ID da venda, para conferência manual.
+
+O passo 6 é diferente: rejeição da SEFAZ ou payload incompleto (NCM/CFOP
+faltando) **não** conta como falha da chamada — `fiscal-service` sempre
+responde 200/201 com a nota (`status: "emitida"` ou `"erro"`, com o motivo em
+`mensagem_erro`), então a venda finaliza normalmente mesmo com a nota rejeitada
+(ver seção `fiscal` acima). Só uma falha de transporte de verdade (fiscal-service
+fora do ar, por exemplo) devolveria erro nesse passo.
