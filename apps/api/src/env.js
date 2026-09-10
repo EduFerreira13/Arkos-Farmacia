@@ -53,6 +53,15 @@ export const env = {
     endereco: process.env.FARMACIA_ENDERECO ?? "",
     telefone: process.env.FARMACIA_TELEFONE ?? "",
   },
+
+  // Focus NFe (emissão de NFC-e, modulos/fiscal/focusnfe.js). O token é da
+  // empresa cadastrada na Focus NFe — NUNCA commitar em texto claro; fica só
+  // no .env local. Sem ele, a emissão falha com erro claro (a venda não é
+  // bloqueada por isso — ver docs/API-CONTRATOS.md, módulo fiscal).
+  FOCUS_NFE: {
+    tokenHomologacao: process.env.FOCUS_NFE_TOKEN_HOMOLOGACAO ?? "",
+    urlBase: process.env.FOCUS_NFE_URL_BASE ?? "https://homologacao.focusnfe.com.br",
+  },
 };
 
 export function validarEnv() {

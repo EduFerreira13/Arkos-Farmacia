@@ -1,9 +1,11 @@
-import { createHash } from "node:crypto";
 import { ERROS, STATUS_NOTA_FISCAL } from "@arkos/shared-types";
 import { criarAutenticacao } from "@arkos/auth-middleware";
 import { env } from "../../env.js";
 import { consultar } from "../../db.js";
 import { textoObrigatorio, textoOpcional, validarCorpo, z } from "../../lib/validacao.js";
+import { emitirNfce, ErroFocusNfe } from "./focusnfe.js";
+import { montarPayloadNfce } from "./nfce.js";
+import { buscarVendaParaNota, buscarProdutoParaNota, ErroServico } from "./servicos.js";
 
 const auth = criarAutenticacao({ secret: env.JWT_SECRET });
 
@@ -22,48 +24,168 @@ const SchemaEnviarSngpc = z.object({
   ids: z.array(z.string().min(1, "id inválido")).min(1, "Informe os ids dos registros a enviar."),
 });
 
-/**
- * Chave de acesso simulada: 44 dígitos derivados do ID da venda, então a mesma
- * venda sempre gera a mesma chave. No MVP a emissão é mockada (§7 das regras de
- * negócio) — a estrutura de dados já é a real para trocar pelo provedor depois.
- */
-function chaveAcessoSimulada(vendaId) {
-  const digest = createHash("sha256").update(String(vendaId)).digest("hex");
-  const digitos = digest.replace(/\D/g, "");
-  return digitos.padEnd(44, "0").slice(0, 44);
+const COLUNAS_NOTA = `id, venda_id, chave_acesso, status, numero, serie, url_consulta,
+       mensagem_erro, xml_url, cpf_nota, emitida_em`;
+
+/** Erro vindo de outro serviço (vendas/estoque): preserva o código de negócio quando existir. */
+function responderErroServico(resposta, erro) {
+  const status = erro.status >= 400 && erro.status < 500 ? 422 : 502;
+  return resposta.code(status).send({ erro: erro.codigo ?? ERROS.FALHA_INTEGRACAO, mensagem: erro.message });
+}
+
+/** Grava (nova nota) ou atualiza (reemissão depois de um erro) o resultado real da Focus NFe. */
+async function gravarNota({
+  idExistente,
+  vendaId,
+  cpfNota,
+  status,
+  chaveAcesso = null,
+  numero = null,
+  serie = null,
+  urlConsulta = null,
+  mensagemErro = null,
+  retornoFocus = null,
+}) {
+  const retornoFocusJson = retornoFocus ? JSON.stringify(retornoFocus) : null;
+
+  if (idExistente) {
+    const { rows } = await consultar(
+      `UPDATE fiscal.notas_fiscais
+          SET status = $2, chave_acesso = $3, numero = $4, serie = $5,
+              url_consulta = $6, mensagem_erro = $7, retorno_focus = $8, emitida_em = now()
+        WHERE id = $1
+        RETURNING ${COLUNAS_NOTA}`,
+      [idExistente, status, chaveAcesso, numero, serie, urlConsulta, mensagemErro, retornoFocusJson]
+    );
+    return rows[0];
+  }
+
+  const { rows } = await consultar(
+    `INSERT INTO fiscal.notas_fiscais
+          (venda_id, chave_acesso, status, numero, serie, url_consulta, mensagem_erro, retorno_focus, cpf_nota)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING ${COLUNAS_NOTA}`,
+    [vendaId, chaveAcesso, status, numero, serie, urlConsulta, mensagemErro, retornoFocusJson, cpfNota]
+  );
+  return rows[0];
 }
 
 /**
- * Rotas de docs/API-CONTRATOS.md — fiscal-service (mockado no MVP).
+ * Rotas de docs/API-CONTRATOS.md — fiscal-service.
  * @param {import("fastify").FastifyInstance} app
  */
 export async function registrarRotas(app) {
   app.addHook("preHandler", auth.autenticar);
 
+  /**
+   * Emite a NFC-e de verdade na Focus NFe (homologação). Idempotente só
+   * quando já saiu autorizada: reemitir a mesma venda com status `erro`
+   * tenta de novo (é assim que o operador "reemite depois" uma nota que
+   * falhou — a Focus NFe reprocessa o mesmo `ref` quando a tentativa
+   * anterior não foi autorizada).
+   */
   app.post("/notas-fiscais", { preHandler: validarCorpo(SchemaEmitirNota) }, async (requisicao, resposta) => {
-    // CPF na nota: opcional, só a pedido do cliente — não exige cliente
-    // cadastrado (LGPD, minimização de dados; ver docs/PENDENCIAS.md).
     const { venda_id: vendaId, cpf_nota: cpfNota } = requisicao.body;
+    const token = requisicao.headers.authorization;
 
-    // Emissão é idempotente: reemitir a mesma venda devolve a nota existente.
     const { rows: existentes } = await consultar(
-      `SELECT id, venda_id, chave_acesso, status, xml_url, cpf_nota, emitida_em
-         FROM fiscal.notas_fiscais WHERE venda_id = $1`,
+      `SELECT ${COLUNAS_NOTA} FROM fiscal.notas_fiscais WHERE venda_id = $1`,
       [vendaId]
     );
-    if (existentes.length) {
-      return { nota: existentes[0], reemitida: false };
+    const existente = existentes[0] ?? null;
+    if (existente && existente.status === STATUS_NOTA_FISCAL.EMITIDA) {
+      return { nota: existente, reemitida: false };
     }
 
-    const chave = chaveAcessoSimulada(vendaId);
-    const { rows } = await consultar(
-      `INSERT INTO fiscal.notas_fiscais (venda_id, chave_acesso, status, xml_url, cpf_nota)
-            VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, venda_id, chave_acesso, status, xml_url, cpf_nota, emitida_em`,
-      [vendaId, chave, STATUS_NOTA_FISCAL.SIMULADO, `/xml-simulado/${chave}.xml`, cpfNota]
-    );
+    let venda;
+    try {
+      venda = await buscarVendaParaNota(vendaId, token);
+    } catch (erro) {
+      if (erro instanceof ErroServico) return responderErroServico(resposta, erro);
+      throw erro;
+    }
+    if (!venda) {
+      return resposta.code(404).send({ erro: ERROS.NAO_ENCONTRADO, mensagem: "Venda não encontrada." });
+    }
 
-    return resposta.code(201).send({ nota: rows[0], reemitida: false });
+    // Cada item carrega só o snapshot comercial (nome, tipo_controle) — o dado
+    // fiscal (NCM/CFOP/código/unidade) mora no cadastro do produto, no
+    // estoque-service (docs/ARQUITETURA.md).
+    let itensComDadoFiscal;
+    try {
+      itensComDadoFiscal = await Promise.all(
+        venda.itens.map(async (item) => {
+          const produto = await buscarProdutoParaNota(item.produto_id, token);
+          return {
+            ...item,
+            ncm: produto?.ncm ?? null,
+            cfop: produto?.cfop ?? null,
+            codigo: produto?.codigo ?? null,
+            unidade_venda: produto?.unidade_venda ?? null,
+          };
+        })
+      );
+    } catch (erro) {
+      if (erro instanceof ErroServico) return responderErroServico(resposta, erro);
+      throw erro;
+    }
+
+    // Erro de emissão — payload incompleto (NCM/CFOP faltando, CNPJ emitente
+    // não configurado), rejeição da SEFAZ ou falha ao chamar a Focus NFe —
+    // nunca bloqueia a venda: grava como `erro`, com o motivo, para o operador
+    // tentar reemitir depois (é o vendas-service quem decide isso: não desfaz
+    // a venda por causa de uma nota que não saiu).
+    //
+    // A falta de NCM/CFOP é checada ANTES de chamar a Focus NFe de propósito —
+    // evita gastar uma tentativa de emissão com dado incompleto.
+    const semDadoFiscal = itensComDadoFiscal.find((item) => !item.ncm || !item.cfop);
+
+    let dadosGravar;
+    if (semDadoFiscal) {
+      dadosGravar = {
+        status: STATUS_NOTA_FISCAL.ERRO,
+        mensagemErro:
+          `Produto "${semDadoFiscal.produto_nome}" está sem NCM/CFOP cadastrado — ` +
+          "complete o cadastro fiscal do produto para emitir a nota.",
+      };
+    } else if (!env.FARMACIA.cnpj) {
+      dadosGravar = {
+        status: STATUS_NOTA_FISCAL.ERRO,
+        mensagemErro: "FARMACIA_CNPJ não configurado no .env — preencha o CNPJ emitente para emitir notas fiscais.",
+      };
+    } else {
+      const payload = montarPayloadNfce({ itens: itensComDadoFiscal, pagamentos: venda.pagamentos, cpfNota });
+      try {
+        const { statusHttp, corpo } = await emitirNfce(payload, vendaId);
+        const autorizado = corpo?.status === "autorizado";
+        dadosGravar = autorizado
+          ? {
+              status: STATUS_NOTA_FISCAL.EMITIDA,
+              chaveAcesso: corpo?.chave_nfe ?? null,
+              numero: corpo?.numero ?? null,
+              serie: corpo?.serie ?? null,
+              urlConsulta: corpo?.url_consulta_nf ?? corpo?.qrcode_url ?? null,
+              retornoFocus: corpo,
+            }
+          : {
+              status: STATUS_NOTA_FISCAL.ERRO,
+              mensagemErro: corpo?.mensagem_sefaz ?? corpo?.mensagem ?? `Focus NFe respondeu HTTP ${statusHttp}.`,
+              retornoFocus: corpo,
+            };
+      } catch (erro) {
+        if (!(erro instanceof ErroFocusNfe)) throw erro;
+        dadosGravar = { status: STATUS_NOTA_FISCAL.ERRO, mensagemErro: erro.message };
+      }
+    }
+
+    const nota = await gravarNota({
+      idExistente: existente?.id ?? null,
+      vendaId,
+      cpfNota: cpfNota ?? existente?.cpf_nota ?? null,
+      ...dadosGravar,
+    });
+
+    return resposta.code(existente ? 200 : 201).send({ nota, reemitida: Boolean(existente) });
   });
 
   /** Notas emitidas no período — tela fiscal. */
@@ -83,7 +205,7 @@ export async function registrarRotas(app) {
 
     const onde = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";
     const { rows } = await consultar(
-      `SELECT id, venda_id, chave_acesso, status, xml_url, cpf_nota, emitida_em
+      `SELECT ${COLUNAS_NOTA}
          FROM fiscal.notas_fiscais ${onde}
         ORDER BY emitida_em DESC
         LIMIT 300`,
@@ -95,8 +217,7 @@ export async function registrarRotas(app) {
 
   app.get("/notas-fiscais/:venda_id", async (requisicao, resposta) => {
     const { rows } = await consultar(
-      `SELECT id, venda_id, chave_acesso, status, xml_url, cpf_nota, emitida_em
-         FROM fiscal.notas_fiscais WHERE venda_id = $1`,
+      `SELECT ${COLUNAS_NOTA}, retorno_focus FROM fiscal.notas_fiscais WHERE venda_id = $1`,
       [requisicao.params.venda_id]
     );
     if (!rows.length) {
