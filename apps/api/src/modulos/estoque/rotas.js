@@ -155,6 +155,10 @@ const SchemaMovimentacao = z.object({
   // cruzada com `tipo`, então a checagem fica no handler, não aqui.
   quantidade: z.number().int(),
   motivo: textoOpcional(),
+  // Só tem efeito numa saída chamada internamente pela sincronização offline
+  // do PDV (requisicao.usuario.interno) — o handler ignora este campo vindo
+  // de qualquer outro chamador, mesmo com a permissão "vender".
+  permitir_saldo_negativo: z.boolean().optional(),
 });
 
 const SchemaCriarCategoria = z.object({
@@ -344,11 +348,18 @@ export async function registrarRotas(app) {
           if (quantidade <= 0) {
             return invalido(resposta, "quantidade precisa ser um inteiro maior que zero.");
           }
+          // Bypass do bloqueio de estoque insuficiente: só vale para a chamada
+          // interna da sincronização offline (token assinado pelo próprio
+          // backend com `interno: true`) — nunca para um pedido comum, nem que
+          // o perfil tenha permissão de vender.
+          const permitirSaldoNegativo =
+            requisicao.body.permitir_saldo_negativo === true && requisicao.usuario?.interno === true;
           const resultado = await registrarSaidaFefo({
             produtoId,
             quantidade,
             motivo,
             usuarioId: requisicao.usuario.id,
+            permitirSaldoNegativo,
           });
           return resposta.code(201).send({ saida: resultado });
         }

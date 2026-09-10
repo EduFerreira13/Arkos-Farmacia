@@ -94,8 +94,23 @@ export function registrarEntradaLote({
  * lote vencido, e pode atravessar mais de um lote se a quantidade exigir.
  *
  * Quem chama não escolhe o lote — só informa produto e quantidade.
+ *
+ * `permitirSaldoNegativo` existe só para a sincronização de venda offline do
+ * PDV (apps/api/.../vendas/rotas.js, `/sincronizar-offline`): a venda já
+ * aconteceu de verdade enquanto o caixa estava sem rede, e outro caixa pode
+ * ter vendido o mesmo produto nesse meio-tempo — o padrão do resto do sistema
+ * é nunca desfazer uma operação que já aconteceu (mesmo princípio da falha de
+ * NFC-e ou da divergência de recebimento de compra), então o saldo vai
+ * negativo e fica sinalizado para conferência do gerente, em vez de recusar a
+ * baixa. Fora desse caso, o comportamento é idêntico ao de sempre — recusa.
  */
-export function registrarSaidaFefo({ produtoId, quantidade, motivo, usuarioId }) {
+export function registrarSaidaFefo({
+  produtoId,
+  quantidade,
+  motivo,
+  usuarioId,
+  permitirSaldoNegativo = false,
+}) {
   return emTransacao(async (cliente) => {
     const { rows: produtos } = await cliente.query(
       `SELECT id, nome, venda_sob_encomenda FROM estoque.produtos WHERE id = $1`,
@@ -118,7 +133,9 @@ export function registrarSaidaFefo({ produtoId, quantidade, motivo, usuarioId })
     );
 
     const disponivel = lotes.reduce((soma, lote) => soma + lote.quantidade, 0);
-    if (disponivel < quantidade) {
+    const deficit = quantidade - disponivel;
+
+    if (deficit > 0 && !permitirSaldoNegativo) {
       throw new ErroNegocio(
         ERROS.ESTOQUE_INSUFICIENTE,
         `Estoque insuficiente para ${produtos[0].nome}: disponível ${disponivel}, pedido ${quantidade}.`
@@ -156,7 +173,55 @@ export function registrarSaidaFefo({ produtoId, quantidade, motivo, usuarioId })
       restante -= retirar;
     }
 
-    return { produto_id: produtoId, quantidade, lotes: consumo };
+    // Saldo negativo tolerado: o que não teve lote válido para cobrir vira
+    // débito no lote mais recente já cadastrado do produto (mesmo vencido ou
+    // zerado), só para não perder a rastreabilidade de qual lote ficou
+    // negativo. Produto sem nenhum lote cadastrado não tem onde debitar —
+    // fica só o sinal de conferência (nada para o gerente reconciliar aqui).
+    if (restante > 0) {
+      const { rows: referencia } = await cliente.query(
+        `SELECT id, numero_lote, data_validade FROM estoque.lotes
+          WHERE produto_id = $1
+          ORDER BY data_validade DESC, data_entrada DESC
+          LIMIT 1
+          FOR UPDATE`,
+        [produtoId]
+      );
+
+      if (referencia.length) {
+        const lote = referencia[0];
+        await cliente.query(`UPDATE estoque.lotes SET quantidade = quantidade - $2 WHERE id = $1`, [
+          lote.id,
+          restante,
+        ]);
+
+        const { rows: movimentacoes } = await cliente.query(
+          `INSERT INTO estoque.movimentacoes_estoque
+             (produto_id, lote_id, tipo, quantidade, motivo, usuario_id)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, criado_em`,
+          [
+            produtoId,
+            lote.id,
+            TIPO_MOVIMENTACAO.SAIDA,
+            restante,
+            motivo ? `${motivo} (saldo negativo tolerado)` : "saldo negativo tolerado",
+            usuarioId,
+          ]
+        );
+
+        consumo.push({
+          movimentacao_id: movimentacoes[0].id,
+          lote_id: lote.id,
+          numero_lote: lote.numero_lote,
+          data_validade: lote.data_validade,
+          quantidade: restante,
+          saldo_negativo: true,
+        });
+      }
+    }
+
+    return { produto_id: produtoId, quantidade, lotes: consumo, saldo_insuficiente: deficit > 0 };
   });
 }
 
