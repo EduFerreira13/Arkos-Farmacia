@@ -1,0 +1,20 @@
+{
+  "name": "@arkos/vendas-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cálculo e validação de venda, puros (sem I/O) — compartilhados entre apps/api e apps/web para rodar também offline no PDV",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "dependencies": {
+    "@arkos/shared-types": "0.1.0"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test"
+  }
+}
