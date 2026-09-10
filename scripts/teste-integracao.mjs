@@ -11,6 +11,7 @@
  */
 
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 
@@ -1037,6 +1038,209 @@ const pedidosBuscados = await req(
   { token: gerente }
 );
 ok("busca de pedido acha pelo número", pedidosBuscados.status === 200 && pedidosBuscados.dados.pedidos.length === 1);
+
+secao("vendas-service — sincronização offline do PDV");
+
+const produtoOffline = await req(`${S.estoque}/produtos`, {
+  metodo: "POST", token: gerente,
+  corpo: {
+    nome: `Offline Livre ${sufixo}`, fabricante: "Lab Teste", categoria_id: categoriaId,
+    codigo_barras: `5${sufixo}`, unidade_venda: "caixa", principio_ativo: "Teste",
+    tipo_controle: "livre", preco_custo: 8, preco_venda: 20, estoque_minimo: 2,
+  },
+});
+const offlineLivreId = produtoOffline.dados.produto.id;
+await req(`${S.estoque}/lotes`, {
+  metodo: "POST", token: gerente,
+  corpo: { produto_id: offlineLivreId, numero_lote: `OFF-${sufixo}`, quantidade: 10, data_validade: diasAtras(-400) },
+});
+
+const produtoOfflineControlado = await req(`${S.estoque}/produtos`, {
+  metodo: "POST", token: gerente,
+  corpo: {
+    nome: `Offline Controlado ${sufixo}`, fabricante: "Lab Teste", categoria_id: categoriaId,
+    codigo_barras: `6${sufixo}`, unidade_venda: "caixa", principio_ativo: "Teste controlado",
+    classe_terapeutica: "psicotropico", tipo_controle: "tarja_preta",
+    preco_custo: 15, preco_venda: 40, estoque_minimo: 1,
+  },
+});
+const offlineControladoId = produtoOfflineControlado.dados.produto.id;
+await req(`${S.estoque}/lotes`, {
+  metodo: "POST", token: gerente,
+  corpo: { produto_id: offlineControladoId, numero_lote: `OFFC-${sufixo}`, quantidade: 5, data_validade: diasAtras(-300) },
+});
+
+// farmaceutico tem o mesmo teto de desconto do operador de caixa (5%, §7 do
+// seed) e já tem caixa aberto nesta suíte — evita testar o lançamento
+// automático no caixa contra um operador sem caixa próprio aberto.
+const criadoEmOffline = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+// A) fluxo feliz: múltiplos itens, controlado com receita, desconto exatamente
+// no teto do perfil, pagamento misto com troco.
+const idFeliz = randomUUID();
+const sincFeliz = await req(`${S.vendas}/vendas/sincronizar-offline`, {
+  metodo: "POST", token: farmaceutico,
+  corpo: {
+    id: idFeliz,
+    criado_em_offline: criadoEmOffline,
+    itens: [
+      { produto_id: offlineLivreId, quantidade: 2, preco_unitario: 20, tipo_controle: "livre" },
+      { produto_id: offlineControladoId, quantidade: 1, preco_unitario: 40, tipo_controle: "tarja_preta" },
+    ],
+    desconto_venda: 4, // 5% de 80 — exatamente o teto do perfil
+    receita: {
+      medico_nome: "Dra. Teste", medico_crm: "CRM-1",
+      paciente_nome: "Paciente Teste", data_emissao: hoje,
+    },
+    pagamentos: [{ forma_pagamento: "dinheiro", valor: 80 }],
+  },
+});
+ok(
+  "sincroniza venda offline com controlado, desconto no teto e pagamento misto",
+  sincFeliz.status === 201 && sincFeliz.dados.venda.status === "finalizada" &&
+    sincFeliz.dados.venda.valor_total === 76 && sincFeliz.dados.troco === 4 &&
+    sincFeliz.dados.ja_sincronizada === false,
+  JSON.stringify(sincFeliz.dados)
+);
+ok(
+  "venda offline nasce com origem_sincronizacao offline e sem conferência pendente",
+  sincFeliz.dados.venda.origem_sincronizacao === "offline" &&
+    sincFeliz.dados.venda.estoque_conferencia_pendente === false
+);
+
+const produtoLivreAposSinc = await req(`${S.estoque}/produtos/${offlineLivreId}`, { token: gerente });
+ok(
+  "baixa de estoque da venda offline saiu do saldo do produto livre",
+  produtoLivreAposSinc.dados.produto.quantidade_atual === 8
+);
+
+const sngpcOffline = await req(`${S.fiscal}/controlados-sngpc?venda_id=${idFeliz}`, { token: farmaceutico });
+ok(
+  "controlado da venda offline entrou no SNGPC",
+  sngpcOffline.status === 200 && sngpcOffline.dados.registros.length === 1
+);
+
+// B) reenvio do mesmo id (rede caiu de novo no meio da resposta anterior):
+// idempotente, não duplica a venda nem baixa o estoque de novo. Payload
+// propositalmente diferente do original só para comprovar que não é
+// reprocessado — se fosse, o total bateria 40, não 76.
+const sincRepetida = await req(`${S.vendas}/vendas/sincronizar-offline`, {
+  metodo: "POST", token: farmaceutico,
+  corpo: {
+    id: idFeliz,
+    criado_em_offline: criadoEmOffline,
+    itens: [{ produto_id: offlineLivreId, quantidade: 2, preco_unitario: 20, tipo_controle: "livre" }],
+    desconto_venda: 0,
+    pagamentos: [{ forma_pagamento: "dinheiro", valor: 80 }],
+  },
+});
+ok(
+  "reenviar o mesmo id é idempotente, não duplica a venda",
+  sincRepetida.status === 200 && sincRepetida.dados.ja_sincronizada === true &&
+    sincRepetida.dados.venda.valor_total === 76
+);
+
+const produtoLivreAposRepetida = await req(`${S.estoque}/produtos/${offlineLivreId}`, { token: gerente });
+ok(
+  "reenvio idempotente não baixa o estoque de novo",
+  produtoLivreAposRepetida.dados.produto.quantidade_atual === 8
+);
+
+// C) controlado sem receita: bloqueio duro, venda não é gravada.
+const idSemReceita = randomUUID();
+const syncSemReceita = await req(`${S.vendas}/vendas/sincronizar-offline`, {
+  metodo: "POST", token: farmaceutico,
+  corpo: {
+    id: idSemReceita,
+    criado_em_offline: criadoEmOffline,
+    itens: [{ produto_id: offlineControladoId, quantidade: 1, preco_unitario: 40, tipo_controle: "tarja_preta" }],
+    desconto_venda: 0,
+    pagamentos: [{ forma_pagamento: "dinheiro", valor: 40 }],
+  },
+});
+ok(
+  "BLOQUEIO DURO: sincronização offline de controlado sem receita é recusada",
+  syncSemReceita.status === 422 && syncSemReceita.dados.erro === "receita_obrigatoria"
+);
+const vendaSemReceita = await req(`${S.vendas}/vendas/${idSemReceita}`, { token: farmaceutico });
+ok("venda recusada por falta de receita não foi gravada", vendaSemReceita.status === 404);
+
+// D) desconto acima do teto do perfil: bloqueio duro, venda não é gravada.
+const idDescontoAlto = randomUUID();
+const syncDescontoAlto = await req(`${S.vendas}/vendas/sincronizar-offline`, {
+  metodo: "POST", token: farmaceutico,
+  corpo: {
+    id: idDescontoAlto,
+    criado_em_offline: criadoEmOffline,
+    itens: [{ produto_id: offlineLivreId, quantidade: 1, preco_unitario: 20, tipo_controle: "livre" }],
+    desconto_venda: 5, // 25% de 20 — acima do teto de 5%
+    pagamentos: [{ forma_pagamento: "dinheiro", valor: 20 }],
+  },
+});
+ok(
+  "BLOQUEIO DURO: desconto acima do teto do perfil é recusado na sincronização offline",
+  syncDescontoAlto.status === 422 && syncDescontoAlto.dados.erro === "desconto_acima_do_limite"
+);
+
+// E) pagamento insuficiente: bloqueio duro, venda não é gravada.
+const idPagamentoInsuficiente = randomUUID();
+const pagamentoInsuficiente = await req(`${S.vendas}/vendas/sincronizar-offline`, {
+  metodo: "POST", token: farmaceutico,
+  corpo: {
+    id: idPagamentoInsuficiente,
+    criado_em_offline: criadoEmOffline,
+    itens: [{ produto_id: offlineLivreId, quantidade: 1, preco_unitario: 20, tipo_controle: "livre" }],
+    desconto_venda: 0,
+    pagamentos: [{ forma_pagamento: "dinheiro", valor: 5 }],
+  },
+});
+ok(
+  "BLOQUEIO DURO: pagamento insuficiente é recusado na sincronização offline",
+  pagamentoInsuficiente.status === 422 && pagamentoInsuficiente.dados.erro === "pagamento_insuficiente"
+);
+
+// F) conflito de estoque: outro caixa já vendeu o produto enquanto este
+// estava offline. Ao contrário de C/D/E, isto NUNCA bloqueia nem desfaz a
+// venda — o saldo vai negativo e só fica sinalizado para conferência do
+// gerente (mesmo princípio da falha de NFC-e e da divergência de compra).
+const produtoConflito = await req(`${S.estoque}/produtos`, {
+  metodo: "POST", token: gerente,
+  corpo: {
+    nome: `Offline Conflito ${sufixo}`, fabricante: "Lab Teste", categoria_id: categoriaId,
+    codigo_barras: `7${sufixo}`, unidade_venda: "caixa", principio_ativo: "Teste",
+    tipo_controle: "livre", preco_custo: 3, preco_venda: 10, estoque_minimo: 1,
+  },
+});
+const produtoConflitoId = produtoConflito.dados.produto.id;
+await req(`${S.estoque}/lotes`, {
+  metodo: "POST", token: gerente,
+  corpo: { produto_id: produtoConflitoId, numero_lote: `CONF-${sufixo}`, quantidade: 2, data_validade: diasAtras(-400) },
+});
+
+const idConflito = randomUUID();
+const sincConflito = await req(`${S.vendas}/vendas/sincronizar-offline`, {
+  metodo: "POST", token: farmaceutico,
+  corpo: {
+    id: idConflito,
+    criado_em_offline: criadoEmOffline,
+    itens: [{ produto_id: produtoConflitoId, quantidade: 5, preco_unitario: 10, tipo_controle: "livre" }],
+    desconto_venda: 0,
+    pagamentos: [{ forma_pagamento: "dinheiro", valor: 50 }],
+  },
+});
+ok(
+  "conflito de estoque: venda offline é sincronizada mesmo com saldo insuficiente",
+  sincConflito.status === 201 && sincConflito.dados.venda.status === "finalizada" &&
+    sincConflito.dados.estoque_conferencia_pendente === true &&
+    sincConflito.dados.venda.estoque_conferencia_pendente === true,
+  JSON.stringify(sincConflito.dados)
+);
+
+const produtoConflitoAposSinc = await req(`${S.estoque}/produtos/${produtoConflitoId}`, { token: gerente });
+ok(
+  "estoque negativo tolerado: saldo do produto ficou negativo, venda não foi desfeita",
+  produtoConflitoAposSinc.dados.produto.quantidade_atual === -3
+);
 
 secao("Autenticação exigida em todos os serviços");
 for (const [nome, url] of [
