@@ -19,7 +19,8 @@
     "dev:impressora": "node --env-file=.env node_modules/escpos-emulator/dist/index.js",
     "test:integracao": "node scripts/teste-integracao.mjs",
     "test:telas": "npm run testar:telas --workspace=apps/web",
-    "test:pdf": "node apps/api/testes/layout-da-ordem.mjs"
+    "test:pdf": "node apps/api/testes/layout-da-ordem.mjs",
+    "audit": "npm audit"
   },
   "engines": {
     "node": ">=20"

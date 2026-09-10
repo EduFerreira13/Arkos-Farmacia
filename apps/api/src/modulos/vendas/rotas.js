@@ -7,6 +7,7 @@ import {
 } from "@arkos/shared-types";
 import { criarAutenticacao, descontoMaximoPct } from "@arkos/auth-middleware";
 import { env } from "../../env.js";
+import { textoObrigatorio, textoOpcional, validarCorpo, z } from "../../lib/validacao.js";
 import { ErroServico, estoque, financeiro, fiscal } from "./servicos.js";
 import { imprimirRecibo } from "./lib/impressora.js";
 import {
@@ -63,29 +64,6 @@ const auth = criarAutenticacao({ secret: env.JWT_SECRET });
 
 const CENTAVO = 0.005; // tolerância para comparar dinheiro em ponto flutuante
 
-const DATA_INVALIDA = Symbol("data de retorno invalida");
-const DESCONTO_INVALIDO = Symbol("desconto de oferta invalido");
-
-/**
- * Data combinada para o próximo contato. Opcional — nem todo contato pede
- * retorno. Data no passado é recusada: retorno já nasceria atrasado, o que só
- * suja a lista de quem realmente ficou para trás.
- */
-function validarDataDeRetorno(valor) {
-  if (valor === undefined || valor === null || valor === "") return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(valor))) return DATA_INVALIDA;
-  if (String(valor) < hojeNoFuso()) return DATA_INVALIDA;
-  return String(valor);
-}
-
-/** Desconto prometido no contato, para o balcão aplicar depois. */
-function validarDescontoDaOferta(valor) {
-  if (valor === undefined || valor === null || valor === "") return null;
-  const percentual = Number(valor);
-  if (!Number.isFinite(percentual) || percentual < 0 || percentual > 100) return DESCONTO_INVALIDO;
-  return percentual > 0 ? Number(percentual.toFixed(2)) : null;
-}
-
 function invalido(resposta, mensagem) {
   return resposta.code(400).send({ erro: ERROS.DADOS_INVALIDOS, mensagem });
 }
@@ -124,6 +102,144 @@ async function carregarVendaAberta(id, resposta) {
   }
   return venda;
 }
+
+const CANAIS_CONTATO = ["telefone", "whatsapp", "email", "presencial"];
+const RESULTADOS_CONTATO = ["aguardando", "interessado", "sem_interesse", "nao_atendeu", "convertido"];
+
+/**
+ * Data combinada para o próximo contato. Opcional — nem todo contato pede
+ * retorno. Data no passado é recusada: retorno já nasceria atrasado, o que só
+ * suja a lista de quem realmente ficou para trás. `hojeNoFuso()` roda a cada
+ * parse (dentro do `.refine`), não uma vez só quando o módulo carrega.
+ */
+const campoProximoContato = () =>
+  z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "proximo_contato_em precisa ser uma data de hoje em diante.")
+    .refine((valor) => valor >= hojeNoFuso(), {
+      message: "proximo_contato_em precisa ser uma data de hoje em diante.",
+    })
+    .optional()
+    .nullable()
+    .transform((valor) => valor || null);
+
+/** Desconto prometido no contato — zero equivale a "sem oferta" (vira null). */
+const campoDescontoOferta = () =>
+  z
+    .number()
+    .min(0, "desconto_pct da oferta precisa estar entre 0 e 100.")
+    .max(100, "desconto_pct da oferta precisa estar entre 0 e 100.")
+    .optional()
+    .nullable()
+    .transform((valor) => (valor ? Number(valor.toFixed(2)) : null));
+
+const SchemaCriarContato = z.object({
+  cliente_id: textoObrigatorio("Informe cliente_id."),
+  canal: z.enum(CANAIS_CONTATO, { error: `canal inválido. Use: ${CANAIS_CONTATO.join(", ")}.` }),
+  motivo: textoObrigatorio("motivo do contato é obrigatório.").transform((valor) =>
+    valor.slice(0, 80)
+  ),
+  oferta: textoOpcional(),
+  observacao: textoOpcional(),
+  // Sem checagem de enum aqui de propósito (diferente do PATCH): hoje nada
+  // manda `resultado` na criação, e o banco já recusa valor fora do enum
+  // (Postgres 22P02, tratado no catch abaixo) — manter o mesmo comportamento.
+  resultado: z.string().optional(),
+  proximo_contato_em: campoProximoContato(),
+  desconto_pct: campoDescontoOferta(),
+});
+
+const SchemaAtualizarContato = z.object({
+  resultado: z
+    .enum(RESULTADOS_CONTATO, { error: `resultado inválido. Use: ${RESULTADOS_CONTATO.join(", ")}.` })
+    .optional(),
+  observacao: textoOpcional(),
+  proximo_contato_em: campoProximoContato(),
+});
+
+/**
+ * §5 — nome e telefone são obrigatórios: o telefone é o que permite o
+ * retorno do relacionamento. CPF é opcional (minimização de dados, LGPD) —
+ * quem precisa dele na nota informa na finalização da venda, sem exigir
+ * cadastro completo (ver `cpf_nota` em `/:id/finalizar`).
+ */
+const SchemaCriarCliente = z.object({
+  nome: textoObrigatorio("Informe o nome do cliente."),
+  telefone: textoObrigatorio("Informe o telefone do cliente."),
+  cpf: textoOpcional(),
+  email: textoOpcional(),
+  convenio: textoOpcional(),
+  observacao: textoOpcional(),
+  endereco: textoOpcional(),
+  data_nascimento: textoOpcional(),
+  aceita_contato: z.boolean().optional(),
+});
+
+// Edição: os mesmos campos, todos opcionais — só atualiza o que vier — e mais
+// `ativo`, que não faz sentido num cadastro novo.
+const SchemaAtualizarCliente = z.object({
+  nome: textoObrigatorio("Informe o nome do cliente.").optional(),
+  telefone: textoObrigatorio("Informe o telefone do cliente.").optional(),
+  cpf: textoOpcional(),
+  email: textoOpcional(),
+  convenio: textoOpcional(),
+  observacao: textoOpcional(),
+  endereco: textoOpcional(),
+  data_nascimento: textoOpcional(),
+  ativo: z.boolean().optional(),
+  aceita_contato: z.boolean().optional(),
+});
+
+const SchemaAdicionarItem = z.object({
+  produto_id: textoObrigatorio("Informe produto_id."),
+  quantidade: z.number().int().positive("quantidade precisa ser um inteiro maior que zero."),
+});
+
+const SchemaAlterarQuantidadeItem = z.object({
+  quantidade: z.number().int().positive("quantidade precisa ser um inteiro maior que zero."),
+});
+
+// Mesmo par de campos e mesmas mensagens no desconto por item e no desconto
+// da venda inteira — a regra de negócio (teto do perfil, comparação com o
+// bruto) é o que muda entre as duas rotas, e continua no handler.
+const SchemaDesconto = z.object({
+  desconto: z.number().nonnegative("desconto inválido.").optional(),
+  desconto_pct: z
+    .number()
+    .min(0, "desconto_pct deve estar entre 0 e 100.")
+    .max(100, "desconto_pct deve estar entre 0 e 100.")
+    .optional(),
+});
+
+const SchemaReceita = z.object({
+  medico_nome: textoObrigatorio("Dados da receita ausentes: medico_nome."),
+  medico_crm: textoObrigatorio("Dados da receita ausentes: medico_crm."),
+  paciente_nome: textoObrigatorio("Dados da receita ausentes: paciente_nome."),
+  data_emissao: textoObrigatorio("Dados da receita ausentes: data_emissao."),
+});
+
+const SchemaPagamento = z.object({
+  forma_pagamento: z.enum(FORMA_PAGAMENTO_LISTA, {
+    error: `forma_pagamento inválida. Use: ${FORMA_PAGAMENTO_LISTA.join(", ")}.`,
+  }),
+  valor: z.number().positive("valor precisa ser maior que zero."),
+});
+
+const SchemaVincularCliente = z.object({
+  cliente_id: textoOpcional(),
+});
+
+const SchemaFinalizar = z.object({
+  // CPF na nota: opcional, só a pedido do cliente (LGPD) — ver docs/PENDENCIAS.md.
+  cpf_nota: textoOpcional(),
+});
+
+const SchemaCancelar = z.object({
+  categoria: z.enum(CATEGORIA_CANCELAMENTO_LISTA, {
+    error: `Escolha o motivo do cancelamento. Use um de: ${CATEGORIA_CANCELAMENTO_LISTA.join(", ")}.`,
+  }),
+  motivo: textoOpcional(),
+});
 
 /**
  * Rotas de docs/API-CONTRATOS.md — vendas-service.
@@ -411,70 +527,50 @@ export async function registrarRotas(app) {
     return { contatos: await listarContatos({ de, ate, resultado, canal, busca }) };
   });
 
-  app.post("/crm/contatos", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
-    const { cliente_id, canal, motivo, oferta, observacao, resultado, proximo_contato_em, desconto_pct } =
-      requisicao.body ?? {};
+  app.post(
+    "/crm/contatos",
+    { preHandler: [auth.exigirPermissao("vender"), validarCorpo(SchemaCriarContato)] },
+    async (requisicao, resposta) => {
+      const { cliente_id, canal, motivo, oferta, observacao, resultado, proximo_contato_em, desconto_pct } =
+        requisicao.body;
 
-    const canais = ["telefone", "whatsapp", "email", "presencial"];
-    if (!cliente_id) return invalido(resposta, "Informe cliente_id.");
-    if (!canais.includes(canal)) {
-      return invalido(resposta, `canal inválido. Use: ${canais.join(", ")}.`);
+      try {
+        const contato = await registrarContato({
+          clienteId: cliente_id,
+          usuarioId: requisicao.usuario.id,
+          canal,
+          motivo,
+          oferta,
+          observacao,
+          resultado,
+          proximoContatoEm: proximo_contato_em,
+          descontoPct: desconto_pct,
+        });
+        return resposta.code(201).send({ contato });
+      } catch (erro) {
+        if (erro.code === "23503") return invalido(resposta, "Cliente não encontrado.");
+        if (erro.code === "22P02") return invalido(resposta, "resultado inválido para o contato.");
+        throw erro;
+      }
     }
-    if (!motivo || !String(motivo).trim()) {
-      return invalido(resposta, "motivo do contato é obrigatório.");
-    }
+  );
 
-    const retorno = validarDataDeRetorno(proximo_contato_em);
-    if (retorno === DATA_INVALIDA) {
-      return invalido(resposta, "proximo_contato_em precisa ser uma data de hoje em diante.");
-    }
+  app.patch(
+    "/crm/contatos/:id",
+    { preHandler: [auth.exigirPermissao("vender"), validarCorpo(SchemaAtualizarContato)] },
+    async (requisicao, resposta) => {
+      const { resultado, observacao, proximo_contato_em } = requisicao.body;
 
-    const descontoDaOferta = validarDescontoDaOferta(desconto_pct);
-    if (descontoDaOferta === DESCONTO_INVALIDO) {
-      return invalido(resposta, "desconto_pct da oferta precisa estar entre 0 e 100.");
-    }
-
-    try {
-      const contato = await registrarContato({
-        clienteId: cliente_id,
-        usuarioId: requisicao.usuario.id,
-        canal,
-        motivo: String(motivo).trim().slice(0, 80),
-        oferta,
-        observacao,
+      const contato = await atualizarResultadoContato({
+        contatoId: requisicao.params.id,
         resultado,
-        proximoContatoEm: retorno,
-        descontoPct: descontoDaOferta,
+        observacao,
+        proximoContatoEm: proximo_contato_em,
       });
-      return resposta.code(201).send({ contato });
-    } catch (erro) {
-      if (erro.code === "23503") return invalido(resposta, "Cliente não encontrado.");
-      if (erro.code === "22P02") return invalido(resposta, "resultado inválido para o contato.");
-      throw erro;
+      if (!contato) return naoEncontrado(resposta, "Contato não encontrado.");
+      return { contato };
     }
-  });
-
-  app.patch("/crm/contatos/:id", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
-    const { resultado, observacao, proximo_contato_em } = requisicao.body ?? {};
-    const resultados = ["aguardando", "interessado", "sem_interesse", "nao_atendeu", "convertido"];
-    if (resultado !== undefined && !resultados.includes(resultado)) {
-      return invalido(resposta, `resultado inválido. Use: ${resultados.join(", ")}.`);
-    }
-
-    const retorno = validarDataDeRetorno(proximo_contato_em);
-    if (retorno === DATA_INVALIDA) {
-      return invalido(resposta, "proximo_contato_em precisa ser uma data de hoje em diante.");
-    }
-
-    const contato = await atualizarResultadoContato({
-      contatoId: requisicao.params.id,
-      resultado,
-      observacao,
-      proximoContatoEm: retorno,
-    });
-    if (!contato) return naoEncontrado(resposta, "Contato não encontrado.");
-    return { contato };
-  });
+  );
 
   /** Filtros da tela de clientes — os mesmos que o relatório aceita. */
   function filtrosDeCliente(query = {}) {
@@ -497,51 +593,41 @@ export async function registrarRotas(app) {
    * quem precisa dele na nota informa na finalização da venda, sem exigir
    * cadastro completo (ver `cpf_nota` em `/:id/finalizar`).
    */
-  const OBRIGATORIOS_CLIENTE = [
-    ["nome", "Informe o nome do cliente."],
-    ["telefone", "Informe o telefone do cliente."],
-  ];
-
-  app.post("/clientes", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
-    const corpo = requisicao.body ?? {};
-    for (const [campo, mensagem] of OBRIGATORIOS_CLIENTE) {
-      if (!corpo[campo] || !String(corpo[campo]).trim()) return invalido(resposta, mensagem);
-    }
-    try {
-      return resposta.code(201).send({ cliente: await inserirCliente(corpo) });
-    } catch (erro) {
-      if (erro.code === "23505") {
-        return resposta
-          .code(409)
-          .send({ erro: ERROS.DADOS_INVALIDOS, mensagem: "Já existe cliente com este CPF." });
-      }
-      throw erro;
-    }
-  });
-
-  app.patch("/clientes/:id", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
-    const corpo = requisicao.body ?? {};
-    // Na edição, os obrigatórios só valem se vierem no corpo — quem manda só
-    // `observacao` não precisa reenviar CPF e telefone.
-    for (const [campo, mensagem] of OBRIGATORIOS_CLIENTE) {
-      if (corpo[campo] !== undefined && !String(corpo[campo]).trim()) {
-        return invalido(resposta, mensagem);
+  app.post(
+    "/clientes",
+    { preHandler: [auth.exigirPermissao("vender"), validarCorpo(SchemaCriarCliente)] },
+    async (requisicao, resposta) => {
+      try {
+        return resposta.code(201).send({ cliente: await inserirCliente(requisicao.body) });
+      } catch (erro) {
+        if (erro.code === "23505") {
+          return resposta
+            .code(409)
+            .send({ erro: ERROS.DADOS_INVALIDOS, mensagem: "Já existe cliente com este CPF." });
+        }
+        throw erro;
       }
     }
+  );
 
-    try {
-      const cliente = await atualizarCliente(requisicao.params.id, corpo);
-      if (!cliente) return invalido(resposta, "Informe algum campo para atualizar.");
-      return { cliente };
-    } catch (erro) {
-      if (erro.code === "23505") {
-        return resposta
-          .code(409)
-          .send({ erro: ERROS.DADOS_INVALIDOS, mensagem: "Já existe cliente com este CPF." });
+  app.patch(
+    "/clientes/:id",
+    { preHandler: [auth.exigirPermissao("vender"), validarCorpo(SchemaAtualizarCliente)] },
+    async (requisicao, resposta) => {
+      try {
+        const cliente = await atualizarCliente(requisicao.params.id, requisicao.body);
+        if (!cliente) return invalido(resposta, "Informe algum campo para atualizar.");
+        return { cliente };
+      } catch (erro) {
+        if (erro.code === "23505") {
+          return resposta
+            .code(409)
+            .send({ erro: ERROS.DADOS_INVALIDOS, mensagem: "Já existe cliente com este CPF." });
+        }
+        throw erro;
       }
-      throw erro;
     }
-  });
+  );
 
   /**
    * Clientes em planilha, com os filtros que estão valendo na tela. Traz dado
@@ -751,16 +837,14 @@ export async function registrarRotas(app) {
     return { venda };
   });
 
-  app.post("/:id/itens", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
+  app.post(
+    "/:id/itens",
+    { preHandler: [auth.exigirPermissao("vender"), validarCorpo(SchemaAdicionarItem)] },
+    async (requisicao, resposta) => {
     const venda = await carregarVendaAberta(requisicao.params.id, resposta);
     if (!venda) return resposta;
 
-    const { produto_id, quantidade } = requisicao.body ?? {};
-    const quantidadeNumero = Number(quantidade);
-    if (!produto_id) return invalido(resposta, "Informe produto_id.");
-    if (!Number.isInteger(quantidadeNumero) || quantidadeNumero <= 0) {
-      return invalido(resposta, "quantidade precisa ser um inteiro maior que zero.");
-    }
+    const { produto_id, quantidade: quantidadeNumero } = requisicao.body;
 
     let dadosProduto;
     try {
@@ -810,7 +894,8 @@ export async function registrarRotas(app) {
       venda: await buscarVendaCompleta(venda.id),
       exige_receita: exigeReceita(produto.tipo_controle),
     });
-  });
+    }
+  );
 
   app.delete("/:id/itens/:itemId", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
     const venda = await carregarVendaAberta(requisicao.params.id, resposta);
@@ -822,14 +907,14 @@ export async function registrarRotas(app) {
   });
 
   /** Ajusta a quantidade da linha do carrinho, conferindo o saldo disponível. */
-  app.patch("/:id/itens/:itemId", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
+  app.patch(
+    "/:id/itens/:itemId",
+    { preHandler: [auth.exigirPermissao("vender"), validarCorpo(SchemaAlterarQuantidadeItem)] },
+    async (requisicao, resposta) => {
     const venda = await carregarVendaAberta(requisicao.params.id, resposta);
     if (!venda) return resposta;
 
-    const quantidade = Number(requisicao.body?.quantidade);
-    if (!Number.isInteger(quantidade) || quantidade <= 0) {
-      return invalido(resposta, "quantidade precisa ser um inteiro maior que zero.");
-    }
+    const { quantidade } = requisicao.body;
 
     const itens = await listarItens(venda.id);
     const item = itens.find((registro) => registro.id === requisicao.params.itemId);
@@ -861,10 +946,14 @@ export async function registrarRotas(app) {
 
     await alterarQuantidadeDoItem({ vendaId: venda.id, itemId: item.id, quantidade });
     return { venda: await buscarVendaCompleta(venda.id) };
-  });
+    }
+  );
 
   /** Desconto em uma linha só — o teto do perfil considera a venda inteira. */
-  app.post("/:id/itens/:itemId/desconto", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
+  app.post(
+    "/:id/itens/:itemId/desconto",
+    { preHandler: [auth.exigirPermissao("vender"), validarCorpo(SchemaDesconto)] },
+    async (requisicao, resposta) => {
     const venda = await carregarVendaAberta(requisicao.params.id, resposta);
     if (!venda) return resposta;
 
@@ -872,21 +961,16 @@ export async function registrarRotas(app) {
     const item = itens.find((registro) => registro.id === requisicao.params.itemId);
     if (!item) return naoEncontrado(resposta, "Item não encontrado nesta venda.");
 
-    const corpo = requisicao.body ?? {};
+    const corpo = requisicao.body;
     const brutoDoItem = item.quantidade * item.preco_unitario;
 
     let desconto;
     if (corpo.desconto_pct !== undefined) {
-      const percentual = Number(corpo.desconto_pct);
-      if (!Number.isFinite(percentual) || percentual < 0 || percentual > 100) {
-        return invalido(resposta, "desconto_pct deve estar entre 0 e 100.");
-      }
-      desconto = Number(((brutoDoItem * percentual) / 100).toFixed(2));
+      desconto = Number(((brutoDoItem * corpo.desconto_pct) / 100).toFixed(2));
+    } else if (corpo.desconto !== undefined) {
+      desconto = corpo.desconto;
     } else {
-      desconto = Number(corpo.desconto);
-      if (!Number.isFinite(desconto) || desconto < 0) {
-        return invalido(resposta, "desconto inválido.");
-      }
+      return invalido(resposta, "desconto inválido.");
     }
 
     if (desconto > brutoDoItem) {
@@ -911,10 +995,14 @@ export async function registrarRotas(app) {
 
     await definirDescontoDoItem({ vendaId: venda.id, itemId: item.id, desconto });
     return { venda: await buscarVendaCompleta(venda.id) };
-  });
+    }
+  );
 
   /** Desconto respeita o limite percentual do perfil (§3). */
-  app.post("/:id/desconto", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
+  app.post(
+    "/:id/desconto",
+    { preHandler: [auth.exigirPermissao("vender"), validarCorpo(SchemaDesconto)] },
+    async (requisicao, resposta) => {
     const venda = await carregarVendaAberta(requisicao.params.id, resposta);
     if (!venda) return resposta;
 
@@ -924,20 +1012,15 @@ export async function registrarRotas(app) {
 
     // Aceita desconto em reais (`desconto`) ou em percentual (`desconto_pct`) —
     // o caixa às vezes combina "10%", às vezes "5 reais".
-    const corpo = requisicao.body ?? {};
+    const corpo = requisicao.body;
     let desconto;
 
     if (corpo.desconto_pct !== undefined) {
-      const percentual = Number(corpo.desconto_pct);
-      if (!Number.isFinite(percentual) || percentual < 0 || percentual > 100) {
-        return invalido(resposta, "desconto_pct deve estar entre 0 e 100.");
-      }
-      desconto = Number(((bruto * percentual) / 100).toFixed(2));
+      desconto = Number(((bruto * corpo.desconto_pct) / 100).toFixed(2));
+    } else if (corpo.desconto !== undefined) {
+      desconto = corpo.desconto;
     } else {
-      desconto = Number(corpo.desconto);
-      if (!Number.isFinite(desconto) || desconto < 0) {
-        return invalido(resposta, "desconto inválido.");
-      }
+      return invalido(resposta, "desconto inválido.");
     }
 
     if (desconto + descontoNosItens > bruto) {
@@ -958,26 +1041,22 @@ export async function registrarRotas(app) {
 
     await definirDesconto({ vendaId: venda.id, desconto });
     return { venda: await buscarVendaCompleta(venda.id) };
-  });
+    }
+  );
 
   /**
    * Registro da receita — obrigatório quando há item controlado (§3).
    * Farmacêutico, gerente e admin validam receita; o operador de caixa pode
    * registrar os dados, mas a trava de finalização é a mesma para todos.
    */
-  app.post("/:id/receita", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
+  app.post(
+    "/:id/receita",
+    { preHandler: [auth.exigirPermissao("vender"), validarCorpo(SchemaReceita)] },
+    async (requisicao, resposta) => {
     const venda = await carregarVendaAberta(requisicao.params.id, resposta);
     if (!venda) return resposta;
 
-    const { medico_nome, medico_crm, paciente_nome, data_emissao } = requisicao.body ?? {};
-    const faltando = [];
-    if (!medico_nome) faltando.push("medico_nome");
-    if (!medico_crm) faltando.push("medico_crm");
-    if (!paciente_nome) faltando.push("paciente_nome");
-    if (!data_emissao) faltando.push("data_emissao");
-    if (faltando.length) {
-      return invalido(resposta, `Dados da receita ausentes: ${faltando.join(", ")}.`);
-    }
+    const { medico_nome, medico_crm, paciente_nome, data_emissao } = requisicao.body;
 
     const receita = await salvarReceita({
       vendaId: venda.id,
@@ -988,7 +1067,8 @@ export async function registrarRotas(app) {
     });
 
     return resposta.code(201).send({ receita });
-  });
+    }
+  );
 
   /**
    * Tira a receita da venda. Se ainda houver item controlado, a finalização
@@ -1004,30 +1084,24 @@ export async function registrarRotas(app) {
     return { venda: await buscarVendaCompleta(venda.id) };
   });
 
-  app.post("/:id/pagamentos", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
-    const venda = await carregarVendaAberta(requisicao.params.id, resposta);
-    if (!venda) return resposta;
+  app.post(
+    "/:id/pagamentos",
+    { preHandler: [auth.exigirPermissao("vender"), validarCorpo(SchemaPagamento)] },
+    async (requisicao, resposta) => {
+      const venda = await carregarVendaAberta(requisicao.params.id, resposta);
+      if (!venda) return resposta;
 
-    const { forma_pagamento, valor } = requisicao.body ?? {};
-    if (!FORMA_PAGAMENTO_LISTA.includes(forma_pagamento)) {
-      return invalido(
-        resposta,
-        `forma_pagamento inválida. Use: ${FORMA_PAGAMENTO_LISTA.join(", ")}.`
-      );
+      const { forma_pagamento, valor } = requisicao.body;
+
+      const pagamento = await inserirPagamento({
+        vendaId: venda.id,
+        formaPagamento: forma_pagamento,
+        valor,
+      });
+
+      return resposta.code(201).send({ pagamento, venda: await buscarVendaCompleta(venda.id) });
     }
-    const valorNumero = Number(valor);
-    if (!Number.isFinite(valorNumero) || valorNumero <= 0) {
-      return invalido(resposta, "valor precisa ser maior que zero.");
-    }
-
-    const pagamento = await inserirPagamento({
-      vendaId: venda.id,
-      formaPagamento: forma_pagamento,
-      valor: valorNumero,
-    });
-
-    return resposta.code(201).send({ pagamento, venda: await buscarVendaCompleta(venda.id) });
-  });
+  );
 
   /** Remove uma forma de pagamento antes de finalizar (cliente trocou de ideia). */
   app.delete(
@@ -1048,19 +1122,22 @@ export async function registrarRotas(app) {
   );
 
   /** Vincula (ou desvincula, com cliente_id nulo) o cliente da venda. */
-  app.post("/:id/cliente", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
-    const venda = await carregarVendaAberta(requisicao.params.id, resposta);
-    if (!venda) return resposta;
+  app.post(
+    "/:id/cliente",
+    { preHandler: [auth.exigirPermissao("vender"), validarCorpo(SchemaVincularCliente)] },
+    async (requisicao, resposta) => {
+      const venda = await carregarVendaAberta(requisicao.params.id, resposta);
+      if (!venda) return resposta;
 
-    const clienteId = requisicao.body?.cliente_id ?? null;
-    try {
-      await vincularCliente({ vendaId: venda.id, clienteId });
-    } catch (erro) {
-      if (erro.code === "23503") return invalido(resposta, "Cliente não encontrado.");
-      throw erro;
+      try {
+        await vincularCliente({ vendaId: venda.id, clienteId: requisicao.body.cliente_id });
+      } catch (erro) {
+        if (erro.code === "23503") return invalido(resposta, "Cliente não encontrado.");
+        throw erro;
+      }
+      return { venda: await buscarVendaCompleta(venda.id) };
     }
-    return { venda: await buscarVendaCompleta(venda.id) };
-  });
+  );
 
   /**
    * Finalização — ordem do fluxo em docs/API-CONTRATOS.md:
@@ -1068,14 +1145,17 @@ export async function registrarRotas(app) {
    * lança no caixa e só então marca a venda como finalizada. Se a baixa passa
    * e o passo seguinte falha, o estoque é estornado para não ficar torto.
    */
-  app.post("/:id/finalizar", { preHandler: auth.exigirPermissao("vender") }, async (requisicao, resposta) => {
+  app.post(
+    "/:id/finalizar",
+    { preHandler: [auth.exigirPermissao("vender"), validarCorpo(SchemaFinalizar)] },
+    async (requisicao, resposta) => {
     const venda = await carregarVendaAberta(requisicao.params.id, resposta);
     if (!venda) return resposta;
 
     // CPF na nota: só a pedido do cliente, só para constar na nota fiscal —
     // não exige cliente cadastrado nem é obrigatório para concluir a venda
     // (LGPD, minimização de dados).
-    const cpfNota = requisicao.body?.cpf_nota || null;
+    const { cpf_nota: cpfNota } = requisicao.body;
 
     const token = requisicao.headers.authorization;
     const completa = await buscarVendaCompleta(venda.id);
@@ -1216,20 +1296,15 @@ export async function registrarRotas(app) {
         texto: impressao.texto,
       },
     };
-  });
+    }
+  );
 
   /** Cancelamento exige perfil superior e motivo (§3). */
   app.post(
     "/:id/cancelar",
-    { preHandler: auth.exigirPermissao("cancelar_venda") },
+    { preHandler: [auth.exigirPermissao("cancelar_venda"), validarCorpo(SchemaCancelar)] },
     async (requisicao, resposta) => {
-      const { motivo, categoria } = requisicao.body ?? {};
-      if (!categoria || !CATEGORIA_CANCELAMENTO_LISTA.includes(categoria)) {
-        return invalido(
-          resposta,
-          `Escolha o motivo do cancelamento. Use um de: ${CATEGORIA_CANCELAMENTO_LISTA.join(", ")}.`
-        );
-      }
+      const { motivo, categoria } = requisicao.body;
 
       const venda = await buscarVenda(requisicao.params.id);
       if (!venda) return naoEncontrado(resposta, "Venda não encontrada.");
@@ -1250,7 +1325,7 @@ export async function registrarRotas(app) {
       const cancelada = await marcarCancelada({
         vendaId: venda.id,
         // O texto livre é opcional: a categoria já diz o essencial.
-        motivo: motivo ? String(motivo).trim() : null,
+        motivo,
         categoria,
       });
       return { venda: cancelada };

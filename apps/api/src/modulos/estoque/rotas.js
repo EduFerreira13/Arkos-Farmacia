@@ -9,6 +9,14 @@ import {
 import { criarAutenticacao, temPermissao } from "@arkos/auth-middleware";
 import { env } from "../../env.js";
 import {
+  textoObrigatorio,
+  textoOpcional,
+  validarCorpo,
+  valorMonetario,
+  valorNaoNegativo,
+  z,
+} from "../../lib/validacao.js";
+import {
   formatarData,
   formatarDataHora,
   gerarCsv,
@@ -53,20 +61,6 @@ function responderErro(resposta, erro) {
   throw erro;
 }
 
-/**
- * `dias_de_uso` é opcional: vazio significa "não se aplica" e é gravado como
- * null. Devolve INVALIDO quando veio algo que não é um prazo utilizável, para o
- * chamador recusar com mensagem em vez de gravar lixo.
- */
-const INVALIDO = Symbol("dias_de_uso invalido");
-
-function validarDiasDeUso(valor) {
-  if (valor === undefined || valor === null || valor === "") return null;
-  const dias = Number(valor);
-  if (!Number.isInteger(dias) || dias <= 0) return INVALIDO;
-  return dias;
-}
-
 function invalido(resposta, mensagem) {
   return resposta.code(400).send({ erro: ERROS.DADOS_INVALIDOS, mensagem });
 }
@@ -76,10 +70,116 @@ function numeroPositivo(valor) {
   return Number.isFinite(numero) && numero > 0 ? numero : null;
 }
 
-function inteiroPositivo(valor) {
-  const numero = Number(valor);
-  return Number.isInteger(numero) && numero > 0 ? numero : null;
-}
+/**
+ * Mesmos 16 campos do cadastro em `estoque.repositorio.js`
+ * (CAMPOS_ATUALIZAVEIS) — a única lista que decide o que é aceito, criando ou
+ * editando. Sem `.default()` aqui de propósito: um valor-padrão neste nível
+ * apareceria como campo "informado" mesmo numa edição parcial que nunca citou
+ * o campo, e o repositório passaria a sobrescrevê-lo à toa a cada PATCH.
+ * Cada schema (criar/editar) decide para si o que tem valor-padrão.
+ */
+const CamposProduto = {
+  codigo: textoOpcional(),
+  nome: textoObrigatorio("Informe o nome."),
+  principio_ativo: textoOpcional(),
+  fabricante: textoObrigatorio("Informe o fabricante."),
+  classe_terapeutica: textoOpcional(),
+  codigo_barras: textoObrigatorio("Informe o codigo_barras."),
+  tipo_controle: z.enum(TIPO_CONTROLE_LISTA, {
+    error: `tipo_controle inválido. Use: ${TIPO_CONTROLE_LISTA.join(", ")}.`,
+  }),
+  unidade_venda: textoObrigatorio("Informe a unidade_venda."),
+  ncm: textoOpcional(),
+  cfop: textoOpcional(),
+  preco_custo: valorNaoNegativo("preco_custo inválido."),
+  preco_venda: valorMonetario("preco_venda precisa ser maior que zero."),
+  estoque_minimo: z
+    .number()
+    .int()
+    .nonnegative("estoque_minimo precisa ser um inteiro maior ou igual a zero."),
+  venda_sob_encomenda: z.boolean(),
+  categoria_id: textoObrigatorio("Informe a categoria_id."),
+  fornecedor_id: textoOpcional(),
+  dias_de_uso: z
+    .number()
+    .int()
+    .positive("dias_de_uso precisa ser um inteiro maior que zero.")
+    .optional()
+    .nullable(),
+};
+
+const SchemaCriarProduto = z
+  .object({
+    ...CamposProduto,
+    tipo_controle: CamposProduto.tipo_controle.optional().default(TIPO_CONTROLE.LIVRE),
+    preco_custo: CamposProduto.preco_custo.optional().default(0),
+    estoque_minimo: CamposProduto.estoque_minimo.optional().default(0),
+    venda_sob_encomenda: CamposProduto.venda_sob_encomenda.optional().default(false),
+  })
+  // Controlado exige principio_ativo e classe_terapeutica (§1) — só dá pra
+  // checar depois do tipo_controle já resolvido, por isso é `.refine`.
+  .refine((dados) => !exigeReceita(dados.tipo_controle) || Boolean(dados.principio_ativo), {
+    message: "Medicamento controlado exige principio_ativo.",
+    path: ["principio_ativo"],
+  })
+  .refine((dados) => !exigeReceita(dados.tipo_controle) || Boolean(dados.classe_terapeutica), {
+    message: "Medicamento controlado exige classe_terapeutica.",
+    path: ["classe_terapeutica"],
+  });
+
+// Edição: todo campo é opcional (só atualiza o que vier) e preço aceita zero
+// — regra do PATCH desde sempre, diferente da criação. Sem a checagem de
+// "controlado exige X": tipo_controle quase nunca vem numa edição parcial, e
+// aplicar a mesma regra aqui bloquearia qualquer PATCH que não seja sobre isso.
+const SchemaAtualizarProduto = z.object({
+  ...Object.fromEntries(Object.entries(CamposProduto).map(([campo, tipo]) => [campo, tipo.optional()])),
+  preco_custo: valorNaoNegativo("preco_custo inválido.").optional(),
+  preco_venda: valorNaoNegativo("preco_venda inválido.").optional(),
+});
+
+const SchemaCriarLote = z.object({
+  produto_id: textoObrigatorio("Informe produto_id, numero_lote e data_validade."),
+  numero_lote: textoObrigatorio("Informe produto_id, numero_lote e data_validade."),
+  data_validade: textoObrigatorio("Informe produto_id, numero_lote e data_validade."),
+  quantidade: z.number().int().positive("quantidade precisa ser um inteiro maior que zero."),
+  motivo: textoOpcional(),
+});
+
+const SchemaMovimentacao = z.object({
+  produto_id: textoObrigatorio("Informe produto_id."),
+  lote_id: textoOpcional(),
+  tipo: z.enum(TIPO_MOVIMENTACAO_LISTA, {
+    error: `tipo inválido. Use: ${TIPO_MOVIMENTACAO_LISTA.join(", ")}.`,
+  }),
+  // Ajuste aceita zero (é a contagem física); os demais tipos, não — regra
+  // cruzada com `tipo`, então a checagem fica no handler, não aqui.
+  quantidade: z.number().int(),
+  motivo: textoOpcional(),
+});
+
+const SchemaCriarCategoria = z.object({
+  nome: textoObrigatorio("Informe nome."),
+});
+
+const SchemaCriarFornecedor = z.object({
+  nome: textoObrigatorio("Informe nome."),
+  cnpj: z
+    .string()
+    .trim()
+    .max(18, "CNPJ deve ter no máximo 18 caracteres (00.000.000/0000-00).")
+    .optional()
+    .nullable()
+    .transform((valor) => valor || null),
+  telefone: textoOpcional(),
+  email: textoOpcional(),
+});
+
+const SchemaAtualizarFornecedor = z.object({
+  nome: textoObrigatorio("Informe nome.").optional(),
+  cnpj: SchemaCriarFornecedor.shape.cnpj,
+  telefone: textoOpcional(),
+  email: textoOpcional(),
+});
 
 /**
  * Rotas de docs/API-CONTRATOS.md — estoque-service.
@@ -142,141 +242,78 @@ export async function registrarRotas(app) {
     return { produto };
   });
 
-  app.post("/produtos", { preHandler: auth.exigirPermissao("ajustar_estoque") }, async (requisicao, resposta) => {
-    const corpo = requisicao.body ?? {};
-    const tipoControle = corpo.tipo_controle ?? TIPO_CONTROLE.LIVRE;
+  app.post(
+    "/produtos",
+    { preHandler: [auth.exigirPermissao("ajustar_estoque"), validarCorpo(SchemaCriarProduto)] },
+    async (requisicao, resposta) => {
+      const corpo = requisicao.body;
 
-    if (!TIPO_CONTROLE_LISTA.includes(tipoControle)) {
-      return invalido(resposta, `tipo_controle inválido. Use: ${TIPO_CONTROLE_LISTA.join(", ")}.`);
-    }
-
-    // §1 — campos obrigatórios do cadastro.
-    const obrigatorios = ["nome", "fabricante", "categoria_id", "codigo_barras", "unidade_venda"];
-    const faltando = obrigatorios.filter((campo) => !corpo[campo]);
-    if (faltando.length) {
-      return invalido(resposta, `Campos obrigatórios ausentes: ${faltando.join(", ")}.`);
-    }
-
-    const precoVenda = Number(corpo.preco_venda);
-    const precoCusto = Number(corpo.preco_custo ?? 0);
-    if (!Number.isFinite(precoVenda) || precoVenda <= 0) {
-      return invalido(resposta, "preco_venda precisa ser maior que zero.");
-    }
-    if (!Number.isFinite(precoCusto) || precoCusto < 0) {
-      return invalido(resposta, "preco_custo inválido.");
-    }
-
-    const estoqueMinimo = Number(corpo.estoque_minimo ?? 0);
-    if (!Number.isInteger(estoqueMinimo) || estoqueMinimo < 0) {
-      return invalido(resposta, "estoque_minimo precisa ser um inteiro maior ou igual a zero.");
-    }
-
-    // Duração do tratamento: opcional, mas se vier tem de ser um prazo real.
-    const diasDeUso = validarDiasDeUso(corpo.dias_de_uso);
-    if (diasDeUso === INVALIDO) {
-      return invalido(resposta, "dias_de_uso precisa ser um inteiro maior que zero.");
-    }
-
-    // §1 — controlado exige princípio ativo e classe terapêutica, que são o que
-    // acionam as regras de venda restrita.
-    if (exigeReceita(tipoControle)) {
-      if (!corpo.principio_ativo) {
-        return invalido(resposta, "Medicamento controlado exige principio_ativo.");
-      }
-      if (!corpo.classe_terapeutica) {
-        return invalido(resposta, "Medicamento controlado exige classe_terapeutica.");
-      }
-    }
-
-    try {
-      const produto = await inserirProduto({
-        ...corpo,
-        // Sem código informado, o serviço gera o próximo da sequência.
-        codigo: String(corpo.codigo ?? "").trim() || (await proximoCodigoProduto()),
-        tipo_controle: tipoControle,
-        preco_venda: precoVenda,
-        preco_custo: precoCusto,
-        estoque_minimo: estoqueMinimo,
-        venda_sob_encomenda: Boolean(corpo.venda_sob_encomenda),
-        dias_de_uso: diasDeUso,
-      });
-      return resposta.code(201).send({ produto });
-    } catch (erro) {
-      // 23505 = unique_violation, 23503 = foreign_key_violation no Postgres.
-      if (erro.code === "23505") {
-        const porCodigo = String(erro.detail ?? "").includes("(codigo)");
-        return resposta.code(409).send({
-          erro: ERROS.DADOS_INVALIDOS,
-          mensagem: porCodigo
-            ? "Já existe produto com este código."
-            : "Já existe produto com este código de barras.",
+      try {
+        const produto = await inserirProduto({
+          ...corpo,
+          // Sem código informado, o serviço gera o próximo da sequência.
+          codigo: corpo.codigo || (await proximoCodigoProduto()),
         });
+        return resposta.code(201).send({ produto });
+      } catch (erro) {
+        // 23505 = unique_violation, 23503 = foreign_key_violation no Postgres.
+        if (erro.code === "23505") {
+          const porCodigo = String(erro.detail ?? "").includes("(codigo)");
+          return resposta.code(409).send({
+            erro: ERROS.DADOS_INVALIDOS,
+            mensagem: porCodigo
+              ? "Já existe produto com este código."
+              : "Já existe produto com este código de barras.",
+          });
+        }
+        if (erro.code === "23503") {
+          return invalido(resposta, "Categoria ou fornecedor informado não existe.");
+        }
+        throw erro;
       }
-      if (erro.code === "23503") {
-        return invalido(resposta, "Categoria ou fornecedor informado não existe.");
+    }
+  );
+
+  app.patch(
+    "/produtos/:id",
+    { preHandler: [auth.exigirPermissao("ajustar_estoque"), validarCorpo(SchemaAtualizarProduto)] },
+    async (requisicao, resposta) => {
+      const produto = await atualizarProduto(
+        requisicao.params.id,
+        requisicao.body,
+        requisicao.usuario.id
+      );
+      if (!produto) {
+        return resposta
+          .code(404)
+          .send({ erro: ERROS.NAO_ENCONTRADO, mensagem: "Produto não encontrado." });
       }
-      throw erro;
+      return { produto };
     }
-  });
+  );
 
-  app.patch("/produtos/:id", { preHandler: auth.exigirPermissao("ajustar_estoque") }, async (requisicao, resposta) => {
-    const { id } = requisicao.params;
-    const corpo = requisicao.body ?? {};
+  app.post(
+    "/lotes",
+    { preHandler: [auth.exigirPermissao("ajustar_estoque"), validarCorpo(SchemaCriarLote)] },
+    async (requisicao, resposta) => {
+      const { produto_id: produtoId, numero_lote: numeroLote, quantidade, data_validade: dataValidade, motivo } =
+        requisicao.body;
 
-    if (corpo.tipo_controle && !TIPO_CONTROLE_LISTA.includes(corpo.tipo_controle)) {
-      return invalido(resposta, `tipo_controle inválido. Use: ${TIPO_CONTROLE_LISTA.join(", ")}.`);
-    }
-    for (const campo of ["preco_venda", "preco_custo"]) {
-      if (corpo[campo] === undefined) continue;
-      const valor = Number(corpo[campo]);
-      if (!Number.isFinite(valor) || valor < 0) {
-        return invalido(resposta, `${campo} inválido.`);
+      try {
+        const lote = await registrarEntradaLote({
+          produtoId,
+          numeroLote,
+          quantidade,
+          dataValidade,
+          motivo,
+          usuarioId: requisicao.usuario.id,
+        });
+        return resposta.code(201).send({ lote });
+      } catch (erro) {
+        return responderErro(resposta, erro);
       }
-      corpo[campo] = valor;
     }
-
-    if (corpo.dias_de_uso !== undefined) {
-      const dias = validarDiasDeUso(corpo.dias_de_uso);
-      if (dias === INVALIDO) {
-        return invalido(resposta, "dias_de_uso precisa ser um inteiro maior que zero.");
-      }
-      corpo.dias_de_uso = dias;
-    }
-
-    const produto = await atualizarProduto(id, corpo, requisicao.usuario.id);
-    if (!produto) {
-      return resposta
-        .code(404)
-        .send({ erro: ERROS.NAO_ENCONTRADO, mensagem: "Produto não encontrado." });
-    }
-    return { produto };
-  });
-
-  app.post("/lotes", { preHandler: auth.exigirPermissao("ajustar_estoque") }, async (requisicao, resposta) => {
-    const { produto_id, numero_lote, quantidade, data_validade, motivo } = requisicao.body ?? {};
-
-    if (!produto_id || !numero_lote || !data_validade) {
-      return invalido(resposta, "Informe produto_id, numero_lote e data_validade.");
-    }
-    const quantidadeValida = inteiroPositivo(quantidade);
-    if (!quantidadeValida) {
-      return invalido(resposta, "quantidade precisa ser um inteiro maior que zero.");
-    }
-
-    try {
-      const lote = await registrarEntradaLote({
-        produtoId: produto_id,
-        numeroLote: numero_lote,
-        quantidade: quantidadeValida,
-        dataValidade: data_validade,
-        motivo,
-        usuarioId: requisicao.usuario.id,
-      });
-      return resposta.code(201).send({ lote });
-    } catch (erro) {
-      return responderErro(resposta, erro);
-    }
-  });
+  );
 
   /**
    * Saída (FEFO) e devolução são as duas pontas de uma venda, então bastam a
@@ -284,81 +321,77 @@ export async function registrarRotas(app) {
    * baixa e ao estornar uma finalização que falhou no meio. Ajuste e perda
    * mexem no saldo sem venda por trás e exigem ajustar_estoque (§6).
    */
-  app.post("/movimentacoes", async (requisicao, resposta) => {
-    const { produto_id, lote_id, tipo, quantidade, motivo } = requisicao.body ?? {};
+  app.post(
+    "/movimentacoes",
+    { preHandler: validarCorpo(SchemaMovimentacao) },
+    async (requisicao, resposta) => {
+      const { produto_id: produtoId, lote_id: loteId, tipo, quantidade, motivo } = requisicao.body;
 
-    if (!TIPO_MOVIMENTACAO_LISTA.includes(tipo)) {
-      return invalido(resposta, `tipo inválido. Use: ${TIPO_MOVIMENTACAO_LISTA.join(", ")}.`);
-    }
-    if (!produto_id) return invalido(resposta, "Informe produto_id.");
+      const permissaoNecessaria = [TIPO_MOVIMENTACAO.SAIDA, TIPO_MOVIMENTACAO.DEVOLUCAO].includes(
+        tipo
+      )
+        ? "vender"
+        : "ajustar_estoque";
+      if (!temPermissao(requisicao.usuario, permissaoNecessaria)) {
+        return resposta.code(403).send({
+          erro: ERROS.SEM_PERMISSAO,
+          mensagem: "Seu perfil não tem permissão para esta movimentação.",
+        });
+      }
 
-    const permissaoNecessaria = [TIPO_MOVIMENTACAO.SAIDA, TIPO_MOVIMENTACAO.DEVOLUCAO].includes(
-      tipo
-    )
-      ? "vender"
-      : "ajustar_estoque";
-    if (!temPermissao(requisicao.usuario, permissaoNecessaria)) {
-      return resposta.code(403).send({
-        erro: ERROS.SEM_PERMISSAO,
-        mensagem: "Seu perfil não tem permissão para esta movimentação.",
-      });
-    }
-
-    try {
-      if (tipo === TIPO_MOVIMENTACAO.SAIDA) {
-        const quantidadeValida = inteiroPositivo(quantidade);
-        if (!quantidadeValida) {
-          return invalido(resposta, "quantidade precisa ser um inteiro maior que zero.");
+      try {
+        if (tipo === TIPO_MOVIMENTACAO.SAIDA) {
+          if (quantidade <= 0) {
+            return invalido(resposta, "quantidade precisa ser um inteiro maior que zero.");
+          }
+          const resultado = await registrarSaidaFefo({
+            produtoId,
+            quantidade,
+            motivo,
+            usuarioId: requisicao.usuario.id,
+          });
+          return resposta.code(201).send({ saida: resultado });
         }
-        const resultado = await registrarSaidaFefo({
-          produtoId: produto_id,
-          quantidade: quantidadeValida,
+
+        if (tipo === TIPO_MOVIMENTACAO.ENTRADA) {
+          return invalido(
+            resposta,
+            "Entrada de estoque é feita por POST /lotes, que exige número de lote e validade."
+          );
+        }
+
+        // Ajuste, perda e devolução: lote explícito e motivo obrigatório (§2).
+        if (!loteId) return invalido(resposta, "Informe lote_id para ajuste, perda ou devolução.");
+        if (!motivo) {
+          return invalido(resposta, "motivo é obrigatório em ajuste, perda e devolução.");
+        }
+
+        // No ajuste, quantidade é a contagem física do lote — zero é válido
+        // (achou o lote vazio). Nos demais, é sempre maior que zero.
+        const quantidadeOk = tipo === TIPO_MOVIMENTACAO.AJUSTE ? quantidade >= 0 : quantidade > 0;
+        if (!quantidadeOk) {
+          return invalido(
+            resposta,
+            tipo === TIPO_MOVIMENTACAO.AJUSTE
+              ? "No ajuste, quantidade é a contagem física do lote (inteiro >= 0)."
+              : "quantidade precisa ser um inteiro maior que zero."
+          );
+        }
+
+        const resultado = await registrarMovimentacaoManual({
+          tipo,
+          produtoId,
+          loteId,
+          quantidade,
           motivo,
           usuarioId: requisicao.usuario.id,
         });
-        return resposta.code(201).send({ saida: resultado });
+        return resposta.code(201).send(resultado);
+      } catch (erro) {
+        return responderErro(resposta, erro);
       }
-
-      if (tipo === TIPO_MOVIMENTACAO.ENTRADA) {
-        return invalido(
-          resposta,
-          "Entrada de estoque é feita por POST /lotes, que exige número de lote e validade."
-        );
-      }
-
-      // Ajuste, perda e devolução: lote explícito e motivo obrigatório (§2).
-      if (!lote_id) return invalido(resposta, "Informe lote_id para ajuste, perda ou devolução.");
-      if (!motivo || !String(motivo).trim()) {
-        return invalido(resposta, "motivo é obrigatório em ajuste, perda e devolução.");
-      }
-
-      const quantidadeNumero = Number(quantidade);
-      const quantidadeOk =
-        tipo === TIPO_MOVIMENTACAO.AJUSTE
-          ? Number.isInteger(quantidadeNumero) && quantidadeNumero >= 0
-          : Number.isInteger(quantidadeNumero) && quantidadeNumero > 0;
-      if (!quantidadeOk) {
-        return invalido(
-          resposta,
-          tipo === TIPO_MOVIMENTACAO.AJUSTE
-            ? "No ajuste, quantidade é a contagem física do lote (inteiro >= 0)."
-            : "quantidade precisa ser um inteiro maior que zero."
-        );
-      }
-
-      const resultado = await registrarMovimentacaoManual({
-        tipo,
-        produtoId: produto_id,
-        loteId: lote_id,
-        quantidade: quantidadeNumero,
-        motivo: String(motivo).trim(),
-        usuarioId: requisicao.usuario.id,
-      });
-      return resposta.code(201).send(resultado);
-    } catch (erro) {
-      return responderErro(resposta, erro);
     }
-  });
+  );
 
   app.get("/movimentacoes", async (requisicao, resposta) => {
     const { produto_id, tipo, de, ate, busca, limite } = requisicao.query ?? {};
@@ -515,11 +548,13 @@ export async function registrarRotas(app) {
   // Cadastros auxiliares — o formulário de produto precisa deles.
   app.get("/categorias", async () => ({ categorias: await listarCategorias() }));
 
-  app.post("/categorias", { preHandler: auth.exigirPermissao("ajustar_estoque") }, async (requisicao, resposta) => {
-    const nome = requisicao.body?.nome;
-    if (!nome) return invalido(resposta, "Informe nome.");
-    return resposta.code(201).send({ categoria: await inserirCategoria(nome) });
-  });
+  app.post(
+    "/categorias",
+    { preHandler: [auth.exigirPermissao("ajustar_estoque"), validarCorpo(SchemaCriarCategoria)] },
+    async (requisicao, resposta) => {
+      return resposta.code(201).send({ categoria: await inserirCategoria(requisicao.body.nome) });
+    }
+  );
 
   app.get("/fornecedores", async (requisicao) => ({
     fornecedores: await listarFornecedores({ busca: requisicao.query?.busca }),
@@ -569,36 +604,39 @@ export async function registrarRotas(app) {
       .send(csv);
   });
 
-  app.patch("/fornecedores/:id", { preHandler: auth.exigirPermissao("ajustar_estoque") }, async (requisicao, resposta) => {
-    try {
-      const fornecedor = await atualizarFornecedor(requisicao.params.id, requisicao.body ?? {});
-      if (!fornecedor) return invalido(resposta, "Informe algum campo para atualizar.");
-      return { fornecedor };
-    } catch (erro) {
-      if (erro.code === "23505") {
-        return resposta
-          .code(409)
-          .send({ erro: ERROS.DADOS_INVALIDOS, mensagem: "Já existe fornecedor com este CNPJ." });
+  app.patch(
+    "/fornecedores/:id",
+    { preHandler: [auth.exigirPermissao("ajustar_estoque"), validarCorpo(SchemaAtualizarFornecedor)] },
+    async (requisicao, resposta) => {
+      try {
+        const fornecedor = await atualizarFornecedor(requisicao.params.id, requisicao.body);
+        if (!fornecedor) return invalido(resposta, "Informe algum campo para atualizar.");
+        return { fornecedor };
+      } catch (erro) {
+        if (erro.code === "23505") {
+          return resposta
+            .code(409)
+            .send({ erro: ERROS.DADOS_INVALIDOS, mensagem: "Já existe fornecedor com este CNPJ." });
+        }
+        throw erro;
       }
-      throw erro;
     }
-  });
+  );
 
-  app.post("/fornecedores", { preHandler: auth.exigirPermissao("ajustar_estoque") }, async (requisicao, resposta) => {
-    const corpo = requisicao.body ?? {};
-    if (!corpo.nome) return invalido(resposta, "Informe nome.");
-    if (corpo.cnpj && String(corpo.cnpj).length > 18) {
-      return invalido(resposta, "CNPJ deve ter no máximo 18 caracteres (00.000.000/0000-00).");
-    }
-    try {
-      return resposta.code(201).send({ fornecedor: await inserirFornecedor(corpo) });
-    } catch (erro) {
-      if (erro.code === "23505") {
-        return resposta
-          .code(409)
-          .send({ erro: ERROS.DADOS_INVALIDOS, mensagem: "Já existe fornecedor com este CNPJ." });
+  app.post(
+    "/fornecedores",
+    { preHandler: [auth.exigirPermissao("ajustar_estoque"), validarCorpo(SchemaCriarFornecedor)] },
+    async (requisicao, resposta) => {
+      try {
+        return resposta.code(201).send({ fornecedor: await inserirFornecedor(requisicao.body) });
+      } catch (erro) {
+        if (erro.code === "23505") {
+          return resposta
+            .code(409)
+            .send({ erro: ERROS.DADOS_INVALIDOS, mensagem: "Já existe fornecedor com este CNPJ." });
+        }
+        throw erro;
       }
-      throw erro;
     }
-  });
+  );
 }

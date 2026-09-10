@@ -5,6 +5,14 @@ import {
 } from "@arkos/shared-types";
 import { criarAutenticacao } from "@arkos/auth-middleware";
 import { env } from "../../env.js";
+import {
+  textoObrigatorio,
+  textoOpcional,
+  validarCorpo,
+  valorMonetario,
+  valorNaoNegativo,
+  z,
+} from "../../lib/validacao.js";
 import { vendas } from "./servicos.js";
 import {
   formatarData,
@@ -41,10 +49,39 @@ function invalido(resposta, mensagem) {
   return resposta.code(400).send({ erro: ERROS.DADOS_INVALIDOS, mensagem });
 }
 
-function valorValido(valor) {
-  const numero = Number(valor);
-  return Number.isFinite(numero) && numero > 0 ? Number(numero.toFixed(2)) : null;
-}
+const SchemaAbrirCaixa = z.object({
+  valor_abertura: valorNaoNegativo("valor_abertura inválido.").optional().default(0),
+});
+
+const SchemaFecharCaixa = z.object({
+  valor_fechamento_contado: valorNaoNegativo("valor_fechamento_contado inválido."),
+});
+
+const SchemaMovimentacaoCaixa = z.object({
+  tipo: z.enum(Object.values(TIPO_MOVIMENTACAO_CAIXA), {
+    error: "tipo deve ser entrada ou saida.",
+  }),
+  origem: z.enum(Object.values(ORIGEM_MOVIMENTACAO_CAIXA), {
+    error: "origem deve ser venda ou lancamento_manual.",
+  }),
+  valor: valorMonetario("valor precisa ser maior que zero."),
+  descricao: textoOpcional(),
+  venda_id: textoOpcional(),
+});
+
+const SchemaContaPagar = z.object({
+  fornecedor_id: textoOpcional(),
+  descricao: textoObrigatorio("Informe descricao."),
+  valor: valorMonetario("valor precisa ser maior que zero."),
+  vencimento: textoOpcional(),
+});
+
+const SchemaContaReceber = z.object({
+  origem: textoObrigatorio("Informe origem, descricao e vencimento."),
+  descricao: textoObrigatorio("Informe origem, descricao e vencimento."),
+  valor: valorMonetario("valor precisa ser maior que zero."),
+  vencimento: textoObrigatorio("Informe origem, descricao e vencimento."),
+});
 
 /**
  * Rotas de docs/API-CONTRATOS.md — financeiro-service.
@@ -54,24 +91,25 @@ export async function registrarRotas(app) {
   app.addHook("preHandler", auth.autenticar);
 
   /** §5 — um caixa aberto por usuário de cada vez. */
-  app.post("/caixa/abrir", async (requisicao, resposta) => {
-    const valorAbertura = Number(requisicao.body?.valor_abertura ?? 0);
-    if (!Number.isFinite(valorAbertura) || valorAbertura < 0) {
-      return invalido(resposta, "valor_abertura inválido.");
-    }
+  app.post(
+    "/caixa/abrir",
+    { preHandler: validarCorpo(SchemaAbrirCaixa) },
+    async (requisicao, resposta) => {
+      const { valor_abertura: valorAbertura } = requisicao.body;
 
-    const aberto = await buscarCaixaAberto(requisicao.usuario.id);
-    if (aberto) {
-      return resposta.code(409).send({
-        erro: ERROS.CAIXA_JA_ABERTO,
-        mensagem: "Você já tem um caixa aberto. Feche o atual antes de abrir outro.",
-        caixa: aberto,
-      });
-    }
+      const aberto = await buscarCaixaAberto(requisicao.usuario.id);
+      if (aberto) {
+        return resposta.code(409).send({
+          erro: ERROS.CAIXA_JA_ABERTO,
+          mensagem: "Você já tem um caixa aberto. Feche o atual antes de abrir outro.",
+          caixa: aberto,
+        });
+      }
 
-    const caixa = await abrirCaixa({ usuarioId: requisicao.usuario.id, valorAbertura });
-    return resposta.code(201).send({ caixa });
-  });
+      const caixa = await abrirCaixa({ usuarioId: requisicao.usuario.id, valorAbertura });
+      return resposta.code(201).send({ caixa });
+    }
+  );
 
   app.get("/caixa/status", async (requisicao) => {
     const caixa = await buscarCaixaAberto(requisicao.usuario.id);
@@ -87,96 +125,95 @@ export async function registrarRotas(app) {
     };
   });
 
-  app.post("/caixa/:id/fechar", async (requisicao, resposta) => {
-    const valorContado = Number(requisicao.body?.valor_fechamento_contado);
-    if (!Number.isFinite(valorContado) || valorContado < 0) {
-      return invalido(resposta, "valor_fechamento_contado inválido.");
-    }
+  app.post(
+    "/caixa/:id/fechar",
+    { preHandler: validarCorpo(SchemaFecharCaixa) },
+    async (requisicao, resposta) => {
+      const { valor_fechamento_contado: valorContado } = requisicao.body;
 
-    const caixa = await buscarCaixa(requisicao.params.id);
-    if (!caixa) {
-      return resposta
-        .code(404)
-        .send({ erro: ERROS.NAO_ENCONTRADO, mensagem: "Caixa não encontrado." });
-    }
-    // Caixa é do operador: só ele (ou um admin) fecha o próprio turno.
-    if (caixa.usuario_id !== requisicao.usuario.id && requisicao.usuario.perfil !== "administrador") {
-      return resposta.code(403).send({
-        erro: ERROS.SEM_PERMISSAO,
-        mensagem: "Este caixa pertence a outro operador.",
-      });
-    }
+      const caixa = await buscarCaixa(requisicao.params.id);
+      if (!caixa) {
+        return resposta
+          .code(404)
+          .send({ erro: ERROS.NAO_ENCONTRADO, mensagem: "Caixa não encontrado." });
+      }
+      // Caixa é do operador: só ele (ou um admin) fecha o próprio turno.
+      if (
+        caixa.usuario_id !== requisicao.usuario.id &&
+        requisicao.usuario.perfil !== "administrador"
+      ) {
+        return resposta.code(403).send({
+          erro: ERROS.SEM_PERMISSAO,
+          mensagem: "Este caixa pertence a outro operador.",
+        });
+      }
 
-    const resultado = await fecharCaixa({ caixaId: caixa.id, valorContado });
-    if (resultado.erro === "ja_fechado") {
-      return resposta
-        .code(422)
-        .send({ erro: ERROS.CAIXA_FECHADO, mensagem: "Este caixa já está fechado." });
-    }
+      const resultado = await fecharCaixa({ caixaId: caixa.id, valorContado });
+      if (resultado.erro === "ja_fechado") {
+        return resposta
+          .code(422)
+          .send({ erro: ERROS.CAIXA_FECHADO, mensagem: "Este caixa já está fechado." });
+      }
 
-    return resultado;
-  });
+      return resultado;
+    }
+  );
 
   /**
    * Lançamento no caixa. Venda finalizada chega aqui pelo vendas-service com
    * origem `venda` — nunca é digitada por alguém (§5). Lançamento manual usa
    * origem `lancamento_manual`.
    */
-  app.post("/caixa/movimentacoes", async (requisicao, resposta) => {
-    const { tipo, valor, origem, descricao, venda_id } = requisicao.body ?? {};
+  app.post(
+    "/caixa/movimentacoes",
+    { preHandler: validarCorpo(SchemaMovimentacaoCaixa) },
+    async (requisicao, resposta) => {
+      const { tipo, valor, origem, descricao, venda_id: vendaId } = requisicao.body;
 
-    if (!Object.values(TIPO_MOVIMENTACAO_CAIXA).includes(tipo)) {
-      return invalido(resposta, "tipo deve ser entrada ou saida.");
-    }
-    if (!Object.values(ORIGEM_MOVIMENTACAO_CAIXA).includes(origem)) {
-      return invalido(resposta, "origem deve ser venda ou lancamento_manual.");
-    }
-    const valorNumero = valorValido(valor);
-    if (!valorNumero) return invalido(resposta, "valor precisa ser maior que zero.");
+      // Regra cruzada (não é forma/tipo de campo, é regra de negócio): só o
+      // schema não dá pra saber que "manual" exige descrição.
+      if (origem === ORIGEM_MOVIMENTACAO_CAIXA.LANCAMENTO_MANUAL && !descricao) {
+        return resposta
+          .code(400)
+          .send({ erro: ERROS.DADOS_INVALIDOS, mensagem: "Lançamento manual exige descricao." });
+      }
 
-    if (origem === ORIGEM_MOVIMENTACAO_CAIXA.LANCAMENTO_MANUAL && !descricao) {
-      return invalido(resposta, "Lançamento manual exige descricao.");
-    }
+      const caixa = await buscarCaixaAberto(requisicao.usuario.id);
+      if (!caixa) {
+        return resposta.code(422).send({
+          erro: ERROS.CAIXA_FECHADO,
+          mensagem: "Nenhum caixa aberto para este operador — abra o caixa antes de operar.",
+        });
+      }
 
-    const caixa = await buscarCaixaAberto(requisicao.usuario.id);
-    if (!caixa) {
-      return resposta.code(422).send({
-        erro: ERROS.CAIXA_FECHADO,
-        mensagem: "Nenhum caixa aberto para este operador — abra o caixa antes de operar.",
+      const movimentacao = await inserirMovimentacao({
+        caixaId: caixa.id,
+        tipo,
+        valor,
+        origem,
+        descricao,
+        vendaId,
       });
+
+      return resposta.code(201).send({ movimentacao });
     }
-
-    const movimentacao = await inserirMovimentacao({
-      caixaId: caixa.id,
-      tipo,
-      valor: valorNumero,
-      origem,
-      descricao,
-      vendaId: venda_id ?? null,
-    });
-
-    return resposta.code(201).send({ movimentacao });
-  });
+  );
 
   app.get("/contas-pagar", async (requisicao) => ({
     contas: await listarContas("contas_pagar", requisicao.query?.status),
   }));
 
-  app.post("/contas-pagar", { preHandler: auth.exigirPermissao("ver_financeiro") }, async (requisicao, resposta) => {
-    const { fornecedor_id, descricao, valor, vencimento } = requisicao.body ?? {};
-    if (!descricao) return invalido(resposta, "Informe descricao.");
-    const valorNumero = valorValido(valor);
-    if (!valorNumero) return invalido(resposta, "valor precisa ser maior que zero.");
+  app.post(
+    "/contas-pagar",
+    { preHandler: [auth.exigirPermissao("ver_financeiro"), validarCorpo(SchemaContaPagar)] },
+    async (requisicao, resposta) => {
+      const { fornecedor_id: fornecedorId, descricao, valor, vencimento } = requisicao.body;
 
-    // Compra recebida sem data combinada entra com vencimento em 30 dias.
-    const conta = await inserirContaPagar({
-      fornecedorId: fornecedor_id,
-      descricao,
-      valor: valorNumero,
-      vencimento: vencimento ?? null,
-    });
-    return resposta.code(201).send({ conta });
-  });
+      // Compra recebida sem data combinada entra com vencimento em 30 dias.
+      const conta = await inserirContaPagar({ fornecedorId, descricao, valor, vencimento });
+      return resposta.code(201).send({ conta });
+    }
+  );
 
   app.patch("/contas-pagar/:id/pagar", { preHandler: auth.exigirPermissao("ver_financeiro") }, async (requisicao, resposta) => {
     const conta = await quitarContaPagar(requisicao.params.id);
@@ -193,22 +230,15 @@ export async function registrarRotas(app) {
     contas: await listarContas("contas_receber", requisicao.query?.status),
   }));
 
-  app.post("/contas-receber", { preHandler: auth.exigirPermissao("ver_financeiro") }, async (requisicao, resposta) => {
-    const { origem, descricao, valor, vencimento } = requisicao.body ?? {};
-    if (!origem || !descricao || !vencimento) {
-      return invalido(resposta, "Informe origem, descricao e vencimento.");
+  app.post(
+    "/contas-receber",
+    { preHandler: [auth.exigirPermissao("ver_financeiro"), validarCorpo(SchemaContaReceber)] },
+    async (requisicao, resposta) => {
+      const { origem, descricao, valor, vencimento } = requisicao.body;
+      const conta = await inserirContaReceber({ origem, descricao, valor, vencimento });
+      return resposta.code(201).send({ conta });
     }
-    const valorNumero = valorValido(valor);
-    if (!valorNumero) return invalido(resposta, "valor precisa ser maior que zero.");
-
-    const conta = await inserirContaReceber({
-      origem,
-      descricao,
-      valor: valorNumero,
-      vencimento,
-    });
-    return resposta.code(201).send({ conta });
-  });
+  );
 
   app.patch("/contas-receber/:id/receber", { preHandler: auth.exigirPermissao("ver_financeiro") }, async (requisicao, resposta) => {
     const conta = await quitarContaReceber(requisicao.params.id);

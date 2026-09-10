@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import { ERROS } from "@arkos/shared-types";
+import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
@@ -64,7 +65,13 @@ export function construirApp() {
     logger: { level: env.NODE_ENV === "development" ? "info" : "warn" },
   });
 
-  app.register(cors, { origin: env.FRONTEND_URL });
+  // Antes de tudo: o token agora viaja em cookie httpOnly (packages/auth-middleware),
+  // e `request.cookies`/`reply.setCookie` só existem depois deste registro.
+  app.register(cookie);
+  // credentials: true é o que faz o navegador mandar o cookie em requisição
+  // cross-origin — necessário mesmo com o proxy same-origin do Vite/nginx,
+  // porque cobre também quem acessa a API direto de outra origem.
+  app.register(cors, { origin: env.FRONTEND_URL, credentials: true });
   app.register(helmet);
   // Global false: rate limit só vale nas rotas que pedirem via `config.rateLimit`
   // (hoje, só o login — ver modulos/auth/rotas.js).

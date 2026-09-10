@@ -1,0 +1,72 @@
+name: CI
+
+# Roda em todo push. O backend é um monolito só (apps/api), então a suíte
+# inteira valida num banco Postgres efêmero — nada toca o banco remoto real.
+on:
+  push:
+
+jobs:
+  testes-e-auditoria:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: arkos
+          POSTGRES_PASSWORD: arkos
+          POSTGRES_DB: arkos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U arkos"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Baixa o código
+        uses: actions/checkout@v4
+
+      - name: Configura o Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Instala as dependências
+        run: npm ci
+
+      - name: Configura o .env para o banco efêmero do CI
+        run: |
+          cat <<'EOF' > .env
+          DATABASE_URL=postgres://arkos:arkos@localhost:5432/arkos
+          JWT_SECRET=chave-de-teste-usada-so-no-ci-nunca-em-producao
+          JWT_EXPIRES_IN=8h
+          NODE_ENV=development
+          PORT=3000
+          TZ_NEGOCIO=America/Sao_Paulo
+          EOF
+
+      - name: Roda as migrations
+        run: npm run migrate
+
+      - name: Cria os usuários de teste (um por perfil)
+        run: npm run seed
+
+      - name: Sobe a API, roda o fluxo do MVP e a suíte de integração
+        run: |
+          npm run dev:api &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/health > /dev/null && break
+            sleep 1
+          done
+          npm run test:fluxo
+          npm run test:integracao
+
+      # --omit=dev: ferramenta só de desenvolvimento (ex.: escpos-emulator, o
+      # emulador de impressora térmica) nunca entra no build de produção —
+      # vulnerabilidade lá não trava o CI. O que vai para produção continua
+      # auditado normalmente, e falha em achado alto ou crítico.
+      - name: Audita as dependências de produção (falha em achado alto ou crítico)
+        run: npm audit --omit=dev --audit-level=high

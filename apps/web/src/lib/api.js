@@ -14,10 +14,6 @@ const PREFIXOS = {
   compras: "/api/compras",
 };
 
-export const CHAVE_TOKEN = "arkos.token";
-/** Token do administrador guardado enquanto ele simula outro perfil. */
-export const CHAVE_TOKEN_ORIGINAL = "arkos.token.original";
-
 export class ErroApi extends Error {
   /**
    * @param {number} status
@@ -32,34 +28,26 @@ export class ErroApi extends Error {
   }
 }
 
-export function lerToken() {
-  return localStorage.getItem(CHAVE_TOKEN);
-}
-
-export function gravarToken(token) {
-  if (token) localStorage.setItem(CHAVE_TOKEN, token);
-  else localStorage.removeItem(CHAVE_TOKEN);
-}
-
 /**
  * @param {keyof typeof PREFIXOS} servico
  * @param {string} caminho
- * @param {{ metodo?: string, corpo?: unknown, semAuth?: boolean }} [opcoes]
+ * @param {{ metodo?: string, corpo?: unknown }} [opcoes]
  */
 export async function chamar(servico, caminho, opcoes = {}) {
-  const { metodo = "GET", corpo, semAuth = false } = opcoes;
+  const { metodo = "GET", corpo } = opcoes;
   const prefixo = PREFIXOS[servico];
   if (!prefixo) throw new Error(`Serviço desconhecido: ${servico}`);
 
   const cabecalhos = {};
   if (corpo !== undefined) cabecalhos["Content-Type"] = "application/json";
 
-  const token = semAuth ? null : lerToken();
-  if (token) cabecalhos.Authorization = `Bearer ${token}`;
-
+  // Token viaja num cookie httpOnly (setado pelo backend no login) — o
+  // navegador manda sozinho, mas só em requisição same-origin ou com
+  // `credentials: "include"` em cross-origin.
   const resposta = await fetch(`${prefixo}${caminho}`, {
     method: metodo,
     headers: cabecalhos,
+    credentials: "include",
     body: corpo === undefined ? undefined : JSON.stringify(corpo),
   });
 
@@ -68,7 +56,6 @@ export async function chamar(servico, caminho, opcoes = {}) {
 
   if (!resposta.ok) {
     if (resposta.status === 401) {
-      gravarToken(null);
       window.dispatchEvent(new CustomEvent("arkos:sessao-expirada"));
     }
     throw new ErroApi(resposta.status, dados);
@@ -86,9 +73,8 @@ export async function chamar(servico, caminho, opcoes = {}) {
  * @param {string} nomePadrao usado se o serviço não mandar Content-Disposition
  */
 export async function baixarArquivo(servico, caminho, nomePadrao) {
-  const token = lerToken();
   const resposta = await fetch(`${PREFIXOS[servico]}${caminho}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: "include",
   });
 
   if (!resposta.ok) {
@@ -121,7 +107,7 @@ export async function baixarArquivo(servico, caminho, nomePadrao) {
 
 const metodosDe = (servico) => ({
   get: (caminho) => chamar(servico, caminho),
-  post: (caminho, corpo, extras) => chamar(servico, caminho, { metodo: "POST", corpo, ...extras }),
+  post: (caminho, corpo) => chamar(servico, caminho, { metodo: "POST", corpo }),
   patch: (caminho, corpo) => chamar(servico, caminho, { metodo: "PATCH", corpo }),
   del: (caminho) => chamar(servico, caminho, { metodo: "DELETE" }),
 });

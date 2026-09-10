@@ -1,19 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { PERFIS } from "@arkos/shared-types";
-import { CHAVE_TOKEN_ORIGINAL, api, gravarToken, lerToken } from "./api.js";
+import { api } from "./api.js";
 
 const AutenticacaoContexto = createContext(null);
 
 export function ProvedorAutenticacao({ children }) {
   const [usuario, definirUsuario] = useState(null);
-  const [carregando, definirCarregando] = useState(Boolean(lerToken()));
+  const [carregando, definirCarregando] = useState(true);
 
-  // Token no localStorage sobrevive ao refresh: revalida em /auth/me.
+  // O token vive num cookie httpOnly — o JS não enxerga se ele existe, então
+  // a única forma de saber se a sessão sobreviveu ao refresh é perguntar.
   useEffect(() => {
-    if (!lerToken()) {
-      definirCarregando(false);
-      return;
-    }
     let cancelado = false;
     api.auth
       .get("/me")
@@ -21,7 +18,6 @@ export function ProvedorAutenticacao({ children }) {
         if (!cancelado) definirUsuario(dados.usuario ?? dados);
       })
       .catch(() => {
-        gravarToken(null);
         if (!cancelado) definirUsuario(null);
       })
       .finally(() => {
@@ -39,37 +35,35 @@ export function ProvedorAutenticacao({ children }) {
   }, []);
 
   const entrar = useCallback(async (email, senha) => {
-    const dados = await api.auth.post("/login", { email, senha }, { semAuth: true });
-    gravarToken(dados.token);
+    // O cookie httpOnly quem seta é o backend, na resposta deste POST — nada
+    // para o front guardar aqui.
+    const dados = await api.auth.post("/login", { email, senha });
     definirUsuario(dados.usuario);
     return dados.usuario;
   }, []);
 
-  const sair = useCallback(() => {
-    localStorage.removeItem(CHAVE_TOKEN_ORIGINAL);
-    gravarToken(null);
-    definirUsuario(null);
+  const sair = useCallback(async () => {
+    // Cookie httpOnly não some por conta própria — só o backend limpa.
+    try {
+      await api.auth.post("/logout", {});
+    } finally {
+      definirUsuario(null);
+    }
   }, []);
 
   /**
-   * Simulação de perfil (só administrador): guarda o token real, passa a usar o
-   * token do perfil simulado e volta atrás em encerrarSimulacao.
+   * Simulação de perfil (só administrador): o backend troca o cookie ativo
+   * pelo do perfil simulado e guarda o token real num segundo cookie
+   * (`arkos_token_original`), para `encerrarSimulacao` devolver depois.
    */
   const simular = useCallback(async (perfil) => {
-    const original = lerToken();
     const dados = await api.auth.post("/simular", { perfil });
-    localStorage.setItem(CHAVE_TOKEN_ORIGINAL, original);
-    gravarToken(dados.token);
     definirUsuario(dados.usuario);
     return dados.usuario;
   }, []);
 
   const encerrarSimulacao = useCallback(async () => {
-    const original = localStorage.getItem(CHAVE_TOKEN_ORIGINAL);
-    if (!original) return null;
-    gravarToken(original);
-    localStorage.removeItem(CHAVE_TOKEN_ORIGINAL);
-    const dados = await api.auth.get("/me");
+    const dados = await api.auth.post("/encerrar-simulacao", {});
     definirUsuario(dados.usuario);
     return dados.usuario;
   }, []);

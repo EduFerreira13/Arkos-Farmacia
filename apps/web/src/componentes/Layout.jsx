@@ -592,8 +592,10 @@ export function Layout() {
     definirErro(null);
     definirOcupado(true);
     try {
-      if (perfil === PERFIS.ADMINISTRADOR) await encerrarSimulacao();
-      else if (simulando) {
+      if (perfil === PERFIS.ADMINISTRADOR) {
+        // Já é administrador, sem simular nada: nada para encerrar.
+        if (simulando) await encerrarSimulacao();
+      } else if (simulando) {
         await encerrarSimulacao();
         await simular(perfil);
       } else {

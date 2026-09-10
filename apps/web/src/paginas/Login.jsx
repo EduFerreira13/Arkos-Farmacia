@@ -95,7 +95,7 @@ function FormularioRecuperacao({ emailInicial, aoVoltar }) {
     definirErro(null);
     definirEnviando(true);
     try {
-      const resposta = await api.auth.post("/recuperar-senha", { email: email.trim() }, { semAuth: true });
+      const resposta = await api.auth.post("/recuperar-senha", { email: email.trim() });
       definirAviso(resposta.mensagem);
       // Em desenvolvimento o serviço devolve o código, porque não há email.
       if (resposta.token_de_desenvolvimento) {
@@ -121,7 +121,7 @@ function FormularioRecuperacao({ emailInicial, aoVoltar }) {
 
     definirEnviando(true);
     try {
-      await api.auth.post("/redefinir-senha", { token: codigo.trim(), senha }, { semAuth: true });
+      await api.auth.post("/redefinir-senha", { token: codigo.trim(), senha });
       definirPronto(true);
     } catch (falha) {
       definirErro(falha.message);

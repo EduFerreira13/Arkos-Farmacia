@@ -3,8 +3,24 @@ import { ERROS, STATUS_NOTA_FISCAL } from "@arkos/shared-types";
 import { criarAutenticacao } from "@arkos/auth-middleware";
 import { env } from "../../env.js";
 import { consultar } from "../../db.js";
+import { textoObrigatorio, textoOpcional, validarCorpo, z } from "../../lib/validacao.js";
 
 const auth = criarAutenticacao({ secret: env.JWT_SECRET });
+
+const SchemaEmitirNota = z.object({
+  venda_id: textoObrigatorio("Informe venda_id."),
+  cpf_nota: textoOpcional(),
+});
+
+const SchemaRegistrarControlado = z.object({
+  venda_id: textoObrigatorio("Informe venda_id."),
+  produto_id: textoObrigatorio("Informe produto_id."),
+  receita_id: textoObrigatorio("Informe receita_id."),
+});
+
+const SchemaEnviarSngpc = z.object({
+  ids: z.array(z.string().min(1, "id inválido")).min(1, "Informe os ids dos registros a enviar."),
+});
 
 /**
  * Chave de acesso simulada: 44 dígitos derivados do ID da venda, então a mesma
@@ -17,10 +33,6 @@ function chaveAcessoSimulada(vendaId) {
   return digitos.padEnd(44, "0").slice(0, 44);
 }
 
-function invalido(resposta, mensagem) {
-  return resposta.code(400).send({ erro: ERROS.DADOS_INVALIDOS, mensagem });
-}
-
 /**
  * Rotas de docs/API-CONTRATOS.md — fiscal-service (mockado no MVP).
  * @param {import("fastify").FastifyInstance} app
@@ -28,13 +40,10 @@ function invalido(resposta, mensagem) {
 export async function registrarRotas(app) {
   app.addHook("preHandler", auth.autenticar);
 
-  app.post("/notas-fiscais", async (requisicao, resposta) => {
-    const vendaId = requisicao.body?.venda_id;
-    if (!vendaId) return invalido(resposta, "Informe venda_id.");
-
+  app.post("/notas-fiscais", { preHandler: validarCorpo(SchemaEmitirNota) }, async (requisicao, resposta) => {
     // CPF na nota: opcional, só a pedido do cliente — não exige cliente
     // cadastrado (LGPD, minimização de dados; ver docs/PENDENCIAS.md).
-    const cpfNota = requisicao.body?.cpf_nota || null;
+    const { venda_id: vendaId, cpf_nota: cpfNota } = requisicao.body;
 
     // Emissão é idempotente: reemitir a mesma venda devolve a nota existente.
     const { rows: existentes } = await consultar(
@@ -102,21 +111,22 @@ export async function registrarRotas(app) {
    * Registro de controlado para o SNGPC — mockado: `enviado_anvisa` fica false
    * até existir a integração real com a Anvisa (§7).
    */
-  app.post("/controlados-sngpc", async (requisicao, resposta) => {
-    const { venda_id, produto_id, receita_id } = requisicao.body ?? {};
-    if (!venda_id || !produto_id || !receita_id) {
-      return invalido(resposta, "Informe venda_id, produto_id e receita_id.");
+  app.post(
+    "/controlados-sngpc",
+    { preHandler: validarCorpo(SchemaRegistrarControlado) },
+    async (requisicao, resposta) => {
+      const { venda_id, produto_id, receita_id } = requisicao.body;
+
+      const { rows } = await consultar(
+        `INSERT INTO fiscal.controlados_sngpc (venda_id, produto_id, receita_id)
+              VALUES ($1, $2, $3)
+           RETURNING id, venda_id, produto_id, receita_id, enviado_anvisa, criado_em`,
+        [venda_id, produto_id, receita_id]
+      );
+
+      return resposta.code(201).send({ registro: rows[0] });
     }
-
-    const { rows } = await consultar(
-      `INSERT INTO fiscal.controlados_sngpc (venda_id, produto_id, receita_id)
-            VALUES ($1, $2, $3)
-         RETURNING id, venda_id, produto_id, receita_id, enviado_anvisa, criado_em`,
-      [venda_id, produto_id, receita_id]
-    );
-
-    return resposta.code(201).send({ registro: rows[0] });
-  });
+  );
 
   app.get("/controlados-sngpc", async (requisicao) => {
     const { venda_id, de, ate, pendentes } = requisicao.query ?? {};
@@ -163,12 +173,11 @@ export async function registrarRotas(app) {
    */
   app.post(
     "/controlados-sngpc/enviar",
-    { preHandler: auth.exigirPermissao("validar_receita") },
+    {
+      preHandler: [auth.exigirPermissao("validar_receita"), validarCorpo(SchemaEnviarSngpc)],
+    },
     async (requisicao, resposta) => {
-      const ids = requisicao.body?.ids;
-      if (!Array.isArray(ids) || !ids.length) {
-        return invalido(resposta, "Informe os ids dos registros a enviar.");
-      }
+      const { ids } = requisicao.body;
 
       const { rows } = await consultar(
         `UPDATE fiscal.controlados_sngpc

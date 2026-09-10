@@ -9,6 +9,30 @@ import jwt from "jsonwebtoken";
 import { ERROS, PERFIS } from "@arkos/shared-types";
 
 /**
+ * Nome do cookie httpOnly que carrega o token (LGPD/segurança: fora do
+ * alcance do JavaScript do front, ao contrário do antigo localStorage).
+ * `apps/api/src/app.js` registra `@fastify/cookie`; sem ele, `request.cookies`
+ * simplesmente não existe e o fallback abaixo cobre o header.
+ */
+export const NOME_COOKIE_TOKEN = "arkos_token";
+
+/**
+ * Token da requisição: cookie primeiro, header `Authorization: Bearer` como
+ * fallback (clientes que não usam cookie, ex.: chamada de servidor a servidor
+ * ou uma ferramenta de teste).
+ * @param {import("fastify").FastifyRequest} request
+ * @returns {string | null}
+ */
+export function extrairToken(request) {
+  const doCookie = request.cookies?.[NOME_COOKIE_TOKEN];
+  if (doCookie) return doCookie;
+
+  const header = request.headers.authorization ?? "";
+  const [esquema, doHeader] = header.split(" ");
+  return esquema === "Bearer" && doHeader ? doHeader : null;
+}
+
+/**
  * @typedef {Object} UsuarioAutenticado
  * @property {string} id
  * @property {string} nome
@@ -107,10 +131,9 @@ export function criarAutenticacao({ secret }) {
 
   /** Preenche request.usuario ou responde 401. */
   async function autenticar(request, reply) {
-    const header = request.headers.authorization ?? "";
-    const [esquema, token] = header.split(" ");
+    const token = extrairToken(request);
 
-    if (esquema !== "Bearer" || !token) {
+    if (!token) {
       return reply.code(401).send({
         erro: ERROS.NAO_AUTENTICADO,
         mensagem: "Token ausente ou mal formatado.",
