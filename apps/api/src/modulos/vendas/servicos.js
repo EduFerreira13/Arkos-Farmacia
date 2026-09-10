@@ -59,11 +59,17 @@ export const estoque = {
   buscarProduto: (produtoId, token) =>
     chamarServico("estoque", `/produtos/${produtoId}`, { token }),
 
-  darSaidaFefo: ({ produtoId, quantidade, motivo }, token) =>
+  darSaidaFefo: ({ produtoId, quantidade, motivo, permitirSaldoNegativo }, token) =>
     chamarServico("estoque", "/movimentacoes", {
       metodo: "POST",
       token,
-      corpo: { produto_id: produtoId, tipo: "saida", quantidade, motivo },
+      corpo: {
+        produto_id: produtoId,
+        tipo: "saida",
+        quantidade,
+        motivo,
+        ...(permitirSaldoNegativo ? { permitir_saldo_negativo: true } : {}),
+      },
     }),
 
   devolverLote: ({ produtoId, loteId, quantidade, motivo }, token) =>

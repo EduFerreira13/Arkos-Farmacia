@@ -15,6 +15,7 @@ export async function buscarVenda(id) {
   const { rows } = await consultar(
     `SELECT v.id, v.numero, v.usuario_id, v.status, v.valor_total, v.desconto,
             v.motivo_cancelamento, v.categoria_cancelamento, v.criado_em, v.cliente_id,
+            v.origem_sincronizacao, v.estoque_conferencia_pendente,
             c.nome AS cliente_nome, c.convenio AS cliente_convenio, c.telefone AS cliente_telefone
        FROM vendas.vendas v
        LEFT JOIN vendas.clientes c ON c.id = v.cliente_id
@@ -243,6 +244,94 @@ export async function marcarCancelada({ vendaId, motivo, categoria }) {
 /** Atualiza o lote de referência do item para o primeiro lote realmente baixado. */
 export async function atualizarLoteDoItem({ itemId, loteId }) {
   await consultar(`UPDATE vendas.itens_venda SET lote_id = $2 WHERE id = $1`, [itemId, loteId]);
+}
+
+/**
+ * Grava, numa única transação, uma venda montada offline no PDV e já
+ * validada (itens, desconto, receita, pagamento — ver `/sincronizar-offline`
+ * em rotas.js). Sem `lote_id`: o lote de verdade só é decidido na baixa FEFO,
+ * best-effort, depois desta transação.
+ *
+ * `id` vem do client (UUID pré-gerado) e é a própria chave de idempotência:
+ * reenviar a mesma sincronização (rede caiu no meio da resposta) esbarra no
+ * `ON CONFLICT` e não duplica a venda — só devolve `criada: false`.
+ */
+export function sincronizarVendaOffline({
+  id,
+  usuarioId,
+  clienteId,
+  criadoEmOffline,
+  itens,
+  descontoVenda,
+  valorTotal,
+  receita,
+  pagamentos,
+}) {
+  return emTransacao(async (cliente) => {
+    const { rows: inseridas } = await cliente.query(
+      `INSERT INTO vendas.vendas
+         (id, usuario_id, cliente_id, status, valor_total, desconto, criado_em, finalizado_em,
+          origem_sincronizacao)
+       VALUES ($1, $2, $3, 'finalizada', $4, $5, $6, $6, 'offline')
+       ON CONFLICT (id) DO NOTHING
+       RETURNING id, numero, usuario_id, cliente_id, status, valor_total, desconto, criado_em,
+                 finalizado_em, origem_sincronizacao, estoque_conferencia_pendente`,
+      [id, usuarioId, clienteId ?? null, valorTotal, descontoVenda, criadoEmOffline]
+    );
+
+    // Já sincronizada antes (reenvio por queda de conexão no meio da
+    // resposta): idempotente, nada mais a fazer.
+    if (!inseridas.length) {
+      return { criada: false };
+    }
+
+    for (const item of itens) {
+      await cliente.query(
+        `INSERT INTO vendas.itens_venda
+           (venda_id, produto_id, quantidade, preco_unitario, desconto, produto_nome,
+            tipo_controle, dias_de_uso)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          id,
+          item.produto_id,
+          item.quantidade,
+          item.preco_unitario,
+          item.desconto ?? 0,
+          item.produto_nome ?? null,
+          item.tipo_controle ?? null,
+          item.dias_de_uso ?? null,
+        ]
+      );
+    }
+
+    for (const pagamento of pagamentos) {
+      await cliente.query(
+        `INSERT INTO vendas.pagamentos (venda_id, forma_pagamento, valor) VALUES ($1, $2, $3)`,
+        [id, pagamento.forma_pagamento, pagamento.valor]
+      );
+    }
+
+    let receitaInserida = null;
+    if (receita) {
+      const { rows } = await cliente.query(
+        `INSERT INTO vendas.receitas (venda_id, medico_nome, medico_crm, paciente_nome, data_emissao)
+              VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, venda_id, medico_nome, medico_crm, paciente_nome, data_emissao`,
+        [id, receita.medico_nome, receita.medico_crm, receita.paciente_nome, receita.data_emissao]
+      );
+      receitaInserida = rows[0];
+    }
+
+    return { criada: true, venda: inseridas[0], receita: receitaInserida };
+  });
+}
+
+/** Sinaliza, para conferência do gerente, que a baixa de estoque desta venda foi forçada com saldo insuficiente. */
+export async function marcarConferenciaPendente(vendaId) {
+  await consultar(
+    `UPDATE vendas.vendas SET estoque_conferencia_pendente = true WHERE id = $1`,
+    [vendaId]
+  );
 }
 
 /**

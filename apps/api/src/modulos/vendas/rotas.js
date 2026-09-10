@@ -5,9 +5,10 @@ import {
   STATUS_VENDA,
   exigeReceita,
 } from "@arkos/shared-types";
-import { criarAutenticacao } from "@arkos/auth-middleware";
+import { assinarToken, criarAutenticacao } from "@arkos/auth-middleware";
 import {
   descontoPorPercentual,
+  validarFinalizacao,
   validarItens as validarItensDaVenda,
   validarPagamentoSuficiente,
   validarReceitaObrigatoria,
@@ -60,11 +61,13 @@ import {
   listarVendasNoPeriodo,
   definirDescontoDoItem,
   marcarCancelada,
+  marcarConferenciaPendente,
   marcarFinalizada,
   removerItem,
   removerReceita,
   resumoDoDia,
   salvarReceita,
+  sincronizarVendaOffline,
 } from "./repositorio.js";
 
 const auth = criarAutenticacao({ secret: env.JWT_SECRET });
@@ -79,6 +82,21 @@ function naoEncontrado(resposta, mensagem) {
 
 function bloqueado(resposta, codigo, mensagem) {
   return resposta.code(422).send({ erro: codigo, mensagem });
+}
+
+/**
+ * Token de vida curta, assinado com o próprio JWT_SECRET, para uma chamada
+ * interna a outro módulo autorizar algo que um pedido comum nunca poderia
+ * (aqui: estoque indo negativo na sincronização offline). Carrega a
+ * identidade real do operador — a movimentação continua rastreável a ele —
+ * só acrescenta `interno: true`, que nenhum token emitido no login carrega.
+ */
+function tokenInterno(usuario) {
+  return `Bearer ${assinarToken(usuario, {
+    secret: env.JWT_SECRET,
+    expiresIn: "2m",
+    extras: { interno: true },
+  })}`;
 }
 
 /** Erro vindo de outro serviço: preserva o código de negócio quando existir. */
@@ -244,6 +262,35 @@ const SchemaCancelar = z.object({
     error: `Escolha o motivo do cancelamento. Use um de: ${CATEGORIA_CANCELAMENTO_LISTA.join(", ")}.`,
   }),
   motivo: textoOpcional(),
+});
+
+/**
+ * Venda inteira montada offline no PDV (sem chamadas intermediárias) — sem
+ * `lote_id` (decidido no servidor pela baixa FEFO) e sem `valor_total` (sempre
+ * recalculado aqui, nunca confiando no total que o client mandar).
+ */
+const SchemaItemOffline = z.object({
+  produto_id: textoObrigatorio("Informe produto_id em cada item."),
+  quantidade: z.number().int().positive("quantidade precisa ser um inteiro maior que zero."),
+  preco_unitario: z.number().nonnegative("preco_unitario inválido."),
+  desconto: z.number().nonnegative("desconto inválido.").default(0),
+  produto_nome: textoOpcional(),
+  tipo_controle: textoOpcional(),
+  dias_de_uso: z.number().int().nonnegative().optional().nullable(),
+});
+
+const SchemaSincronizarOffline = z.object({
+  // Gerado no navegador (UUID) — vira a própria PK da venda: reenviar a mesma
+  // sincronização (rede caiu no meio da resposta) é idempotente por causa
+  // deste id, não de um campo à parte.
+  id: z.string().uuid("id precisa ser um UUID (gerado no navegador)."),
+  criado_em_offline: textoObrigatorio("Informe criado_em_offline."),
+  cliente_id: textoOpcional(),
+  itens: z.array(SchemaItemOffline),
+  desconto_venda: z.number().nonnegative("desconto_venda inválido.").default(0),
+  receita: SchemaReceita.optional().nullable(),
+  pagamentos: z.array(SchemaPagamento).default([]),
+  cpf_nota: textoOpcional(),
 });
 
 /**
@@ -1304,6 +1351,164 @@ export async function registrarRotas(app) {
         texto: impressao.texto,
       },
     };
+    }
+  );
+
+  /**
+   * Sincronização de venda offline do PDV: recebe a venda inteira já fechada
+   * no caixa (itens, desconto, receita, pagamentos) — não as chamadas
+   * incrementais de sempre — e valida/grava tudo de uma vez, numa única
+   * transação (docs/PLANO-DE-CONSTRUCAO.md, PDV offline).
+   *
+   * Diferente do `/finalizar` online: a venda já aconteceu de verdade sem
+   * rede, então estoque insuficiente nunca recusa a sincronização — fica
+   * sinalizado em `estoque_conferencia_pendente` para o gerente conferir
+   * depois (mesmo princípio de nunca desfazer uma operação já concluída que
+   * já vale para falha de NFC-e e divergência de recebimento de compra).
+   * Receita obrigatória, teto de desconto do perfil e pagamento insuficiente
+   * continuam bloqueio duro — o PDV já deveria ter recusado isso offline;
+   * aqui é a segunda checagem, agora contra o token real do operador.
+   */
+  app.post(
+    "/sincronizar-offline",
+    { preHandler: [auth.exigirPermissao("vender"), validarCorpo(SchemaSincronizarOffline)] },
+    async (requisicao, resposta) => {
+      const corpo = requisicao.body;
+      const token = requisicao.headers.authorization;
+
+      const validacao = validarFinalizacao({
+        itens: corpo.itens,
+        receita: corpo.receita ?? null,
+        pagamentos: corpo.pagamentos,
+        descontoVenda: corpo.desconto_venda,
+        usuario: requisicao.usuario,
+      });
+
+      if (!validacao.valido) {
+        const [primeiro] = validacao.erros;
+        if (primeiro.codigo === ERROS.DADOS_INVALIDOS) {
+          return invalido(resposta, primeiro.mensagem);
+        }
+        return bloqueado(resposta, primeiro.codigo, primeiro.mensagem);
+      }
+
+      const resultado = await sincronizarVendaOffline({
+        id: corpo.id,
+        usuarioId: requisicao.usuario.id,
+        clienteId: corpo.cliente_id ?? null,
+        criadoEmOffline: corpo.criado_em_offline,
+        itens: corpo.itens,
+        descontoVenda: corpo.desconto_venda,
+        valorTotal: validacao.valores.valorTotal,
+        receita: corpo.receita ?? null,
+        pagamentos: corpo.pagamentos,
+      });
+
+      if (!resultado.criada) {
+        // Reenvio de uma sincronização que já tinha sido concluída antes
+        // (a resposta anterior se perdeu numa nova queda de conexão) —
+        // idempotente por causa do id gerado no client, não duplica a venda.
+        return resposta.code(200).send({
+          venda: await buscarVendaCompleta(corpo.id),
+          ja_sincronizada: true,
+        });
+      }
+
+      const completa = await buscarVendaCompleta(corpo.id);
+      const tokenParaEstoque = tokenInterno(requisicao.usuario);
+
+      // Baixa de estoque, item por item, por FEFO — best-effort: a venda já
+      // está gravada, então nem saldo insuficiente nem o estoque-service fora
+      // do ar desfazem a venda, só sinalizam a conferência.
+      let conferenciaPendente = false;
+      for (const item of completa.itens) {
+        try {
+          const baixa = await estoque.darSaidaFefo(
+            {
+              produtoId: item.produto_id,
+              quantidade: item.quantidade,
+              motivo: `venda offline ${completa.id}`,
+              permitirSaldoNegativo: true,
+            },
+            tokenParaEstoque
+          );
+          if (baixa.saida.saldo_insuficiente) conferenciaPendente = true;
+          const primeiroLote = baixa.saida.lotes[0]?.lote_id;
+          if (primeiroLote) {
+            await atualizarLoteDoItem({ itemId: item.id, loteId: primeiroLote });
+          }
+        } catch (erro) {
+          conferenciaPendente = true;
+          requisicao.log.error(
+            { erro: erro.message, vendaId: completa.id, produtoId: item.produto_id },
+            "baixa de estoque da sincronizacao offline falhou — conferir manualmente"
+          );
+        }
+      }
+
+      if (conferenciaPendente) {
+        await marcarConferenciaPendente(completa.id);
+      }
+
+      // Lançamento no caixa e nota fiscal: mesmo padrão best-effort já usado
+      // no /finalizar online para NFC-e — a venda já aconteceu de verdade,
+      // então uma falha aqui vira log para acompanhamento manual, nunca
+      // motivo para recusar a sincronização.
+      try {
+        await financeiro.lancarNoCaixa(
+          {
+            valor: completa.valor_total,
+            origem: "venda",
+            descricao: `Venda offline ${completa.id.slice(0, 8)}`,
+            vendaId: completa.id,
+          },
+          token
+        );
+      } catch (erro) {
+        requisicao.log.error(
+          { erro: erro.message, vendaId: completa.id },
+          "lancamento no caixa da sincronizacao offline falhou — conferir manualmente"
+        );
+      }
+
+      let nota = null;
+      try {
+        const emissao = await fiscal.emitirNota(
+          { vendaId: completa.id, cpfNota: corpo.cpf_nota },
+          token
+        );
+        nota = emissao.nota;
+      } catch (erro) {
+        requisicao.log.warn(
+          { erro: erro.message, vendaId: completa.id },
+          "emissao de nota da sincronizacao offline falhou — mesmo tratamento do fluxo online (retry manual)"
+        );
+      }
+
+      if (completa.receita) {
+        const controlados = completa.itens.filter((item) => exigeReceita(item.tipo_controle));
+        for (const item of controlados) {
+          try {
+            await fiscal.registrarControlado(
+              { vendaId: completa.id, produtoId: item.produto_id, receitaId: completa.receita.id },
+              token
+            );
+          } catch (erro) {
+            requisicao.log.warn(
+              { erro: erro.message, vendaId: completa.id, produtoId: item.produto_id },
+              "registro no SNGPC da sincronizacao offline falhou"
+            );
+          }
+        }
+      }
+
+      return resposta.code(201).send({
+        venda: await buscarVendaCompleta(completa.id),
+        ja_sincronizada: false,
+        nota_fiscal: nota,
+        estoque_conferencia_pendente: conferenciaPendente,
+        troco: validacao.valores.troco,
+      });
     }
   );
 
