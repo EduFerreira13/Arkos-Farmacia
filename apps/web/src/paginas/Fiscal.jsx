@@ -19,7 +19,7 @@ import {
 
 const PERIODO_INICIAL = { de: diasAtras(29), ate: diasAtras(0) };
 
-/** Notas fiscais emitidas — no MVP a emissão é simulada (§7). */
+/** Notas fiscais emitidas — NFC-e real via Focus NFe, em homologação (§7). */
 export function FiscalNotas() {
   const [periodo, definirPeriodo] = useState(PERIODO_INICIAL);
   const consulta = useMemo(() => `?de=${periodo.de}&ate=${periodo.ate}`, [periodo]);
@@ -35,9 +35,10 @@ export function FiscalNotas() {
         descricao="NFC-e (nota fiscal de consumidor eletrônica) emitida a cada venda finalizada."
       />
 
-      <Aviso tom="info" className="mb-4" titulo="Emissão simulada no MVP">
-        A estrutura é a real (chave de acesso de 44 dígitos, status e XML), mas nenhuma nota é
-        transmitida à Secretaria da Fazenda — falta credencial de um provedor.
+      <Aviso tom="info" className="mb-4" titulo="Emissão em homologação">
+        Cada venda finalizada é transmitida de verdade à Focus NFe, no ambiente de homologação da
+        SEFAZ. Uma nota com status &quot;erro&quot; não impede a venda — o motivo aparece na
+        coluna Situação, para o operador corrigir o cadastro e pedir a emissão de novo.
       </Aviso>
 
       <Card>
@@ -69,8 +70,13 @@ export function FiscalNotas() {
                 chave: "chave_acesso",
                 titulo: "Chave de acesso",
                 renderizar: (nota) => (
-                  <span className="font-mono text-rotulo">{nota.chave_acesso}</span>
+                  <span className="font-mono text-rotulo">{nota.chave_acesso || "—"}</span>
                 ),
+              },
+              {
+                chave: "numero_serie",
+                titulo: "Número/Série",
+                renderizar: (nota) => (nota.numero ? `${nota.numero}/${nota.serie}` : "—"),
               },
               {
                 chave: "cpf_nota",
@@ -79,10 +85,29 @@ export function FiscalNotas() {
               },
               {
                 chave: "status",
-                titulo: "Status",
-                renderizar: (nota) => (
-                  <Badge tom={nota.status === "emitida" ? "sucesso" : "alerta"}>{nota.status}</Badge>
-                ),
+                titulo: "Situação",
+                renderizar: (nota) =>
+                  nota.status === "emitida" ? (
+                    nota.url_consulta ? (
+                      <a
+                        href={nota.url_consulta}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex"
+                      >
+                        <Badge tom="sucesso">Emitida</Badge>
+                      </a>
+                    ) : (
+                      <Badge tom="sucesso">Emitida</Badge>
+                    )
+                  ) : (
+                    <Badge tom="erro">Erro</Badge>
+                  ),
+              },
+              {
+                chave: "mensagem_erro",
+                titulo: "Detalhe",
+                renderizar: (nota) => nota.mensagem_erro || "—",
               },
             ]}
             linhas={dados.notas}
