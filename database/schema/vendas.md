@@ -86,6 +86,8 @@
 | numero | bigint | YES | nextval('vendas.numero_venda_seq'::regclass) |
 | categoria_cancelamento | character varying | YES | - |
 | finalizado_em | timestamp with time zone | YES | - |
+| origem_sincronizacao | USER-DEFINED | NO | 'online'::vendas.origem_venda |
+| estoque_conferencia_pendente | boolean | NO | false |
 
 ## vw_vendas_hoje
 
