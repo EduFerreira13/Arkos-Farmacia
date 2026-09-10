@@ -7,7 +7,7 @@ import {
   STATUS_PEDIDO_COMPRA_LABEL,
   STATUS_PEDIDO_COMPRA_LISTA,
 } from "@arkos/shared-types";
-import { criarAutenticacao } from "@arkos/auth-middleware";
+import { criarAutenticacao, tokenInterno } from "@arkos/auth-middleware";
 import { env } from "../../env.js";
 import { textoObrigatorio, textoOpcional, validarCorpo, z } from "../../lib/validacao.js";
 import { ErroServico, estoque, financeiro } from "./servicos.js";
@@ -147,7 +147,7 @@ export async function registrarRotas(app) {
    * tela voltar; nada no sistema a chama hoje.
    */
   app.get("/sugestao", async (requisicao, resposta) => {
-    const token = requisicao.headers.authorization;
+    const token = tokenInterno(requisicao.usuario, { secret: env.JWT_SECRET });
     try {
       const [alertas, catalogo] = await Promise.all([
         estoque.estoqueBaixo(token),
@@ -193,7 +193,7 @@ export async function registrarRotas(app) {
         desconto: valorDesconto,
         itens,
       } = requisicao.body;
-      const token = requisicao.headers.authorization;
+      const token = tokenInterno(requisicao.usuario, { secret: env.JWT_SECRET });
 
       try {
         // Nome do fornecedor e dos produtos vêm do estoque-service e ficam
@@ -258,7 +258,9 @@ export async function registrarRotas(app) {
     // nome. Se a consulta falhar, o PDF ainda sai — com o que o pedido tem.
     let fornecedor = { nome: pedido.fornecedor_nome };
     try {
-      const { fornecedores } = await estoque.listarFornecedores(requisicao.headers.authorization);
+      const { fornecedores } = await estoque.listarFornecedores(
+        tokenInterno(requisicao.usuario, { secret: env.JWT_SECRET })
+      );
       fornecedor =
         fornecedores.find((registro) => registro.id === pedido.fornecedor_id) ?? fornecedor;
     } catch (erro) {
@@ -314,7 +316,7 @@ export async function registrarRotas(app) {
     { preHandler: [auth.exigirPermissao(PERMISSAO), validarCorpo(SchemaReceberPedido)] },
     async (requisicao, resposta) => {
       const { itens, entregue_em: entregueEm } = requisicao.body;
-      const token = requisicao.headers.authorization;
+      const token = tokenInterno(requisicao.usuario, { secret: env.JWT_SECRET });
 
       const pedido = await buscarPedido(requisicao.params.id);
       if (!pedido) {
