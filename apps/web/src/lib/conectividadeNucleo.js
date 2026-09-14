@@ -27,6 +27,10 @@ export function avaliarConectividade(estado, sucesso) {
  * Um ping = online só com HTTP 200 **e** `banco: "ok"` no corpo — health
  * respondendo com o banco fora do ar não conta (é justamente o Postgres que
  * a sincronização offline precisa). Nunca lança: qualquer falha vira `false`.
+ *
+ * Lê o corpo com `.text()` + `JSON.parse` (não `.json()`) — mesmo padrão de
+ * `apps/web/src/lib/api.js`, e o que faz este ping funcionar contra qualquer
+ * mock de `fetch` que só implemente `.text()` (ex.: `testes/smoke-telas.jsx`).
  */
 export async function pingSaudavel({ timeoutMs = TIMEOUT_PING_MS } = {}) {
   const controle = new AbortController();
@@ -34,7 +38,8 @@ export async function pingSaudavel({ timeoutMs = TIMEOUT_PING_MS } = {}) {
   try {
     const resposta = await fetch("/api/health", { signal: controle.signal });
     if (!resposta.ok) return false;
-    const dados = await resposta.json();
+    const texto = await resposta.text();
+    const dados = texto ? JSON.parse(texto) : null;
     return dados?.banco === "ok";
   } catch {
     return false;

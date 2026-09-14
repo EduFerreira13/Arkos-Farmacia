@@ -48,7 +48,7 @@ test("avaliarConectividade: uma falha isolada não derruba quem já estava onlin
 test("pingSaudavel: true só com 200 e banco ok", async () => {
   globalThis.fetch = async () => ({
     ok: true,
-    json: async () => ({ status: "ok", banco: "ok" }),
+    text: async () => JSON.stringify({ status: "ok", banco: "ok" }),
   });
   assert.equal(await pingSaudavel(), true);
 });
@@ -56,13 +56,13 @@ test("pingSaudavel: true só com 200 e banco ok", async () => {
 test("pingSaudavel: false quando o banco não está ok, mesmo com 200", async () => {
   globalThis.fetch = async () => ({
     ok: true,
-    json: async () => ({ status: "ok", banco: "erro: conexao recusada" }),
+    text: async () => JSON.stringify({ status: "ok", banco: "erro: conexao recusada" }),
   });
   assert.equal(await pingSaudavel(), false);
 });
 
 test("pingSaudavel: false com HTTP de erro", async () => {
-  globalThis.fetch = async () => ({ ok: false, json: async () => ({}) });
+  globalThis.fetch = async () => ({ ok: false, text: async () => "{}" });
   assert.equal(await pingSaudavel(), false);
 });
 
