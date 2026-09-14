@@ -98,8 +98,14 @@ async function transacao(nomes, modo) {
  * `apps/api/src/modulos/vendas/rotas.js` usa para decidir o próximo lote a
  * sair; fica `null` quando não há nenhum lote válido, o que
  * `@arkos/vendas-core` (`validarProdutoNaoVencido`) trata como bloqueio duro.
+ * Também carrega `principio_ativo`, `unidade_venda` e `venda_sob_encomenda`
+ * — a tela do PDV usa os três (busca por princípio ativo, rótulo da
+ * quantidade disponível, e a exceção de "sem estoque" pra quem vende sob
+ * encomenda), então precisam sobreviver no catálogo local também.
  * @param {{ id: string, nome: string, codigo_barras?: string, preco_venda: number,
- *   tipo_controle: string, lotes?: Array<{ quantidade: number, vencido: boolean, data_validade: string }> }} produto
+ *   tipo_controle: string, principio_ativo?: string, unidade_venda?: string,
+ *   venda_sob_encomenda?: boolean,
+ *   lotes?: Array<{ quantidade: number, vencido: boolean, data_validade: string }> }} produto
  */
 export function produtoParaCatalogo(produto) {
   const lotesValidos = (produto.lotes ?? [])
@@ -112,6 +118,9 @@ export function produtoParaCatalogo(produto) {
     codigo_barras: produto.codigo_barras ?? null,
     preco_venda: produto.preco_venda,
     tipo_controle: produto.tipo_controle,
+    principio_ativo: produto.principio_ativo ?? null,
+    unidade_venda: produto.unidade_venda ?? null,
+    venda_sob_encomenda: produto.venda_sob_encomenda === true,
     quantidade_atual: lotesValidos.reduce((soma, lote) => soma + lote.quantidade, 0),
     data_validade_proximo_lote: lotesValidos[0]?.data_validade ?? null,
   };
