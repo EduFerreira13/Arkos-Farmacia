@@ -40,6 +40,7 @@ const { MemoryRouter } = await import("react-router-dom");
 
 const { ProvedorPreferencias } = await import("../src/lib/preferencias.jsx");
 const { ProvedorAutenticacao } = await import("../src/lib/autenticacao.jsx");
+const { ProvedorConectividade } = await import("../src/lib/conectividade.jsx");
 
 const { default: App } = await import("../src/App.jsx");
 const { SECOES } = await import("../src/componentes/Layout.jsx");
@@ -191,6 +192,11 @@ const RESUMO_VENDAS = {
 
 /** Respostas por rota — cobre o que as telas pedem ao montar. */
 const RESPOSTAS = [
+  // Provider de conectividade (apps/web/src/lib/conectividade.jsx): sem esta
+  // fixture o ping ainda funcionaria (mock devolve 404 pra rota sem match, e
+  // pingSaudavel trata isso como offline), mas o log de "sem fixture" no fim
+  // do arquivo ficaria sujo à toa.
+  [/\/api\/health/, { servico: "arkos-api", status: "ok", banco: "ok" }],
   [
     /\/api\/auth\/me$/,
     () => ({
@@ -765,7 +771,11 @@ async function montar(nome, Pagina) {
           React.createElement(
             ProvedorAutenticacao,
             null,
-            React.createElement(MemoryRouter, null, React.createElement(Pagina))
+            React.createElement(
+              ProvedorConectividade,
+              null,
+              React.createElement(MemoryRouter, null, React.createElement(Pagina))
+            )
           )
         )
       );
@@ -825,7 +835,11 @@ async function abrirRota(perfil, caminho, trechoEsperado, deveAbrir) {
           React.createElement(
             ProvedorAutenticacao,
             null,
-            React.createElement(Rota, { initialEntries: [caminho] }, React.createElement(App))
+            React.createElement(
+              ProvedorConectividade,
+              null,
+              React.createElement(Rota, { initialEntries: [caminho] }, React.createElement(App))
+            )
           )
         )
       );
@@ -925,7 +939,11 @@ async function textoDaRota(perfil, caminho) {
         React.createElement(
           ProvedorAutenticacao,
           null,
-          React.createElement(Rota, { initialEntries: [caminho] }, React.createElement(App))
+          React.createElement(
+            ProvedorConectividade,
+            null,
+            React.createElement(Rota, { initialEntries: [caminho] }, React.createElement(App))
+          )
         )
       )
     );
