@@ -88,6 +88,8 @@
 | finalizado_em | timestamp with time zone | YES | - |
 | origem_sincronizacao | USER-DEFINED | NO | 'online'::vendas.origem_venda |
 | estoque_conferencia_pendente | boolean | NO | false |
+| conferencia_resolvida_por | uuid | YES | - |
+| conferencia_resolvida_em | timestamp with time zone | YES | - |
 
 ## vw_vendas_hoje
 
