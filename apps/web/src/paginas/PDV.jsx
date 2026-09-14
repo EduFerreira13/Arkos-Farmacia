@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   CheckCircle2,
@@ -24,8 +24,32 @@ import {
 import { api } from "../lib/api.js";
 import { usarBusca } from "../lib/usarBusca.js";
 import { usarLeitorCodigoBarras } from "../lib/usarLeitorCodigoBarras.js";
-import { formatarData, formatarMoeda, formatarNumero, hojeISO } from "../lib/formato.js";
+import { formatarData, formatarDataHora, formatarMoeda, formatarNumero, hojeISO } from "../lib/formato.js";
 import { descontoMaximoPct, usarAutenticacao } from "../lib/autenticacao.jsx";
+import { usarConectividade } from "../lib/conectividade.jsx";
+import {
+  adicionarVendaPendente,
+  buscarProdutoPorCodigoBarras,
+  limparVendaEmAndamento,
+  listarCatalogo,
+  listarVendasPendentes,
+  obterVendaEmAndamento,
+  salvarVendaEmAndamento,
+} from "../lib/bancoOffline.js";
+import {
+  adicionarItemLocal,
+  adicionarPagamentoLocal,
+  alterarQuantidadeLocal,
+  aplicarDescontoLocal,
+  criarVendaLocal,
+  descontarItemLocal,
+  finalizarVendaLocal,
+  removerItemLocal,
+  removerPagamentoLocal,
+  removerReceitaLocal,
+  vincularReceitaLocal,
+} from "../lib/carrinhoOffline.js";
+import { usarAtualizacaoDeCatalogo, usarSincronizadorAutomatico } from "../lib/sincronizacaoOffline.js";
 import { Botao, BotaoIcone } from "../componentes/Botao.jsx";
 import { CampoCheckbox, CampoSelect, CampoTexto } from "../componentes/Campos.jsx";
 import { Modal } from "../componentes/Modal.jsx";
@@ -403,7 +427,13 @@ function ComprovanteVenda({ resultado, aoFechar }) {
       rodape={<Botao onClick={aoFechar}>Nova venda</Botao>}
     >
       <div className="space-y-4">
-        {resultado.recibo && !resultado.recibo.impresso ? (
+        {resultado.offline ? (
+          <Aviso tom="alerta" titulo="Venda salva offline">
+            A venda foi guardada neste computador e entrou na fila de sincronização — assim que a
+            conexão voltar, ela é enviada automaticamente para o servidor (baixa de estoque,
+            lançamento no caixa e nota fiscal acontecem nesse momento).
+          </Aviso>
+        ) : resultado.recibo && !resultado.recibo.impresso ? (
           <Aviso tom="alerta" titulo="Venda finalizada, recibo não impresso">
             Baixa de estoque por FEFO (primeiro a vencer, primeiro a sair) e valor lançado no
             caixa do dia — a venda foi salva normalmente. O recibo térmico não saiu
@@ -456,6 +486,7 @@ function ComprovanteVenda({ resultado, aoFechar }) {
 export function PDV() {
   const { usuario } = usarAutenticacao();
   const limiteDesconto = descontoMaximoPct(usuario);
+  const { online } = usarConectividade();
   const [parametros, definirParametros] = useSearchParams();
 
   const [busca, definirBusca] = useState("");
@@ -475,7 +506,51 @@ export function PDV() {
   const [cpfNota, definirCpfNota] = useState("");
   const [codigoTeste, definirCodigoTeste] = useState("");
 
+  // Catálogo online (API) e local (IndexedDB, Fase 4) — só um dos dois vale
+  // por vez, conforme `online`. O catálogo local é atualizado em segundo
+  // plano por `usarAtualizacaoDeCatalogo`, sempre que online.
   const produtos = usarBusca(() => api.estoque.get("/produtos"), []);
+  const [catalogoOffline, definirCatalogoOffline] = useState(null);
+  useEffect(() => {
+    if (online) return;
+    let cancelado = false;
+    listarCatalogo()
+      .then((lista) => {
+        if (!cancelado) definirCatalogoOffline(lista);
+      })
+      .catch(() => {
+        if (!cancelado) definirCatalogoOffline([]);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [online]);
+  const listaProdutos = online ? (produtos.dados?.produtos ?? []) : (catalogoOffline ?? []);
+
+  const { ultimaAtualizacaoEm } = usarAtualizacaoDeCatalogo(online, usuario);
+
+  // Fila de vendas offline aguardando POST /vendas/sincronizar-offline —
+  // atualizada ao montar a tela, depois de finalizar uma venda offline e
+  // depois de cada passada do sincronizador automático.
+  const [filaPendenteQtd, definirFilaPendenteQtd] = useState(0);
+  const atualizarContagemFilaPendente = useCallback(async () => {
+    try {
+      const fila = await listarVendasPendentes();
+      definirFilaPendenteQtd(fila.length);
+    } catch {
+      // IndexedDB indisponível — sem contagem de fila pra mostrar, o resto da tela segue normal.
+    }
+  }, []);
+  useEffect(() => {
+    atualizarContagemFilaPendente();
+  }, [atualizarContagemFilaPendente]);
+
+  const { ultimoResultado: ultimaSincronizacao, processarAgora: sincronizarAgora } =
+    usarSincronizadorAutomatico(online);
+  useEffect(() => {
+    if (ultimaSincronizacao) atualizarContagemFilaPendente();
+  }, [ultimaSincronizacao, atualizarContagemFilaPendente]);
+
   const clientes = usarBusca(() => api.vendas.get("/clientes"), []);
 
   // Venda em aberto retomada pelo histórico (?venda=...). Carrega uma vez e
@@ -498,7 +573,28 @@ export function PDV() {
     };
   }, [vendaParaRetomar, definirParametros]);
 
+  // Carrinho offline salvo (apps/web/src/lib/bancoOffline.js) — sobrevive a
+  // um reload sem rede. Só entra em jogo se não houver venda do histórico
+  // sendo retomada e nenhuma venda já em memória.
+  useEffect(() => {
+    if (vendaParaRetomar || venda) return;
+    let cancelado = false;
+    obterVendaEmAndamento()
+      .then((salva) => {
+        if (!cancelado && salva) definirVenda(salva);
+      })
+      .catch(() => {
+        // IndexedDB indisponível — sem carrinho salvo pra recuperar, começa do zero.
+      });
+    return () => {
+      cancelado = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Com o cliente identificado, o balcão passa a saber o que ele costuma levar.
+  // Offline não vincula cliente (sem cache de clientes nesta fase — ver
+  // docs/PENDENCIAS.md), então isto nunca dispara sem rede.
   const clienteId = venda?.cliente_id ?? null;
   const fichaCliente = usarBusca(
     () => (clienteId ? api.vendas.get(`/crm/clientes/${clienteId}`) : Promise.resolve(null)),
@@ -507,9 +603,8 @@ export function PDV() {
 
   const encontrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
-    const lista = produtos.dados?.produtos ?? [];
-    if (!termo) return lista.slice(0, 8);
-    return lista
+    if (!termo) return listaProdutos.slice(0, 8);
+    return listaProdutos
       .filter(
         (produto) =>
           produto.nome.toLowerCase().includes(termo) ||
@@ -517,7 +612,7 @@ export function PDV() {
           (produto.codigo_barras ?? "").includes(termo)
       )
       .slice(0, 8);
-  }, [busca, produtos.dados]);
+  }, [busca, listaProdutos]);
 
   const itens = venda?.itens ?? [];
   const pagamentos = venda?.pagamentos ?? [];
@@ -550,40 +645,80 @@ export function PDV() {
   /** Garante uma venda aberta antes de qualquer operação que precise de uma. */
   async function garantirVenda() {
     if (venda) return venda;
+    if (!online) {
+      const nova = criarVendaLocal();
+      definirVenda(nova);
+      await salvarVendaEmAndamento(nova);
+      return nova;
+    }
     const criada = await api.vendas.post("", {});
     definirVenda(criada.venda);
     return criada.venda;
   }
 
+  /**
+   * Uma vez que uma venda nasce local (offline), ela continua local até ser
+   * finalizada — mesmo que a conexão volte no meio do carrinho — pra não
+   * misturar itens já gravados só no navegador com um id que o servidor
+   * nunca viu. `mutarLocal` roda com @arkos/vendas-core (sem chamada de
+   * rede); `chamarApi` é o mesmo POST/PATCH/DELETE de sempre.
+   */
+  async function comVenda(mutarLocal, chamarApi) {
+    const atual = await garantirVenda();
+    if (atual.origem_local) {
+      const atualizada = mutarLocal(atual);
+      definirVenda(atualizada);
+      await salvarVendaEmAndamento(atualizada);
+      return atualizada;
+    }
+    const resposta = await chamarApi(atual);
+    definirVenda(resposta.venda);
+    return resposta.venda;
+  }
+
+  /** Mesma ideia de `comVenda`, para ações que já pressupõem uma venda existente. */
+  async function comVendaAtual(mutarLocal, chamarApi) {
+    if (venda.origem_local) {
+      const atualizada = mutarLocal(venda);
+      definirVenda(atualizada);
+      await salvarVendaEmAndamento(atualizada);
+      return atualizada;
+    }
+    const resposta = await chamarApi(venda);
+    definirVenda(resposta.venda);
+    return resposta.venda;
+  }
+
   async function adicionarItem(produto) {
-    await executar(async () => {
-      const atual = await garantirVenda();
-      const resposta = await api.vendas.post(`/${atual.id}/itens`, {
-        produto_id: produto.id,
-        quantidade: 1,
-      });
-      definirVenda(resposta.venda);
-    });
+    await executar(() =>
+      comVenda(
+        (atual) => adicionarItemLocal(atual, produto, 1),
+        (atual) => api.vendas.post(`/${atual.id}/itens`, { produto_id: produto.id, quantidade: 1 })
+      )
+    );
   }
 
   /**
    * Vem do leitor de código de barras (ou do campo de teste manual, que chama
-   * isto direto). Busca o produto pelo EAN no estoque-service e já adiciona ao
-   * carrinho — código que não bate com nenhum produto vira o mesmo aviso de
-   * erro das outras ações, sem travar a tela nem perder o que já estava no
-   * carrinho.
+   * isto direto). Online, busca o produto pelo EAN no estoque-service; sem
+   * rede, busca no catálogo local (Fase 4) — código que não bate com nenhum
+   * produto vira o mesmo aviso de erro das outras ações, sem travar a tela
+   * nem perder o que já estava no carrinho.
    */
   async function lerCodigoDeBarras(codigo) {
     await executar(async () => {
-      const { produto } = await api.estoque.get(
-        `/produtos/codigo-barras/${encodeURIComponent(codigo)}`
+      let produto;
+      if (online) {
+        const resposta = await api.estoque.get(`/produtos/codigo-barras/${encodeURIComponent(codigo)}`);
+        produto = resposta.produto;
+      } else {
+        produto = await buscarProdutoPorCodigoBarras(codigo);
+        if (!produto) throw new Error("Nenhum produto com este código de barras no catálogo local.");
+      }
+      await comVenda(
+        (atual) => adicionarItemLocal(atual, produto, 1),
+        (atual) => api.vendas.post(`/${atual.id}/itens`, { produto_id: produto.id, quantidade: 1 })
       );
-      const atual = await garantirVenda();
-      const resposta = await api.vendas.post(`/${atual.id}/itens`, {
-        produto_id: produto.id,
-        quantidade: 1,
-      });
-      definirVenda(resposta.venda);
     });
   }
 
@@ -596,52 +731,67 @@ export function PDV() {
 
   async function alterarQuantidade(item, quantidade) {
     if (quantidade < 1) return;
-    await executar(async () => {
-      const resposta = await api.vendas.patch(`/${venda.id}/itens/${item.id}`, { quantidade });
-      definirVenda(resposta.venda);
-    });
+    await executar(() =>
+      comVendaAtual(
+        (atual) => alterarQuantidadeLocal(atual, item.id, quantidade),
+        () => api.vendas.patch(`/${venda.id}/itens/${item.id}`, { quantidade })
+      )
+    );
   }
 
   async function descontarItem(item, valor, tipo) {
-    await executar(async () => {
-      const corpo = tipo === "pct" ? { desconto_pct: valor } : { desconto: valor };
-      const resposta = await api.vendas.post(`/${venda.id}/itens/${item.id}/desconto`, corpo);
-      definirVenda(resposta.venda);
-    });
+    await executar(() =>
+      comVendaAtual(
+        (atual) => descontarItemLocal(atual, item.id, valor, tipo, usuario),
+        () => {
+          const corpo = tipo === "pct" ? { desconto_pct: valor } : { desconto: valor };
+          return api.vendas.post(`/${venda.id}/itens/${item.id}/desconto`, corpo);
+        }
+      )
+    );
   }
 
   async function removerItem(item) {
-    await executar(async () => {
-      const resposta = await api.vendas.del(`/${venda.id}/itens/${item.id}`);
-      definirVenda(resposta.venda);
-    });
+    await executar(() =>
+      comVendaAtual(
+        (atual) => removerItemLocal(atual, item.id),
+        () => api.vendas.del(`/${venda.id}/itens/${item.id}`)
+      )
+    );
   }
 
   /** Aplica na venda o desconto prometido no contato de relacionamento. */
   async function aplicarOferta(percentual) {
-    await executar(async () => {
-      const resposta = await api.vendas.post(`/${venda.id}/desconto`, {
-        desconto_pct: percentual,
-      });
-      definirVenda(resposta.venda);
-    });
+    await executar(() =>
+      comVendaAtual(
+        (atual) => aplicarDescontoLocal(atual, percentual, "pct", usuario),
+        () => api.vendas.post(`/${venda.id}/desconto`, { desconto_pct: percentual })
+      )
+    );
   }
 
   async function aplicarDesconto(evento) {
     evento.preventDefault();
-    await executar(async () => {
-      const corpo =
-        tipoDesconto === "pct"
-          ? { desconto_pct: Number(desconto || 0) }
-          : { desconto: Number(desconto || 0) };
-      const resposta = await api.vendas.post(`/${venda.id}/desconto`, corpo);
-      definirVenda(resposta.venda);
-    });
+    await executar(() =>
+      comVendaAtual(
+        (atual) => aplicarDescontoLocal(atual, Number(desconto || 0), tipoDesconto, usuario),
+        () => {
+          const corpo =
+            tipoDesconto === "pct"
+              ? { desconto_pct: Number(desconto || 0) }
+              : { desconto: Number(desconto || 0) };
+          return api.vendas.post(`/${venda.id}/desconto`, corpo);
+        }
+      )
+    );
   }
 
   /**
    * Identificar o cliente é o que alimenta o relacionamento: sem isso a venda
    * entra como balcão e não conta no histórico de recompra de ninguém.
+   * Só existe online — o catálogo de clientes não é cacheado nesta fase (ver
+   * docs/PENDENCIAS.md), então a busca de cliente fica escondida offline
+   * (ver render mais abaixo) e esta função nunca roda sem rede.
    */
   async function vincularCliente(idDoCliente) {
     await executar(async () => {
@@ -654,16 +804,25 @@ export function PDV() {
   }
 
   async function removerPagamento(pagamento) {
-    await executar(async () => {
-      const resposta = await api.vendas.del(`/${venda.id}/pagamentos/${pagamento.id}`);
-      definirVenda(resposta.venda);
-    });
+    await executar(() =>
+      comVendaAtual(
+        (atual) => removerPagamentoLocal(atual, pagamento.id),
+        () => api.vendas.del(`/${venda.id}/pagamentos/${pagamento.id}`)
+      )
+    );
   }
 
   async function vincularReceita(evento) {
     evento.preventDefault();
     await executar(async () => {
       const atual = await garantirVenda();
+      if (atual.origem_local) {
+        const atualizada = vincularReceitaLocal(atual, receita);
+        definirVenda(atualizada);
+        await salvarVendaEmAndamento(atualizada);
+        definirReceitaAberta(false);
+        return;
+      }
       await api.vendas.post(`/${atual.id}/receita`, receita);
       const atualizada = await api.vendas.get(`/${atual.id}`);
       definirVenda(atualizada.venda);
@@ -674,8 +833,10 @@ export function PDV() {
   /** Desfaz a receita vinculada — receita trocada, dados digitados errados. */
   async function cancelarReceita() {
     await executar(async () => {
-      const resposta = await api.vendas.del(`/${venda.id}/receita`);
-      definirVenda(resposta.venda);
+      await comVendaAtual(
+        (atual) => removerReceitaLocal(atual),
+        () => api.vendas.del(`/${venda.id}/receita`)
+      );
       definirReceita(RECEITA_VAZIA);
     });
   }
@@ -683,16 +844,34 @@ export function PDV() {
   async function adicionarPagamento(evento) {
     evento.preventDefault();
     await executar(async () => {
-      const resposta = await api.vendas.post(`/${venda.id}/pagamentos`, {
-        forma_pagamento: formaPagamento,
-        valor: Number(valorSugerido),
-      });
-      definirVenda(resposta.venda);
+      await comVendaAtual(
+        (atual) => adicionarPagamentoLocal(atual, formaPagamento, Number(valorSugerido)),
+        () => api.vendas.post(`/${venda.id}/pagamentos`, { forma_pagamento: formaPagamento, valor: Number(valorSugerido) })
+      );
       definirValorPagamento("");
     });
   }
 
   async function finalizar() {
+    if (venda.origem_local) {
+      const resultadoLocal = await executar(async () => {
+        const { payload, troco } = finalizarVendaLocal(venda, usuario, {
+          cpfNota: somenteDigitos(cpfNota) || null,
+        });
+        await adicionarVendaPendente(payload);
+        await limparVendaEmAndamento();
+        await atualizarContagemFilaPendente();
+        return {
+          venda: { ...venda, status: "finalizada" },
+          troco,
+          nota_fiscal: null,
+          offline: true,
+        };
+      });
+      if (resultadoLocal) definirResultado(resultadoLocal);
+      return;
+    }
+
     const resposta = await executar(() =>
       api.vendas.post(`/${venda.id}/finalizar`, {
         cpf_nota: somenteDigitos(cpfNota) || null,
@@ -706,6 +885,10 @@ export function PDV() {
   }
 
   function novaVenda() {
+    // Descartar o carrinho local (offline) também apaga o que ficou salvo —
+    // senão o próximo reload traria de volta a venda que acabou de ser
+    // descartada (obterVendaEmAndamento não sabe que ela foi abandonada).
+    limparVendaEmAndamento().catch(() => {});
     definirVenda(null);
     definirResultado(null);
     definirReceita(RECEITA_VAZIA);
@@ -737,6 +920,27 @@ export function PDV() {
           ) : null
         }
       />
+
+      {!online ? (
+        <Aviso tom="alerta" titulo="PDV em modo offline" className="mb-6">
+          As vendas continuam funcionando com o catálogo salvo neste computador
+          {ultimaAtualizacaoEm ? ` (atualizado em ${formatarDataHora(ultimaAtualizacaoEm)})` : ""} e
+          entram numa fila local — sincronizam sozinhas assim que a conexão voltar.
+        </Aviso>
+      ) : filaPendenteQtd > 0 ? (
+        <Aviso tom="alerta" titulo={`${filaPendenteQtd} venda(s) aguardando sincronização`} className="mb-6">
+          Conexão de volta — sincronizando automaticamente.
+          <Botao
+            tamanho="pequeno"
+            variante="secundario"
+            className="mt-2"
+            disabled={ocupado}
+            onClick={sincronizarAgora}
+          >
+            Sincronizar agora
+          </Botao>
+        </Aviso>
+      ) : null}
 
       <div className="grid grid-cols-[1fr_420px] gap-6">
         <div className="space-y-6">
@@ -790,11 +994,14 @@ export function PDV() {
                 </Botao>
               </form>
 
-              {produtos.carregando ? <Carregando texto="Carregando catálogo" /> : null}
-              {produtos.erro ? (
+              {online && produtos.carregando ? <Carregando texto="Carregando catálogo" /> : null}
+              {online && produtos.erro ? (
                 <Aviso tom="erro" titulo="Não foi possível carregar o catálogo">
                   {produtos.erro.message}
                 </Aviso>
+              ) : null}
+              {!online && catalogoOffline === null ? (
+                <Carregando texto="Carregando catálogo local" />
               ) : null}
 
               <ul className="mt-4 divide-y divide-borda">
@@ -817,7 +1024,10 @@ export function PDV() {
                         <Botao
                           tamanho="pequeno"
                           icone={Plus}
-                          disabled={ocupado || semEstoque}
+                          // Offline, saldo insuficiente nunca bloqueia a venda (o
+                          // catálogo local pode estar defasado — o conflito real
+                          // só é resolvido na sincronização, sem desfazer nada).
+                          disabled={ocupado || (online && semEstoque)}
                           onClick={() => adicionarItem(produto)}
                         >
                           Adicionar
@@ -826,7 +1036,7 @@ export function PDV() {
                     </li>
                   );
                 })}
-                {!produtos.carregando && !encontrados.length ? (
+                {!(online ? produtos.carregando : catalogoOffline === null) && !encontrados.length ? (
                   <li className="py-6 text-corpo text-secundario">
                     Nenhum produto encontrado para esta busca.
                   </li>
@@ -986,7 +1196,7 @@ export function PDV() {
                       </p>
                       <ul className="mt-1 space-y-1">
                         {fichaCliente.dados.cliente.preferidos.slice(0, 3).map((preferido) => {
-                          const doCatalogo = (produtos.dados?.produtos ?? []).find(
+                          const doCatalogo = listaProdutos.find(
                             (produto) => produto.id === preferido.produto_id
                           );
                           const semEstoque =
@@ -1026,13 +1236,18 @@ export function PDV() {
                     </div>
                   ) : null}
                 </>
-              ) : (
+              ) : online ? (
                 <BuscaCliente
                   clientes={clientes.dados?.clientes}
                   ocupado={ocupado || clientes.carregando}
                   aoEscolher={vincularCliente}
                   aoCadastrar={() => definirCadastrandoCliente(true)}
                 />
+              ) : (
+                <Aviso tom="info">
+                  Cliente não pode ser vinculado offline — a venda entra como balcão. Assim que a
+                  conexão voltar, é possível identificar o cliente numa próxima venda.
+                </Aviso>
               )}
             </CardCorpo>
           </Card>
