@@ -16,6 +16,7 @@ export async function buscarVenda(id) {
     `SELECT v.id, v.numero, v.usuario_id, v.status, v.valor_total, v.desconto,
             v.motivo_cancelamento, v.categoria_cancelamento, v.criado_em, v.cliente_id,
             v.origem_sincronizacao, v.estoque_conferencia_pendente,
+            v.conferencia_resolvida_por, v.conferencia_resolvida_em,
             c.nome AS cliente_nome, c.convenio AS cliente_convenio, c.telefone AS cliente_telefone
        FROM vendas.vendas v
        LEFT JOIN vendas.clientes c ON c.id = v.cliente_id
@@ -332,6 +333,27 @@ export async function marcarConferenciaPendente(vendaId) {
     `UPDATE vendas.vendas SET estoque_conferencia_pendente = true WHERE id = $1`,
     [vendaId]
   );
+}
+
+/**
+ * Marca como resolvida a conferência de estoque de uma venda — ação de
+ * gerente (`POST /vendas/:id/conferir-estoque`, mesma permissão de
+ * cancelamento), registrada com quem e quando (REGRAS-NEGOCIO.md §6: toda
+ * ação sensível fica com o responsável). Idempotente por natureza: só
+ * atualiza quem ainda está pendente, então marcar de novo não sobrescreve o
+ * registro de quem resolveu primeiro.
+ */
+export async function marcarConferenciaResolvida({ vendaId, usuarioId }) {
+  const { rows } = await consultar(
+    `UPDATE vendas.vendas
+        SET estoque_conferencia_pendente = false,
+            conferencia_resolvida_por = $2,
+            conferencia_resolvida_em = now()
+      WHERE id = $1 AND estoque_conferencia_pendente = true
+      RETURNING id, estoque_conferencia_pendente, conferencia_resolvida_por, conferencia_resolvida_em`,
+    [vendaId, usuarioId]
+  );
+  return rows[0] ?? null;
 }
 
 /**

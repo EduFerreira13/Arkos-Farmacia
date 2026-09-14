@@ -62,6 +62,7 @@ import {
   definirDescontoDoItem,
   marcarCancelada,
   marcarConferenciaPendente,
+  marcarConferenciaResolvida,
   marcarFinalizada,
   removerItem,
   removerReceita,
@@ -293,16 +294,27 @@ export async function registrarRotas(app) {
   /**
    * Histórico de vendas. Sem filtro de data, responde o movimento de hoje —
    * sem período informado, responde o movimento de hoje. Aceita `de`, `ate`, `status`,
-   * `controlado=sim|nao`, `busca` (produto, paciente ou cliente) e `limite`.
+   * `controlado=sim|nao`, `conferencia_pendente=sim|nao` (tela de conferência
+   * gerencial — Fase 6 do PDV offline), `busca` (produto, paciente ou
+   * cliente) e `limite`.
    */
   app.get("/", async (requisicao, resposta) => {
-    const { de, ate, status, controlado, busca, limite } = requisicao.query ?? {};
+    const { de, ate, status, controlado, conferencia_pendente, busca, limite } =
+      requisicao.query ?? {};
 
     if (status && !Object.values(STATUS_VENDA).includes(status)) {
       return invalido(resposta, `status inválido. Use: ${Object.values(STATUS_VENDA).join(", ")}.`);
     }
 
-    const vendas = await listarVendas({ de, ate, status, controlado, busca, limite });
+    const vendas = await listarVendas({
+      de,
+      ate,
+      status,
+      controlado,
+      conferenciaPendente: conferencia_pendente,
+      busca,
+      limite,
+    });
 
     // Totais do recorte, para a tela não precisar somar de novo.
     const finalizadas = vendas.filter((venda) => venda.status === STATUS_VENDA.FINALIZADA);
@@ -1500,6 +1512,29 @@ export async function registrarRotas(app) {
         estoque_conferencia_pendente: conferenciaPendente,
         troco: validacao.valores.troco,
       });
+    }
+  );
+
+  /**
+   * Conferência gerencial (Fase 6 do PDV offline): marca como resolvida a
+   * baixa de estoque forçada por conflito de sincronização offline (migration
+   * 0021). Mesma permissão de cancelamento — ação de gerente, não de
+   * operador. Idempotente: chamar de novo numa venda já conferida não
+   * sobrescreve quem resolveu primeiro, só devolve o estado atual.
+   */
+  app.post(
+    "/:id/conferir-estoque",
+    { preHandler: auth.exigirPermissao("cancelar_venda") },
+    async (requisicao, resposta) => {
+      const venda = await buscarVenda(requisicao.params.id);
+      if (!venda) return naoEncontrado(resposta, "Venda não encontrada.");
+
+      if (!venda.estoque_conferencia_pendente) {
+        return { venda, ja_resolvida: true };
+      }
+
+      await marcarConferenciaResolvida({ vendaId: venda.id, usuarioId: requisicao.usuario.id });
+      return { venda: await buscarVenda(venda.id), ja_resolvida: false };
     }
   );
 

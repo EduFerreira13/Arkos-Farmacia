@@ -11,7 +11,15 @@ import { consultar } from "../../db.js";
  * Histórico de vendas com filtros (período, status, controlado e texto livre em
  * produto, paciente ou cliente). Sem período informado, traz o dia de hoje.
  */
-export async function listarVendas({ de, ate, status, controlado, busca, limite = 300 } = {}) {
+export async function listarVendas({
+  de,
+  ate,
+  status,
+  controlado,
+  conferenciaPendente,
+  busca,
+  limite = 300,
+} = {}) {
   const condicoes = [];
   const valores = [];
 
@@ -36,6 +44,13 @@ export async function listarVendas({ de, ate, status, controlado, busca, limite 
     condicoes.push(controlado === "sim" ? existe : `NOT ${existe}`);
   }
 
+  // Vendas offline com baixa de estoque forçada (conflito de sincronização,
+  // migration 0021) — a tela de conferência gerencial usa este filtro para
+  // separar o que ainda precisa de revisão humana.
+  if (conferenciaPendente === "sim" || conferenciaPendente === "nao") {
+    condicoes.push(`v.estoque_conferencia_pendente = ${conferenciaPendente === "sim"}`);
+  }
+
   if (busca) {
     valores.push(`%${busca}%`);
     const parametro = `$${valores.length}`;
@@ -53,6 +68,8 @@ export async function listarVendas({ de, ate, status, controlado, busca, limite 
   const { rows } = await consultar(
     `SELECT v.id, v.numero, v.usuario_id, v.status, v.valor_total, v.desconto, v.criado_em,
             v.motivo_cancelamento, v.categoria_cancelamento, v.cliente_id, c.nome AS cliente_nome,
+            v.origem_sincronizacao, v.estoque_conferencia_pendente,
+            v.conferencia_resolvida_por, v.conferencia_resolvida_em,
             (SELECT COUNT(*) FROM vendas.itens_venda i WHERE i.venda_id = v.id)::int AS total_itens,
             (SELECT SUM(i.quantidade) FROM vendas.itens_venda i WHERE i.venda_id = v.id)::int
               AS total_unidades,
