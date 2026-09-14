@@ -134,9 +134,14 @@ finalidade precisa justificar a extração (LGPD).
 | POST | `/vendas/:id/cliente` | Vincula (ou desvincula) o cliente da venda |
 | DELETE | `/vendas/:id/pagamentos/:pagamentoId` | Remove forma de pagamento antes de finalizar |
 
-`GET /vendas` aceita `de`, `ate`, `status`, `controlado=sim|nao`, `busca`
-(produto, paciente ou cliente) e `limite`, e devolve os totais do recorte. Sem
-filtro de data, responde o movimento de hoje.
+`GET /vendas` aceita `de`, `ate`, `status`, `controlado=sim|nao`,
+`conferencia_pendente=sim|nao`, `busca` (produto, paciente ou cliente) e
+`limite`, e devolve os totais do recorte. Sem filtro de data, responde o
+movimento de hoje. `conferencia_pendente=sim` é o filtro usado pela tela de
+conferência gerencial (Fase 6) para listar vendas com
+`estoque_conferencia_pendente = true`; cada venda também traz
+`conferencia_resolvida_por` e `conferencia_resolvida_em` (ambos `null`
+enquanto pendente).
 
 `POST /vendas/:id/desconto` aceita `desconto` (reais) **ou** `desconto_pct`
 (percentual) — os dois passam pelo mesmo limite do perfil (§3). O desconto por
@@ -299,6 +304,33 @@ a baixa é forçada (o lote correspondente vai negativo), e a venda volta com
   "troco": 0
 }
 ```
+
+### Conferência gerencial de estoque (Fase 6)
+
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/vendas/:id/conferir-estoque` | Marca como resolvida a conferência de estoque de uma venda offline |
+
+Só o gerente (mesma permissão de `POST /vendas/:id/cancelar`, `cancelar_venda`)
+pode resolver uma conferência — é ação de perfil superior, igual ao
+cancelamento (§6). Recusa com 403 para operador de caixa ou farmacêutico.
+
+Não tem corpo. Resposta:
+```json
+{ "venda": { "...": "venda completa, com estoque_conferencia_pendente: false" }, "ja_resolvida": false }
+```
+
+`ja_resolvida: true` quando a venda já não estava pendente (chamada repetida,
+ou venda que nunca teve conflito de estoque) — não sobrescreve
+`conferencia_resolvida_por`/`conferencia_resolvida_em` de quem resolveu
+primeiro. 404 se a venda não existir.
+
+**Erros de sincronização (só no navegador).** Uma venda que falhou ao
+sincronizar (erro de negócio — teto de desconto mudou, por exemplo) fica na
+fila local do navegador (`fila_vendas_pendentes`, status `erro`,
+IndexedDB) até alguém tentar de novo — isso nunca chega ao servidor, então
+não tem rota própria; é lido e reenviado direto do `apps/web` (ver
+`docs/PENDENCIAS.md`, limitação de escopo por terminal).
 
 Lançamento no caixa e emissão de nota fiscal são best-effort, no mesmo
 espírito do restante do módulo: uma falha aqui vira log para acompanhamento
