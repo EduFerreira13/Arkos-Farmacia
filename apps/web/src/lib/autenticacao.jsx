@@ -1,8 +1,21 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { PERFIS } from "@arkos/shared-types";
-import { api } from "./api.js";
+import { api, ErroApi } from "./api.js";
+import { obterSessaoUsuario, salvarSessaoUsuario } from "./bancoOffline.js";
 
 const AutenticacaoContexto = createContext(null);
+
+/** A sessão cacheada (bancoOffline.js) não guarda email — o resto do usuário online tem. */
+function paraUsuarioDeSessaoCacheada(sessao) {
+  return {
+    id: sessao.usuario_id,
+    nome: sessao.nome,
+    perfil: sessao.perfil,
+    permissoes: sessao.permissoes,
+    perfil_real: sessao.perfil_real,
+    simulando: sessao.simulando,
+  };
+}
 
 export function ProvedorAutenticacao({ children }) {
   const [usuario, definirUsuario] = useState(null);
@@ -14,10 +27,38 @@ export function ProvedorAutenticacao({ children }) {
     let cancelado = false;
     api.auth
       .get("/me")
-      .then((dados) => {
-        if (!cancelado) definirUsuario(dados.usuario ?? dados);
+      .then(async (dados) => {
+        const usuarioLogado = dados.usuario ?? dados;
+        if (!cancelado) definirUsuario(usuarioLogado);
+        // Mantém a sessão cacheada — é o que permite o PDV offline sobreviver
+        // a um reload sem rede (apps/web/src/lib/bancoOffline.js, Fase 5 do
+        // PDV offline): sem isso, um reload offline perderia o perfil/
+        // permissões e o teto de desconto pararia de funcionar.
+        try {
+          await salvarSessaoUsuario(usuarioLogado);
+        } catch {
+          // IndexedDB indisponível — sessão offline não fica cacheada, mas o
+          // login online segue normal.
+        }
       })
-      .catch(() => {
+      .catch(async (falha) => {
+        // `ErroApi` é uma resposta HTTP de verdade (ex.: 401, token
+        // realmente expirado) — aí não há sessão cacheada que valha, é pra
+        // deslogar mesmo. Qualquer outra falha (a chamada nem completou) é
+        // sinal de rede fora do ar: tenta a sessão cacheada antes de
+        // desistir, para o PDV continuar funcionando depois de um reload
+        // offline.
+        if (!(falha instanceof ErroApi)) {
+          try {
+            const cacheada = await obterSessaoUsuario();
+            if (cacheada) {
+              if (!cancelado) definirUsuario(paraUsuarioDeSessaoCacheada(cacheada));
+              return;
+            }
+          } catch {
+            // IndexedDB indisponível também — segue pro deslogado abaixo.
+          }
+        }
         if (!cancelado) definirUsuario(null);
       })
       .finally(() => {
@@ -104,9 +145,4 @@ export function temPermissao(usuario, chave) {
   return usuario.permissoes?.[chave] === true;
 }
 
-export function descontoMaximoPct(usuario) {
-  if (!usuario) return 0;
-  if (usuario.perfil === PERFIS.ADMINISTRADOR) return 100;
-  if (usuario.permissoes?.acesso_total === true) return 100;
-  return Number(usuario.permissoes?.desconto_max_pct ?? 0);
-}
+export { descontoMaximoPct } from "@arkos/vendas-core";
