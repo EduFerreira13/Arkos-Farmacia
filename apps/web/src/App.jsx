@@ -5,6 +5,7 @@ import { Login } from "./paginas/Login.jsx";
 import { Dashboard } from "./paginas/Dashboard.jsx";
 import { PDV } from "./paginas/PDV.jsx";
 import { HistoricoVendas } from "./paginas/HistoricoVendas.jsx";
+import { ConferenciaOffline } from "./paginas/ConferenciaOffline.jsx";
 import { Relacionamento } from "./paginas/Relacionamento.jsx";
 import { Produtos } from "./paginas/Produtos.jsx";
 import { Perdas } from "./paginas/Perdas.jsx";
@@ -47,6 +48,10 @@ export default function App() {
         <Route path="/vendas" element={<Navigate to="/vendas/historico" replace />} />
         <Route path="/vendas/historico" element={comPermissao("vender", <HistoricoVendas />)} />
         <Route path="/relacionamento" element={comPermissao("vender", <Relacionamento />)} />
+        <Route
+          path="/vendas/conferencia-offline"
+          element={comPermissao("cancelar_venda", <ConferenciaOffline />)}
+        />
 
         <Route path="/produtos" element={comPermissao("consultar_estoque", <Produtos />)} />
         {/* "Entradas e saídas" virou "Perdas e avarias": a entrada agora chega

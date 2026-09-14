@@ -10,6 +10,7 @@ import {
   ChevronsRight,
   ChevronsUpDown,
   CircleHelp,
+  ClipboardCheck,
   ClipboardList,
   Eye,
   FileText,
@@ -59,6 +60,14 @@ export const SECOES = [
         rotulo: "Relacionamento",
         icone: HeartHandshake,
         permissao: "vender",
+      },
+      {
+        para: "/vendas/conferencia-offline",
+        rotulo: "Conferência offline",
+        icone: ClipboardCheck,
+        // Mesma permissão do cancelamento (§6, ação de gerente) — ver
+        // docs/PENDENCIAS.md sobre reaproveitar em vez de criar permissão nova.
+        permissao: "cancelar_venda",
       },
     ],
   },
