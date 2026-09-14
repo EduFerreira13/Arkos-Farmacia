@@ -56,6 +56,7 @@ const paginas = {
   Alertas: (await import("../src/paginas/Alertas.jsx")).Alertas,
   PDV: (await import("../src/paginas/PDV.jsx")).PDV,
   HistoricoVendas: (await import("../src/paginas/HistoricoVendas.jsx")).HistoricoVendas,
+  ConferenciaOffline: (await import("../src/paginas/ConferenciaOffline.jsx")).ConferenciaOffline,
   Relacionamento: (await import("../src/paginas/Relacionamento.jsx")).Relacionamento,
   Compras: (await import("../src/paginas/Compras.jsx")).Compras,
   FinanceiroVisaoGeral: (await import("../src/paginas/FinanceiroVisaoGeral.jsx"))
@@ -872,6 +873,7 @@ const TELAS = [
   ["/pdv", "ponto de venda"],
   ["/produtos", "Pesquisar produto"],
   ["/vendas/historico", "Abre no movimento de hoje"],
+  ["/vendas/conferencia-offline", "Estoque pendente de conferência"],
   ["/perdas", "Perdas e avarias"],
   ["/inventario", "Produto a contar"],
   ["/compras", "Pesquisar pedido"],
@@ -903,6 +905,7 @@ const ESPERADO = {
     "/relatorios",
     "/fiscal/controlados",
     "/contas",
+    "/vendas/conferencia-offline",
   ],
   farmaceutico: [...COMUNS, "/fiscal/controlados"],
   operador_caixa: COMUNS,
