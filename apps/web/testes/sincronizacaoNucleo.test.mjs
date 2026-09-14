@@ -11,6 +11,7 @@ import {
   buscarCatalogoAtualizado,
   mapComConcorrenciaLimitada,
   processarFilaPendente,
+  sincronizarUmaVendaPendente,
 } from "../src/lib/sincronizacaoNucleo.js";
 
 test("mapComConcorrenciaLimitada preserva a ordem dos resultados e respeita o limite de paralelismo", async () => {
@@ -149,6 +150,75 @@ test("processarFilaPendente: falha de rede para a fila (nao tenta as seguintes) 
   assert.equal(atualizadas[0].id, "primeira");
   assert.equal(atualizadas[0].mudancas.status, "pendente");
   assert.equal(atualizadas[0].mudancas.tentativas, 3);
+});
+
+// -------------------------------------------------- sincronizarUmaVendaPendente
+// Extraída na Fase 6 (tela de conferência gerencial) para o botão manual de
+// "tentar de novo" reaproveitar exatamente a mesma decisão de
+// negócio-vs-rede que o processamento automático da fila já usava.
+
+test("sincronizarUmaVendaPendente: sucesso remove da fila", async () => {
+  const removidas = [];
+  const resultado = await sincronizarUmaVendaPendente({
+    registro: { id: "v1", payload: { id: "v1" }, tentativas: 0 },
+    sincronizarVenda: async () => ({ status: 201, dados: { venda: {} } }),
+    removerVendaPendente: async (id) => removidas.push(id),
+    atualizarVendaPendente: async () => {
+      throw new Error("não deveria atualizar em caso de sucesso");
+    },
+  });
+
+  assert.deepEqual(resultado, { sincronizada: true, falhaDeRede: false });
+  assert.deepEqual(removidas, ["v1"]);
+});
+
+test("sincronizarUmaVendaPendente: erro de negocio marca status erro e conta tentativa", async () => {
+  const atualizadas = [];
+  const resultado = await sincronizarUmaVendaPendente({
+    registro: { id: "ruim", payload: {}, tentativas: 1 },
+    sincronizarVenda: async () => ({ status: 422, dados: { mensagem: "desconto_acima_do_limite" } }),
+    removerVendaPendente: async () => {
+      throw new Error("não deveria remover em erro de negócio");
+    },
+    atualizarVendaPendente: async (id, mudancas) => atualizadas.push({ id, mudancas }),
+  });
+
+  assert.deepEqual(resultado, { sincronizada: false, falhaDeRede: false });
+  assert.equal(atualizadas.length, 1);
+  assert.deepEqual(atualizadas[0], {
+    id: "ruim",
+    mudancas: { status: "erro", tentativas: 2, ultimo_erro: "desconto_acima_do_limite" },
+  });
+});
+
+test("sincronizarUmaVendaPendente: falha de rede marca pendente de novo (nunca erro) e sinaliza falhaDeRede", async () => {
+  const atualizadas = [];
+  const resultado = await sincronizarUmaVendaPendente({
+    registro: { id: "sem-rede", payload: {}, tentativas: 0 },
+    sincronizarVenda: async () => {
+      throw new Error("estoque-service não respondeu");
+    },
+    removerVendaPendente: async () => {
+      throw new Error("não deveria remover em falha de rede");
+    },
+    atualizarVendaPendente: async (id, mudancas) => atualizadas.push({ id, mudancas }),
+  });
+
+  assert.deepEqual(resultado, { sincronizada: false, falhaDeRede: true });
+  assert.equal(atualizadas[0].mudancas.status, "pendente");
+  assert.equal(atualizadas[0].mudancas.tentativas, 1);
+});
+
+test("sincronizarUmaVendaPendente: sem mensagem do servidor, usa o HTTP status no ultimo_erro", async () => {
+  const atualizadas = [];
+  await sincronizarUmaVendaPendente({
+    registro: { id: "sem-mensagem", payload: {}, tentativas: 0 },
+    sincronizarVenda: async () => ({ status: 500 }),
+    removerVendaPendente: async () => {},
+    atualizarVendaPendente: async (id, mudancas) => atualizadas.push({ id, mudancas }),
+  });
+
+  assert.match(atualizadas[0].mudancas.ultimo_erro, /HTTP 500/);
 });
 
 test("processarFilaPendente nunca reprocessa uma venda ja removida (fila vazia nao chama sincronizarVenda)", async () => {

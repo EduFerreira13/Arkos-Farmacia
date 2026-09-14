@@ -18,6 +18,7 @@ import {
   INTERVALO_ATUALIZACAO_CATALOGO_MS,
   buscarCatalogoAtualizado,
   processarFilaPendente,
+  sincronizarUmaVendaPendente,
 } from "./sincronizacaoNucleo.js";
 
 /**
@@ -138,4 +139,21 @@ export function usarSincronizadorAutomatico(online) {
   }, [online, processarAgora]);
 
   return { processando, ultimoResultado, processarAgora };
+}
+
+/**
+ * Tenta de novo uma única venda da fila que ficou com status `erro` — botão
+ * manual da tela de conferência gerencial (Fase 6). Reaproveita o mesmo
+ * `sincronizarVendaNaApi` e a mesma lógica de decisão de
+ * `sincronizarUmaVendaPendente` do sincronizador automático, só que para uma
+ * venda por vez, sob comando explícito do gerente.
+ * @param {{ id: string, payload: object, tentativas?: number }} registro
+ */
+export function tentarNovamenteVendaPendente(registro) {
+  return sincronizarUmaVendaPendente({
+    registro,
+    sincronizarVenda: sincronizarVendaNaApi,
+    removerVendaPendente,
+    atualizarVendaPendente,
+  });
 }

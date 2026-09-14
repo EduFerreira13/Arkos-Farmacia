@@ -88,18 +88,67 @@ export async function buscarCatalogoAtualizado({
 }
 
 /**
- * Processa a fila de vendas pendentes, uma de cada vez, na ordem em que
- * `listarVendasPendentes` devolve (já ordenada por `criado_em_local` — ver
- * bancoOffline.js). Nunca reenvia uma venda já removida: cada uma só é
- * tocada uma vez, na sequência abaixo.
+ * Tenta sincronizar UMA venda da fila e já grava o resultado no registro
+ * local — usada tanto pelo processamento automático da fila inteira
+ * (`processarFilaPendente`, em ordem) quanto pelo botão manual de "tentar de
+ * novo" de uma venda específica na tela de conferência gerencial (Fase 6),
+ * sem duplicar a lógica de decidir erro de negócio x falha de rede.
  *
  * - Sucesso (2xx): remove da fila.
  * - Erro de negócio (a chamada completou, mas com status de erro — ex.:
- *   pagamento_insuficiente, desconto_acima_do_limite): marca erro e segue
- *   para a próxima — uma venda ruim não trava as outras.
+ *   pagamento_insuficiente, desconto_acima_do_limite): marca `erro` — o
+ *   motivo (`ultimo_erro`) fica visível para o gerente decidir o que fazer.
  * - Erro de transporte (a chamada nem completou — rede caiu de novo): marca
- *   pendente de novo e PÁRA aqui; a próxima detecção de "voltou online"
- *   retoma a fila do mesmo ponto.
+ *   `pendente` de novo (não `erro`: não é um problema da venda, é a rede).
+ *
+ * @param {{
+ *   registro: { id: string, payload: object, tentativas?: number },
+ *   sincronizarVenda: (payload: object) => Promise<{ status: number, dados?: object }>,
+ *   removerVendaPendente: (id: string) => Promise<void>,
+ *   atualizarVendaPendente: (id: string, mudancas: object) => Promise<void>,
+ * }} deps
+ * @returns {Promise<{ sincronizada: boolean, falhaDeRede: boolean }>}
+ */
+export async function sincronizarUmaVendaPendente({
+  registro,
+  sincronizarVenda,
+  removerVendaPendente,
+  atualizarVendaPendente,
+}) {
+  let resultado;
+  try {
+    resultado = await sincronizarVenda(registro.payload);
+  } catch (falha) {
+    await atualizarVendaPendente(registro.id, {
+      status: "pendente",
+      tentativas: (registro.tentativas ?? 0) + 1,
+      ultimo_erro: falha.message,
+    });
+    return { sincronizada: false, falhaDeRede: true };
+  }
+
+  if (resultado.status >= 200 && resultado.status < 300) {
+    await removerVendaPendente(registro.id);
+    return { sincronizada: true, falhaDeRede: false };
+  }
+
+  await atualizarVendaPendente(registro.id, {
+    status: "erro",
+    tentativas: (registro.tentativas ?? 0) + 1,
+    ultimo_erro: resultado.dados?.mensagem ?? `Sincronização recusada (HTTP ${resultado.status}).`,
+  });
+  return { sincronizada: false, falhaDeRede: false };
+}
+
+/**
+ * Processa a fila de vendas pendentes, uma de cada vez, na ordem em que
+ * `listarVendasPendentes` devolve (já ordenada por `criado_em_local` — ver
+ * bancoOffline.js). Nunca reenvia uma venda já removida: cada uma só é
+ * tocada uma vez, via `sincronizarUmaVendaPendente`.
+ *
+ * Erro de negócio numa venda não trava as outras (segue para a próxima);
+ * falha de transporte PÁRA a fila aqui — a próxima detecção de "voltou
+ * online" retoma do mesmo ponto.
  *
  * @param {{
  *   listarVendasPendentes: () => Promise<Array<{ id: string, payload: object, tentativas?: number }>>,
@@ -120,30 +169,18 @@ export async function processarFilaPendente({
   let comErro = 0;
 
   for (const registro of fila) {
-    let resultado;
-    try {
-      resultado = await sincronizarVenda(registro.payload);
-    } catch (falha) {
-      await atualizarVendaPendente(registro.id, {
-        status: "pendente",
-        tentativas: (registro.tentativas ?? 0) + 1,
-        ultimo_erro: falha.message,
-      });
+    const resultado = await sincronizarUmaVendaPendente({
+      registro,
+      sincronizarVenda,
+      removerVendaPendente,
+      atualizarVendaPendente,
+    });
+
+    if (resultado.falhaDeRede) {
       return { sincronizadas, comErro, parouPorFalhaDeRede: true };
     }
-
-    if (resultado.status >= 200 && resultado.status < 300) {
-      await removerVendaPendente(registro.id);
-      sincronizadas += 1;
-      continue;
-    }
-
-    comErro += 1;
-    await atualizarVendaPendente(registro.id, {
-      status: "erro",
-      tentativas: (registro.tentativas ?? 0) + 1,
-      ultimo_erro: resultado.dados?.mensagem ?? `Sincronização recusada (HTTP ${resultado.status}).`,
-    });
+    if (resultado.sincronizada) sincronizadas += 1;
+    else comErro += 1;
   }
 
   return { sincronizadas, comErro, parouPorFalhaDeRede: false };
