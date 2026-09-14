@@ -1242,6 +1242,76 @@ ok(
   produtoConflitoAposSinc.dados.produto.quantidade_atual === -3
 );
 
+secao("vendas-service — conferência gerencial (Fase 6 do PDV offline)");
+
+const listaConferenciaPendente = await req(
+  `${S.vendas}/vendas?de=${diasAtras(1)}&ate=${hoje}&conferencia_pendente=sim`,
+  { token: gerente }
+);
+ok(
+  "GET /vendas?conferencia_pendente=sim lista só a venda com conflito de estoque",
+  listaConferenciaPendente.status === 200 &&
+    listaConferenciaPendente.dados.vendas.some((venda) => venda.id === idConflito) &&
+    !listaConferenciaPendente.dados.vendas.some((venda) => venda.id === idFeliz)
+);
+
+const conferirComoCaixa = await req(`${S.vendas}/vendas/${idConflito}/conferir-estoque`, {
+  metodo: "POST", token: caixa,
+});
+ok("operador de caixa não resolve conferência de estoque", conferirComoCaixa.status === 403);
+
+const conferirComoFarmaceutico = await req(`${S.vendas}/vendas/${idConflito}/conferir-estoque`, {
+  metodo: "POST", token: farmaceutico,
+});
+ok(
+  "farmacêutico também não resolve conferência de estoque (só gerente/admin, mesma permissão do cancelamento)",
+  conferirComoFarmaceutico.status === 403
+);
+
+const conferirInexistente = await req(`${S.vendas}/vendas/${randomUUID()}/conferir-estoque`, {
+  metodo: "POST", token: gerente,
+});
+ok("conferir-estoque em venda inexistente devolve 404", conferirInexistente.status === 404);
+
+const conferirSemPendencia = await req(`${S.vendas}/vendas/${idFeliz}/conferir-estoque`, {
+  metodo: "POST", token: gerente,
+});
+ok(
+  "conferir-estoque numa venda sem conferência pendente é idempotente (ja_resolvida)",
+  conferirSemPendencia.status === 200 && conferirSemPendencia.dados.ja_resolvida === true
+);
+
+const conferido = await req(`${S.vendas}/vendas/${idConflito}/conferir-estoque`, {
+  metodo: "POST", token: gerente,
+});
+ok(
+  "gerente resolve a conferência de estoque, com auditoria de quem e quando",
+  conferido.status === 200 &&
+    conferido.dados.ja_resolvida === false &&
+    conferido.dados.venda.estoque_conferencia_pendente === false &&
+    Boolean(conferido.dados.venda.conferencia_resolvida_em),
+  JSON.stringify(conferido.dados)
+);
+
+const listaAposResolver = await req(
+  `${S.vendas}/vendas?de=${diasAtras(1)}&ate=${hoje}&conferencia_pendente=sim`,
+  { token: gerente }
+);
+ok(
+  "venda resolvida sai da listagem de conferência pendente",
+  !listaAposResolver.dados.vendas.some((venda) => venda.id === idConflito)
+);
+
+const conferidoDeNovo = await req(`${S.vendas}/vendas/${idConflito}/conferir-estoque`, {
+  metodo: "POST", token: gerente,
+});
+ok(
+  "resolver de novo é idempotente e não sobrescreve quem resolveu primeiro",
+  conferidoDeNovo.status === 200 &&
+    conferidoDeNovo.dados.ja_resolvida === true &&
+    conferidoDeNovo.dados.venda.conferencia_resolvida_por === conferido.dados.venda.conferencia_resolvida_por
+);
+
 secao("Autenticação exigida em todos os serviços");
 for (const [nome, url] of [
   ["estoque", `${S.estoque}/produtos`],
