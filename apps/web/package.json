@@ -9,10 +9,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "testar:telas": "esbuild testes/smoke-telas.jsx --bundle --platform=node --format=esm --jsx=automatic --outfile=node_modules/.cache/smoke-telas.mjs --external:jsdom --define:import.meta.env.DEV=false --log-level=warning && node node_modules/.cache/smoke-telas.mjs",
-    "test:offline": "node --test testes/bancoOffline.test.mjs testes/conectividade.test.mjs"
+    "test:offline": "node --test testes/bancoOffline.test.mjs testes/conectividade.test.mjs testes/sincronizacaoNucleo.test.mjs testes/carrinhoOffline.test.mjs"
   },
   "dependencies": {
     "@arkos/shared-types": "0.1.0",
+    "@arkos/vendas-core": "0.1.0",
     "lucide-react": "^0.469.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
