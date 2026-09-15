@@ -172,7 +172,7 @@ export function Relatorios() {
       />
 
       <Card className="mb-4">
-        <div className="px-5 py-4">
+        <div className="px-4 py-3">
           <FiltroPeriodo periodo={periodo} aoMudar={definirPeriodo} />
         </div>
       </Card>
@@ -184,18 +184,21 @@ export function Relatorios() {
         <div className="space-y-4">
           <div className="grid grid-cols-4 gap-4">
             <CardIndicador
+              compacto
               rotulo="Vendas no período"
               valor={formatarMoeda(totais.valor)}
               detalhe={`${formatarNumero(totais.vendas)} vendas finalizadas`}
               icone={TrendingUp}
             />
             <CardIndicador
+              compacto
               rotulo="Ticket médio"
               valor={formatarMoeda(totais.ticket_medio)}
               detalhe={`${formatarMoeda(totais.descontos)} de desconto concedido`}
               icone={BarChart3}
             />
             <CardIndicador
+              compacto
               rotulo="Lucro bruto estimado"
               valor={formatarMoeda(lucroTotal)}
               detalhe="receita menos custo dos itens vendidos"
@@ -203,6 +206,7 @@ export function Relatorios() {
               tom={lucroTotal >= 0 ? "sucesso" : "erro"}
             />
             <CardIndicador
+              compacto
               rotulo="Margem média"
               valor={`${margemMedia.toFixed(1).replace(".", ",")}%`}
               detalhe="sobre a receita do período"
