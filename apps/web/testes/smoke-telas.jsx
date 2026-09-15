@@ -908,7 +908,7 @@ const TELAS = [
   ["/inventario", "Produto a contar"],
   ["/compras", "Pesquisar pedido"],
   ["/financeiro", "O que entra contra o que sai"],
-  ["/relatorios", "Vendas por período e por produto"],
+  ["/relatorios", "Curva ABC"],
   ["/fiscal/controlados", "Sistema Nacional de Gerenciamento"],
   ["/relacionamento", "Quem ligar hoje"],
   ["/cadastros/clientes", "Pesquisar cliente"],

@@ -2,10 +2,11 @@ import { useMemo, useState } from "react";
 import { BarChart3, LayoutGrid, Percent, TrendingUp, Trophy } from "lucide-react";
 import { api } from "../lib/api.js";
 import { usarBusca } from "../lib/usarBusca.js";
-import { formatarMoeda, formatarNumero } from "../lib/formato.js";
+import { formatarMoeda, formatarNumero, hojeISO } from "../lib/formato.js";
+import { CampoTexto } from "../componentes/Campos.jsx";
 import { CardIndicador } from "../componentes/CardIndicador.jsx";
 import { ExportarRelatorio } from "../componentes/ExportarRelatorio.jsx";
-import { FiltroPeriodo, diasAtras } from "../componentes/FiltroPeriodo.jsx";
+import { ATALHOS_PERIODO, diasAtras } from "../componentes/FiltroPeriodo.jsx";
 import { GraficoCurvaAbc, GraficoVendasPorDia } from "../componentes/Graficos.jsx";
 import { Tabela } from "../componentes/Tabela.jsx";
 import {
@@ -142,11 +143,51 @@ export function Relatorios() {
 
   return (
     <>
-      <TituloPagina
-        titulo="Relatórios e indicadores"
-        descricao="Vendas por período e por produto, mais vendidos, margem e curva ABC."
-        acoes={
-          <>
+      <TituloPagina titulo="Relatórios" />
+
+      <Card className="mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <CampoTexto
+              aria-label="Do dia"
+              type="date"
+              className="w-40"
+              value={periodo.de}
+              max={periodo.ate}
+              onChange={(evento) => definirPeriodo({ ...periodo, de: evento.target.value })}
+            />
+            <span className="text-corpo text-secundario">até</span>
+            <CampoTexto
+              aria-label="Até o dia"
+              type="date"
+              className="w-40"
+              value={periodo.ate}
+              min={periodo.de}
+              max={hojeISO()}
+              onChange={(evento) => definirPeriodo({ ...periodo, ate: evento.target.value })}
+            />
+            <div className="flex h-10 items-center gap-1 rounded-botao border border-borda p-1">
+              {ATALHOS_PERIODO.map((atalho) => {
+                const de = diasAtras(atalho.dias);
+                const ativo = periodo.de === de && periodo.ate === hojeISO();
+                return (
+                  <button
+                    key={atalho.rotulo}
+                    type="button"
+                    onClick={() => definirPeriodo({ de, ate: hojeISO() })}
+                    className={[
+                      "h-full rounded-botao px-3 text-rotulo transition-colors",
+                      ativo ? "bg-primario text-white" : "text-secundario hover:bg-borda/60",
+                    ].join(" ")}
+                  >
+                    {atalho.rotulo}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
             <ExportarRelatorio
               servico="vendas"
               caminho="/relatorio"
@@ -167,13 +208,7 @@ export function Relatorios() {
               comPeriodo={false}
               rotulo="Exportar estoque"
             />
-          </>
-        }
-      />
-
-      <Card className="mb-4">
-        <div className="px-4 py-3">
-          <FiltroPeriodo periodo={periodo} aoMudar={definirPeriodo} />
+          </div>
         </div>
       </Card>
 
