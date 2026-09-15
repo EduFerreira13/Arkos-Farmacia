@@ -285,8 +285,8 @@ export async function listarReceitas({ de, ate, busca } = {}) {
  * tela, cruzando estes números com o catálogo.
  */
 export async function analisarVendas({ de, ate }) {
-  // Quatro leituras independentes: em paralelo, o relatório abre bem mais rápido.
-  const [{ rows: porProduto }, { rows: porDia }, { rows: porForma }, { rows: totais }] =
+  // Cinco leituras independentes: em paralelo, o relatório abre bem mais rápido.
+  const [{ rows: porProduto }, { rows: porDia }, { rows: porDiaProduto }, { rows: porForma }, { rows: totais }] =
     await Promise.all([
       consultar(
     `SELECT i.produto_id, i.produto_nome, i.tipo_controle,
@@ -314,6 +314,21 @@ export async function analisarVendas({ de, ate }) {
         ORDER BY 1`,
         [de, ate]
       ),
+      // Por dia e por produto — sem custo (que vive no estoque-service), só
+      // unidades e receita. Deixa quem monta a tela calcular o lucro do dia
+      // cruzando com o catálogo, do mesmo jeito que já faz para o período todo.
+      consultar(
+    `SELECT v.criado_em::date AS dia, i.produto_id,
+            SUM(i.quantidade)::int AS unidades,
+            SUM(i.quantidade * i.preco_unitario) AS receita
+       FROM vendas.itens_venda i
+       JOIN vendas.vendas v ON v.id = i.venda_id
+      WHERE v.status = 'finalizada'
+        AND v.criado_em::date BETWEEN $1::date AND $2::date
+        GROUP BY 1, 2
+        ORDER BY 1`,
+        [de, ate]
+      ),
       consultar(
     `SELECT p.forma_pagamento, SUM(p.valor) AS valor, COUNT(*)::int AS quantidade
        FROM vendas.pagamentos p
@@ -338,6 +353,7 @@ export async function analisarVendas({ de, ate }) {
   return {
     por_produto: porProduto,
     por_dia: porDia,
+    por_dia_produto: porDiaProduto,
     por_forma_pagamento: porForma,
     totais: totais[0],
   };

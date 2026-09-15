@@ -626,6 +626,11 @@ ok(
   analise.status === 200 && analise.dados.por_produto.length > 0 && analise.dados.por_dia.length > 0 &&
     analise.dados.totais.vendas > 0
 );
+ok(
+  "análise devolve por dia e produto, pra quem monta o lucro do dia cruzando com o custo",
+  analise.dados.por_dia_produto.length > 0 &&
+    analise.dados.por_dia_produto.every((item) => item.dia && item.produto_id)
+);
 
 // A duração do tratamento é o que permite prever recompra sem histórico.
 const duracaoInvalida = await req(`${S.estoque}/produtos/${produtoId}`, {
