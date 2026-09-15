@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
-import { BarChart3, Percent, TrendingUp, Trophy } from "lucide-react";
+import { BarChart3, LayoutGrid, Percent, TrendingUp, Trophy } from "lucide-react";
 import { api } from "../lib/api.js";
 import { usarBusca } from "../lib/usarBusca.js";
-import { formatarData, formatarMoeda, formatarNumero } from "../lib/formato.js";
+import { formatarMoeda, formatarNumero } from "../lib/formato.js";
 import { CardIndicador } from "../componentes/CardIndicador.jsx";
 import { ExportarRelatorio } from "../componentes/ExportarRelatorio.jsx";
 import { FiltroPeriodo, diasAtras } from "../componentes/FiltroPeriodo.jsx";
+import { GraficoCurvaAbc, GraficoVendasPorDia } from "../componentes/Graficos.jsx";
 import { Tabela } from "../componentes/Tabela.jsx";
 import {
   Aviso,
@@ -20,6 +21,13 @@ import {
 
 const TOM_CLASSE = { A: "sucesso", B: "info", C: "neutro" };
 
+const ABAS = [
+  { chave: "visao-geral", rotulo: "Visão geral", icone: LayoutGrid },
+  { chave: "mais-vendidos", rotulo: "Mais vendidos", icone: Trophy },
+  { chave: "curva-abc", rotulo: "Curva ABC", icone: BarChart3 },
+  { chave: "margem", rotulo: "Margem por produto", icone: Percent },
+];
+
 /**
  * Relatórios e indicadores. A receita por produto vem do vendas-service e o
  * custo do estoque-service; margem e curva ABC são calculadas aqui, cruzando os
@@ -27,6 +35,7 @@ const TOM_CLASSE = { A: "sucesso", B: "info", C: "neutro" };
  */
 export function Relatorios() {
   const [periodo, definirPeriodo] = useState({ de: diasAtras(29), ate: diasAtras(0) });
+  const [aba, definirAba] = useState("visao-geral");
 
   const consulta = useMemo(() => `?de=${periodo.de}&ate=${periodo.ate}`, [periodo]);
 
@@ -177,7 +186,45 @@ export function Relatorios() {
             </Aviso>
           ) : null}
 
-          <div className="grid grid-cols-[1fr_1fr] gap-4">
+          <div className="mb-4 flex gap-1">
+            {ABAS.map(({ chave, rotulo, icone: Icone }) => (
+              <button
+                key={chave}
+                type="button"
+                onClick={() => definirAba(chave)}
+                className={[
+                  "flex items-center gap-2 rounded-botao px-4 py-2 text-corpo transition-colors",
+                  aba === chave ? "bg-primario text-white" : "text-secundario hover:bg-borda/60",
+                ].join(" ")}
+              >
+                <Icone size={16} strokeWidth={2} aria-hidden="true" />
+                {rotulo}
+              </button>
+            ))}
+          </div>
+
+          {aba === "visao-geral" ? (
+            <Card>
+              <CardCabecalho
+                titulo="Vendas por dia"
+                descricao="Valor vendido a cada dia do período selecionado."
+                icone={TrendingUp}
+              />
+              <CardCorpo>
+                {analise.dados.por_dia.length ? (
+                  <GraficoVendasPorDia dados={analise.dados.por_dia} />
+                ) : (
+                  <EstadoVazio
+                    icone={TrendingUp}
+                    titulo="Nenhuma venda no período"
+                    descricao="Escolha outra janela de datas."
+                  />
+                )}
+              </CardCorpo>
+            </Card>
+          ) : null}
+
+          {aba === "mais-vendidos" ? (
             <Card>
               <CardCabecalho
                 titulo="Mais vendidos"
@@ -217,143 +264,122 @@ export function Relatorios() {
                 }
               />
             </Card>
+          ) : null}
 
+          {aba === "curva-abc" ? (
             <Card>
               <CardCabecalho
                 titulo="Curva ABC"
                 descricao="A: até 80% da receita. B: até 95%. C: o resto."
                 icone={BarChart3}
               />
-              <CardCorpo className="space-y-3">
-                {porClasse.map((grupo) => (
-                  <div key={grupo.classe}>
-                    <div className="mb-1 flex items-center justify-between">
+              <CardCorpo className="space-y-4">
+                <GraficoCurvaAbc dados={porClasse} />
+                <div className="grid grid-cols-3 gap-4 border-t border-borda pt-4">
+                  {porClasse.map((grupo) => (
+                    <div key={grupo.classe}>
                       <p className="text-corpo text-texto">
-                        <Badge tom={TOM_CLASSE[grupo.classe]}>Classe {grupo.classe}</Badge>{" "}
-                        <span className="text-secundario">
-                          {formatarNumero(grupo.itens)} produto(s)
-                        </span>
+                        <Badge tom={TOM_CLASSE[grupo.classe]}>Classe {grupo.classe}</Badge>
                       </p>
-                      <p className="text-corpo text-texto">{formatarMoeda(grupo.receita)}</p>
+                      <p className="mt-2 text-corpo text-texto">
+                        {formatarNumero(grupo.itens)} produto(s)
+                      </p>
+                      <p className="text-rotulo text-secundario">
+                        {formatarMoeda(grupo.receita)} —{" "}
+                        {grupo.participacao.toFixed(1).replace(".", ",")}% da receita
+                      </p>
                     </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-borda">
-                      <div
-                        className={`h-full rounded-full ${
-                          grupo.classe === "A"
-                            ? "bg-sucesso"
-                            : grupo.classe === "B"
-                              ? "bg-info"
-                              : "bg-secundario"
-                        }`}
-                        style={{ width: `${grupo.participacao}%` }}
-                      />
-                    </div>
-                    <p className="mt-1 text-rotulo text-secundario">
-                      {grupo.participacao.toFixed(1).replace(".", ",")}% da receita
-                    </p>
-                  </div>
-                ))}
-
-                <div className="border-t border-borda pt-3">
-                  <p className="text-rotulo text-secundario">
-                    Vendas por dia no período
-                  </p>
-                  <ul className="mt-2 space-y-1">
-                    {analise.dados.por_dia.map((dia) => (
-                      <li key={dia.dia} className="flex items-center justify-between text-rotulo">
-                        <span className="text-secundario">{formatarData(dia.dia)}</span>
-                        <span className="text-texto">
-                          {formatarMoeda(dia.valor)} — {dia.vendas} venda(s)
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+                  ))}
                 </div>
               </CardCorpo>
             </Card>
-          </div>
+          ) : null}
 
-          <Card>
-            <CardCabecalho
-              titulo="Margem por produto"
-              descricao="Receita, custo dos itens vendidos e participação na receita total."
-              icone={Percent}
-            />
-            <Tabela
-              colunas={[
-                {
-                  chave: "classe",
-                  titulo: "ABC",
-                  largura: "72px",
-                  renderizar: (item) => <Badge tom={TOM_CLASSE[item.classe]}>{item.classe}</Badge>,
-                },
-                { chave: "produto_nome", titulo: "Produto" },
-                {
-                  chave: "unidades",
-                  titulo: "Un.",
-                  alinhamento: "direita",
-                  renderizar: (item) => formatarNumero(item.unidades),
-                },
-                {
-                  chave: "receita",
-                  titulo: "Receita",
-                  alinhamento: "direita",
-                  renderizar: (item) => formatarMoeda(item.receita),
-                },
-                {
-                  chave: "custo_total",
-                  titulo: "Custo",
-                  alinhamento: "direita",
-                  renderizar: (item) =>
-                    item.custo_conhecido ? formatarMoeda(item.custo_total) : "—",
-                },
-                {
-                  chave: "lucro",
-                  titulo: "Lucro",
-                  alinhamento: "direita",
-                  renderizar: (item) => (
-                    <span className={item.lucro >= 0 ? "text-sucesso" : "text-erro"}>
-                      {formatarMoeda(item.lucro)}
-                    </span>
-                  ),
-                },
-                {
-                  chave: "margem_pct",
-                  titulo: "Margem",
-                  alinhamento: "direita",
-                  renderizar: (item) => `${item.margem_pct.toFixed(1).replace(".", ",")}%`,
-                },
-                {
-                  chave: "participacao_pct",
-                  titulo: "Participação",
-                  alinhamento: "direita",
-                  renderizar: (item) => `${item.participacao_pct.toFixed(1).replace(".", ",")}%`,
-                },
-              ]}
-              linhas={linhas}
-              totais={
-                linhas.length
-                  ? {
-                      __rotulo: `${linhas.length} produto(s) vendido(s)`,
-                      receita: formatarMoeda(receitaTotal),
-                      custo_total: formatarMoeda(
-                        linhas.reduce((soma, item) => soma + item.custo_total, 0)
-                      ),
-                      lucro: formatarMoeda(lucroTotal),
-                      margem_pct: `${margemMedia.toFixed(1).replace(".", ",")}%`,
-                    }
-                  : null
-              }
-              chave={(item) => item.produto_id}
-              vazio={
-                <EstadoVazio
-                  icone={Percent}
-                  titulo="Sem vendas para calcular margem"
-                  descricao="Escolha outro período."
-                />
-              }
-            />
-          </Card>
+          {aba === "margem" ? (
+            <Card>
+              <CardCabecalho
+                titulo="Margem por produto"
+                descricao="Receita, custo dos itens vendidos e participação na receita total."
+                icone={Percent}
+              />
+              <Tabela
+                colunas={[
+                  {
+                    chave: "classe",
+                    titulo: "ABC",
+                    largura: "72px",
+                    renderizar: (item) => (
+                      <Badge tom={TOM_CLASSE[item.classe]}>{item.classe}</Badge>
+                    ),
+                  },
+                  { chave: "produto_nome", titulo: "Produto" },
+                  {
+                    chave: "unidades",
+                    titulo: "Un.",
+                    alinhamento: "direita",
+                    renderizar: (item) => formatarNumero(item.unidades),
+                  },
+                  {
+                    chave: "receita",
+                    titulo: "Receita",
+                    alinhamento: "direita",
+                    renderizar: (item) => formatarMoeda(item.receita),
+                  },
+                  {
+                    chave: "custo_total",
+                    titulo: "Custo",
+                    alinhamento: "direita",
+                    renderizar: (item) =>
+                      item.custo_conhecido ? formatarMoeda(item.custo_total) : "—",
+                  },
+                  {
+                    chave: "lucro",
+                    titulo: "Lucro",
+                    alinhamento: "direita",
+                    renderizar: (item) => (
+                      <span className={item.lucro >= 0 ? "text-sucesso" : "text-erro"}>
+                        {formatarMoeda(item.lucro)}
+                      </span>
+                    ),
+                  },
+                  {
+                    chave: "margem_pct",
+                    titulo: "Margem",
+                    alinhamento: "direita",
+                    renderizar: (item) => `${item.margem_pct.toFixed(1).replace(".", ",")}%`,
+                  },
+                  {
+                    chave: "participacao_pct",
+                    titulo: "Participação",
+                    alinhamento: "direita",
+                    renderizar: (item) => `${item.participacao_pct.toFixed(1).replace(".", ",")}%`,
+                  },
+                ]}
+                linhas={linhas}
+                totais={
+                  linhas.length
+                    ? {
+                        __rotulo: `${linhas.length} produto(s) vendido(s)`,
+                        receita: formatarMoeda(receitaTotal),
+                        custo_total: formatarMoeda(
+                          linhas.reduce((soma, item) => soma + item.custo_total, 0)
+                        ),
+                        lucro: formatarMoeda(lucroTotal),
+                        margem_pct: `${margemMedia.toFixed(1).replace(".", ",")}%`,
+                      }
+                    : null
+                }
+                chave={(item) => item.produto_id}
+                vazio={
+                  <EstadoVazio
+                    icone={Percent}
+                    titulo="Sem vendas para calcular margem"
+                    descricao="Escolha outro período."
+                  />
+                }
+              />
+            </Card>
+          ) : null}
         </div>
       ) : null}
     </>
