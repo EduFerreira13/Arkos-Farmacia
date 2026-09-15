@@ -32,6 +32,15 @@ globalThis.getComputedStyle = dom.window.getComputedStyle;
 globalThis.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window);
 globalThis.cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.window);
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+// jsdom não implementa ResizeObserver; os gráficos (Recharts) usam para medir
+// o container — no teste isso nunca dispara, os gráficos só ficam com 0x0.
+class ResizeObserverFalso {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+globalThis.ResizeObserver = ResizeObserverFalso;
+dom.window.ResizeObserver = ResizeObserverFalso;
 
 const { default: React } = await import("react");
 const { createRoot } = await import("react-dom/client");
