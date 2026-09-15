@@ -108,6 +108,10 @@ const PERMISSOES_POR_PERFIL = {
 };
 
 let perfilAtual = "gerente";
+// Controla a fixture de /api/auth/me — true (padrão) simula sessão válida;
+// false simula deslogado (401 de verdade), para a tela de Login ter algo
+// para renderizar (sem cookie, o app real também recebe 401 de /auth/me).
+let autenticadoNaFixture = true;
 
 const PRODUTO = {
   id: "22222222-2222-2222-2222-222222222222",
@@ -709,6 +713,20 @@ const chamadas = [];
 globalThis.fetch = async (url) => {
   const endereco = String(url);
   chamadas.push(endereco);
+
+  // Deslogado de verdade: sem cookie, o backend real responde 401 em
+  // /auth/me (packages/auth-middleware) — é o que faz a tela de Login
+  // renderizar em vez de redirecionar (autenticado: false).
+  if (/\/api\/auth\/me$/.test(endereco) && !autenticadoNaFixture) {
+    return {
+      ok: false,
+      status: 401,
+      headers: { get: () => null },
+      text: async () =>
+        JSON.stringify({ erro: "nao_autenticado", mensagem: "Token ausente ou mal formatado." }),
+    };
+  }
+
   const encontrado = RESPOSTAS.find(([padrao]) => padrao.test(endereco));
 
   if (!encontrado) {
@@ -754,9 +772,11 @@ console.error = (...args) => {
 };
 
 async function montar(nome, Pagina) {
-  // A tela de login só aparece para quem não está autenticado.
-  if (nome === "Login") localStorage.removeItem("arkos.token");
-  else localStorage.setItem("arkos.token", "token-de-teste");
+  // A tela de login só aparece para quem não está autenticado — simula isso
+  // de verdade fazendo /auth/me devolver 401 (autenticadoNaFixture), não
+  // mexendo em localStorage.arkos.token (o JWT vive em cookie httpOnly, esse
+  // valor não é lido em lugar nenhum do app).
+  autenticadoNaFixture = nome !== "Login";
 
   const container = dom.window.document.createElement("div");
   dom.window.document.body.appendChild(container);
@@ -804,6 +824,7 @@ async function montar(nome, Pagina) {
     falhas += 1;
     console.log(`FALHA — ${nome} :: ${erro.message}`);
   } finally {
+    autenticadoNaFixture = true; // nunca deixa "deslogado" vazar para a próxima tela
     await act(async () => raiz.unmount());
     container.remove();
   }
