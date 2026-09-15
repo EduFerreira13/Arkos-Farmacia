@@ -84,22 +84,25 @@ const CORES_CLASSE = {
   C: "var(--cor-texto-secundario)",
 };
 
-function TooltipCurvaAbc({ active, payload }) {
+function TooltipCurvaAbc({ active, payload, chave, formatarValor }) {
   if (!active || !payload?.length) return null;
   const item = payload[0].payload;
   return (
     <CartaoTooltip>
       <p className="text-rotulo text-secundario">Classe {item.classe}</p>
-      <p className="text-corpo font-semibold text-texto">{formatarMoeda(item.receita)}</p>
+      <p className="text-corpo font-semibold text-texto">{formatarValor(item[chave])}</p>
       <p className="text-rotulo text-secundario">
-        {item.itens} produto(s) — {item.participacao.toFixed(1).replace(".", ",")}% da receita
+        {item.itens} produto(s) — {item.participacao.toFixed(1).replace(".", ",")}% do total
       </p>
     </CartaoTooltip>
   );
 }
 
-/** Barras com a receita de cada classe da curva ABC. */
-export function GraficoCurvaAbc({ dados }) {
+/**
+ * Barras com o valor de cada classe da curva ABC — `chave` diz qual campo de
+ * `dados` mostrar (ex: "receita" ou "vendas") e `formatarValor` como exibi-lo.
+ */
+export function GraficoCurvaAbc({ dados, chave, formatarValor }) {
   return (
     <div className="font-sans">
       <ResponsiveContainer width="100%" height={220}>
@@ -113,14 +116,17 @@ export function GraficoCurvaAbc({ dados }) {
             tickLine={false}
           />
           <YAxis
-            tickFormatter={(valor) => formatarMoeda(valor)}
+            tickFormatter={formatarValor}
             tick={{ fill: "var(--cor-texto-secundario)", fontSize: 12 }}
             axisLine={false}
             tickLine={false}
             width={80}
           />
-          <Tooltip content={<TooltipCurvaAbc />} cursor={{ fill: "var(--cor-borda)", opacity: 0.4 }} />
-          <Bar dataKey="receita" radius={[6, 6, 0, 0]} maxBarSize={72}>
+          <Tooltip
+            content={<TooltipCurvaAbc chave={chave} formatarValor={formatarValor} />}
+            cursor={{ fill: "var(--cor-borda)", opacity: 0.4 }}
+          />
+          <Bar dataKey={chave} radius={[6, 6, 0, 0]} maxBarSize={72}>
             {dados.map((item) => (
               <Cell key={item.classe} fill={CORES_CLASSE[item.classe]} />
             ))}

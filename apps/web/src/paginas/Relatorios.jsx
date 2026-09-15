@@ -21,6 +21,51 @@ import {
 
 const TOM_CLASSE = { A: "sucesso", B: "info", C: "neutro" };
 
+/**
+ * Classifica itens em A (até 80% do total acumulado), B (até 95%) e C (o
+ * resto), pelo critério que `valorDe` extrai de cada item — serve tanto para
+ * faturamento quanto para frequência de vendas.
+ */
+function classificarAbc(itens, valorDe) {
+  const total = itens.reduce((soma, item) => soma + valorDe(item), 0);
+  let acumulado = 0;
+
+  return itens
+    .slice()
+    .sort((a, b) => valorDe(b) - valorDe(a))
+    .map((item) => {
+      const valor = valorDe(item);
+      acumulado += valor;
+      const percentualAcumulado = total > 0 ? (acumulado / total) * 100 : 0;
+      return {
+        ...item,
+        participacao_pct: total > 0 ? (valor / total) * 100 : 0,
+        classe: percentualAcumulado <= 80 ? "A" : percentualAcumulado <= 95 ? "B" : "C",
+      };
+    });
+}
+
+/** Agrupa itens já classificados (ver classificarAbc) em totais por classe. */
+function agruparPorClasse(itensClassificados, valorDe, chaveValor) {
+  const totalGeral = itensClassificados.reduce((soma, item) => soma + valorDe(item), 0);
+
+  return ["A", "B", "C"].map((classe) => {
+    const doGrupo = itensClassificados.filter((item) => item.classe === classe);
+    const valorGrupo = doGrupo.reduce((soma, item) => soma + valorDe(item), 0);
+    return {
+      classe,
+      itens: doGrupo.length,
+      [chaveValor]: valorGrupo,
+      participacao: totalGeral ? (valorGrupo / totalGeral) * 100 : 0,
+    };
+  });
+}
+
+const CRITERIOS_ABC = [
+  { chave: "faturamento", rotulo: "Por faturamento" },
+  { chave: "frequencia", rotulo: "Por frequência de vendas" },
+];
+
 const ABAS = [
   { chave: "visao-geral", rotulo: "Visão geral", icone: LayoutGrid },
   { chave: "mais-vendidos", rotulo: "Mais vendidos", icone: Trophy },
@@ -36,6 +81,7 @@ const ABAS = [
 export function Relatorios() {
   const [periodo, definirPeriodo] = useState({ de: diasAtras(29), ate: diasAtras(0) });
   const [aba, definirAba] = useState("visao-geral");
+  const [criterioAbc, definirCriterioAbc] = useState("faturamento");
 
   const consulta = useMemo(() => `?de=${periodo.de}&ate=${periodo.ate}`, [periodo]);
 
@@ -69,23 +115,9 @@ export function Relatorios() {
       };
     });
 
-    // Curva ABC pela receita acumulada: A até 80%, B até 95%, C o resto.
-    const receitaTotal = comMargem.reduce((soma, item) => soma + item.receita, 0);
-    let acumulado = 0;
-
-    return comMargem
-      .slice()
-      .sort((a, b) => b.receita - a.receita)
-      .map((item) => {
-        acumulado += item.receita;
-        const percentualAcumulado = receitaTotal > 0 ? (acumulado / receitaTotal) * 100 : 0;
-        return {
-          ...item,
-          participacao_pct: receitaTotal > 0 ? (item.receita / receitaTotal) * 100 : 0,
-          acumulado_pct: percentualAcumulado,
-          classe: percentualAcumulado <= 80 ? "A" : percentualAcumulado <= 95 ? "B" : "C",
-        };
-      });
+    // Curva ABC pelo faturamento acumulado: A até 80%, B até 95%, C o resto.
+    // A classe de cada produto (usada na tabela de margem) é sempre esta.
+    return classificarAbc(comMargem, (item) => item.receita);
   }, [analise.dados, catalogo.dados]);
 
   const totais = analise.dados?.totais;
@@ -94,17 +126,17 @@ export function Relatorios() {
   const margemMedia = receitaTotal > 0 ? (lucroTotal / receitaTotal) * 100 : 0;
   const semCusto = linhas.filter((item) => !item.custo_conhecido).length;
 
-  const porClasse = ["A", "B", "C"].map((classe) => {
-    const doGrupo = linhas.filter((item) => item.classe === classe);
-    return {
-      classe,
-      itens: doGrupo.length,
-      receita: doGrupo.reduce((soma, item) => soma + item.receita, 0),
-      participacao: receitaTotal
-        ? (doGrupo.reduce((soma, item) => soma + item.receita, 0) / receitaTotal) * 100
-        : 0,
-    };
-  });
+  const porClasseFaturamento = agruparPorClasse(linhas, (item) => item.receita, "receita");
+
+  // Segunda curva ABC, agora pela frequência de vendas (nº de vendas que
+  // incluíram o produto) em vez do faturamento — mesma regra 80/95/resto.
+  const porClasseFrequencia = agruparPorClasse(
+    classificarAbc(linhas, (item) => item.vendas),
+    (item) => item.vendas,
+    "vendas"
+  );
+
+  const porClasse = criterioAbc === "faturamento" ? porClasseFaturamento : porClasseFrequencia;
 
   const maisVendidos = linhas.slice().sort((a, b) => b.unidades - a.unidades).slice(0, 10);
 
@@ -270,11 +302,38 @@ export function Relatorios() {
             <Card>
               <CardCabecalho
                 titulo="Curva ABC"
-                descricao="A: até 80% da receita. B: até 95%. C: o resto."
+                descricao={
+                  criterioAbc === "faturamento"
+                    ? "Por faturamento. A: até 80% da receita. B: até 95%. C: o resto."
+                    : "Por frequência de vendas. A: até 80% das vendas. B: até 95%. C: o resto."
+                }
                 icone={BarChart3}
+                acoes={
+                  <div className="flex items-center gap-1 rounded-botao border border-borda p-1">
+                    {CRITERIOS_ABC.map((criterio) => (
+                      <button
+                        key={criterio.chave}
+                        type="button"
+                        onClick={() => definirCriterioAbc(criterio.chave)}
+                        className={[
+                          "rounded-botao px-3 py-1 text-rotulo transition-colors",
+                          criterioAbc === criterio.chave
+                            ? "bg-primario text-white"
+                            : "text-secundario hover:bg-borda/60",
+                        ].join(" ")}
+                      >
+                        {criterio.rotulo}
+                      </button>
+                    ))}
+                  </div>
+                }
               />
               <CardCorpo className="space-y-4">
-                <GraficoCurvaAbc dados={porClasse} />
+                <GraficoCurvaAbc
+                  dados={porClasse}
+                  chave={criterioAbc === "faturamento" ? "receita" : "vendas"}
+                  formatarValor={criterioAbc === "faturamento" ? formatarMoeda : formatarNumero}
+                />
                 <div className="grid grid-cols-3 gap-4 border-t border-borda pt-4">
                   {porClasse.map((grupo) => (
                     <div key={grupo.classe}>
@@ -285,8 +344,11 @@ export function Relatorios() {
                         {formatarNumero(grupo.itens)} produto(s)
                       </p>
                       <p className="text-rotulo text-secundario">
-                        {formatarMoeda(grupo.receita)} —{" "}
-                        {grupo.participacao.toFixed(1).replace(".", ",")}% da receita
+                        {criterioAbc === "faturamento"
+                          ? formatarMoeda(grupo.receita)
+                          : `${formatarNumero(grupo.vendas)} venda(s)`}{" "}
+                        — {grupo.participacao.toFixed(1).replace(".", ",")}%{" "}
+                        {criterioAbc === "faturamento" ? "da receita" : "das vendas"}
                       </p>
                     </div>
                   ))}
