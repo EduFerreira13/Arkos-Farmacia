@@ -74,6 +74,10 @@ const ABAS = [
   { chave: "margem", rotulo: "Margem por produto", icone: Percent },
 ];
 
+// Meta mínima de faturamento diário, combinada com o dono da farmácia — sem
+// tela de parâmetros ainda, então fica fixa aqui (ver docs/PENDENCIAS.md).
+const META_MINIMA_DIARIA = 2100;
+
 /**
  * Relatórios e indicadores. A receita por produto vem do vendas-service e o
  * custo do estoque-service; margem e curva ABC são calculadas aqui, cruzando os
@@ -92,13 +96,17 @@ export function Relatorios() {
   const carregando = analise.carregando || catalogo.carregando;
   const falha = analise.erro || catalogo.erro;
 
+  // Custo por produto vem do estoque-service — usado tanto na margem por
+  // produto quanto no lucro por dia, sem nenhum dos dois serviços precisar
+  // conhecer o schema do outro.
+  const custoPorProduto = useMemo(() => {
+    if (!catalogo.dados) return new Map();
+    return new Map(catalogo.dados.produtos.map((produto) => [produto.id, Number(produto.preco_custo)]));
+  }, [catalogo.dados]);
+
   /** Cruza vendas com custo, calcula margem e classifica em A, B e C. */
   const linhas = useMemo(() => {
     if (!analise.dados || !catalogo.dados) return [];
-
-    const custoPorProduto = new Map(
-      catalogo.dados.produtos.map((produto) => [produto.id, Number(produto.preco_custo)])
-    );
 
     const comMargem = analise.dados.por_produto.map((item) => {
       const custoUnitario = custoPorProduto.get(item.produto_id) ?? 0;
@@ -119,7 +127,29 @@ export function Relatorios() {
     // Curva ABC pelo faturamento acumulado: A até 80%, B até 95%, C o resto.
     // A classe de cada produto (usada na tabela de margem) é sempre esta.
     return classificarAbc(comMargem, (item) => item.receita);
-  }, [analise.dados, catalogo.dados]);
+  }, [analise.dados, catalogo.dados, custoPorProduto]);
+
+  /**
+   * Lucro por dia: cruza o faturamento por dia com o custo dos itens vendidos
+   * naquele dia (por_dia_produto), do mesmo jeito que a margem por produto
+   * cruza o período inteiro.
+   */
+  const vendasPorDia = useMemo(() => {
+    if (!analise.dados || !catalogo.dados) return [];
+
+    const custoPorDia = new Map();
+    for (const item of analise.dados.por_dia_produto ?? []) {
+      const custoUnitario = custoPorProduto.get(item.produto_id) ?? 0;
+      const custoAcumulado = custoPorDia.get(item.dia) ?? 0;
+      custoPorDia.set(item.dia, custoAcumulado + custoUnitario * item.unidades);
+    }
+
+    return analise.dados.por_dia.map((dia) => {
+      const valor = Number(dia.valor);
+      const custo = custoPorDia.get(dia.dia) ?? 0;
+      return { ...dia, valor, custo, lucro: valor - custo };
+    });
+  }, [analise.dados, catalogo.dados, custoPorProduto]);
 
   const totais = analise.dados?.totais;
   const lucroTotal = linhas.reduce((soma, item) => soma + item.lucro, 0);
@@ -278,12 +308,12 @@ export function Relatorios() {
             <Card>
               <CardCabecalho
                 titulo="Vendas por dia"
-                descricao="Valor vendido a cada dia do período selecionado."
+                descricao={`Faturamento e lucro por dia, com a meta mínima diária (${formatarMoeda(META_MINIMA_DIARIA)}).`}
                 icone={TrendingUp}
               />
               <CardCorpo>
-                {analise.dados.por_dia.length ? (
-                  <GraficoVendasPorDia dados={analise.dados.por_dia} />
+                {vendasPorDia.length ? (
+                  <GraficoVendasPorDia dados={vendasPorDia} meta={META_MINIMA_DIARIA} />
                 ) : (
                   <EstadoVazio
                     icone={TrendingUp}

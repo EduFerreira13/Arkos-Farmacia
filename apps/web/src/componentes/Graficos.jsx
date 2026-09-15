@@ -5,11 +5,14 @@
 
 import {
   Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
+  Legend,
+  Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -27,22 +30,40 @@ function CartaoTooltip({ children }) {
 
 function TooltipVendasPorDia({ active, payload, label }) {
   if (!active || !payload?.length) return null;
-  const [{ value, payload: item }] = payload;
+  const item = payload[0].payload;
   return (
     <CartaoTooltip>
       <p className="text-rotulo text-secundario">{formatarData(label)}</p>
-      <p className="text-corpo font-semibold text-texto">{formatarMoeda(value)}</p>
+      <p className="text-corpo font-semibold text-texto">
+        <span style={{ color: "var(--cor-info)" }}>{formatarMoeda(item.valor)}</span> faturados
+      </p>
+      <p className="text-corpo font-semibold" style={{ color: "var(--cor-sucesso)" }}>
+        {formatarMoeda(item.lucro)} de lucro
+      </p>
       <p className="text-rotulo text-secundario">{item.vendas} venda(s)</p>
     </CartaoTooltip>
   );
 }
 
-/** Área com o valor vendido por dia no período. */
-export function GraficoVendasPorDia({ dados }) {
+const LEGENDA_VENDAS_POR_DIA = { fontSize: 12, color: "var(--cor-texto-secundario)" };
+
+/**
+ * Faturamento (área) e lucro (linha) por dia, com uma linha de referência
+ * pontilhada para a meta mínima diária, quando informada.
+ */
+export function GraficoVendasPorDia({ dados, meta }) {
+  // Recharts só põe Area/Line na legenda sozinho — a linha de referência da
+  // meta entra manualmente pra aparecer junto.
+  const legenda = [
+    { value: "Faturamento", type: "square", color: "var(--cor-info)" },
+    { value: "Lucro", type: "line", color: "var(--cor-sucesso)" },
+  ];
+  if (meta) legenda.push({ value: "Meta mínima", type: "line", color: "var(--cor-erro)" });
+
   return (
     <div className="font-sans">
-      <ResponsiveContainer width="100%" height={260}>
-        <AreaChart data={dados} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
+      <ResponsiveContainer width="100%" height={280}>
+        <ComposedChart data={dados} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
           <defs>
             <linearGradient id="areaVendasPorDia" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="var(--cor-info)" stopOpacity={0.28} />
@@ -65,14 +86,39 @@ export function GraficoVendasPorDia({ dados }) {
             width={80}
           />
           <Tooltip content={<TooltipVendasPorDia />} cursor={{ stroke: "var(--cor-borda)" }} />
+          <Legend
+            verticalAlign="top"
+            align="right"
+            height={32}
+            payload={legenda}
+            wrapperStyle={LEGENDA_VENDAS_POR_DIA}
+          />
           <Area
             type="monotone"
             dataKey="valor"
+            name="Faturamento"
             stroke="var(--cor-info)"
             strokeWidth={2}
             fill="url(#areaVendasPorDia)"
           />
-        </AreaChart>
+          <Line
+            type="monotone"
+            dataKey="lucro"
+            name="Lucro"
+            stroke="var(--cor-sucesso)"
+            strokeWidth={2}
+            dot={false}
+          />
+          {meta ? (
+            <ReferenceLine
+              y={meta}
+              stroke="var(--cor-erro)"
+              strokeWidth={1.5}
+              strokeDasharray="5 4"
+              ifOverflow="extendDomain"
+            />
+          ) : null}
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );
