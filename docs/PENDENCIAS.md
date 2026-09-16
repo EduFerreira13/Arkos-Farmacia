@@ -8,7 +8,6 @@
 
 ### Decisões de negócio / jurídico
 
-- [ ] **Schema `public` do banco ainda tem o projeto legado (Prisma)** — confirmado em 16/09/2026: 58 tabelas de um backoffice de clínica (`tenants`, `pacientes`, `prontuarios`, `agendamentos`, `_prisma_migrations`, etc.) continuam lá. Não faz parte desta modelagem e não foi apagado (`0000_drop_legacy.sql` só limpa os 6 schemas do Arkos). Decidir: apagar de vez ou conviver com o legado em `public`.
 - [ ] **Consentimento e retenção de dados do CRM (LGPD)** — confirmado em 16/09/2026, nada mudou. O sistema respeita `aceita_contato` e registra quem foi contatado, mas falta: momento/forma de coletar consentimento no cadastro, prazo de retenção do histórico de compra, e caminho para o cliente pedir exclusão. Decisão de negócio/jurídica antes de usar a lista para campanha.
 - [ ] **"Retenção de receita" de antibiótico não tem mecanismo próprio** — `docs/REGRAS-NEGOCIO.md` §3 descrevia dois fluxos (tarja preta = registro da receita; antibiótico/tarja vermelha = retenção física, com anexo/scan). O que existe é um único mecanismo (`vendas.receitas`: médico, CRM, paciente, data) para os dois casos. Decidir se a retenção física é necessária além do registro digital.
 - [ ] **CPF e dados de receita (médico, paciente, CRM) ficam em texto puro no banco** — sem criptografia em repouso. A minimização de dados já foi feita (ver Resolvido); falta decidir, com quem cuida do jurídico, se vale o custo de criptografar em repouso frente ao risco de exposição em vazamento.
@@ -40,6 +39,8 @@ Mesma causa raiz nos seis itens: não existe uma tela de parâmetros ainda, ent�
 ## Resolvido
 
 <!-- Mover itens para cá conforme forem decididos, com a data e a decisão tomada -->
+
+- [x] **Schema `public` do banco — projeto legado (Prisma) apagado** — decidido e executado em 16/09/2026. As 57 tabelas de um backoffice de clínica (`tenants`, `pacientes`, `prontuarios`, `agendamentos`, `_prisma_migrations`, etc.) não tinham referência em nenhuma rota/query do Arkos (código sempre qualifica schema, ex. `auth.usuarios`) e não tinham atividade havia mais de 3 meses (toda a carga de dados foi criada em rajadas entre 27/05 e 07/06/2026 — cara de teste/onboarding abandonado, não uso corrente). Apagadas via `DROP TABLE ... CASCADE`, uma a uma, dentro de uma transação. `public.arkos_migrations` foi preservada — é a tabela de controle de migration do próprio Arkos (`database/scripts/run-migrations.js`), não fazia parte do legado. `public` hoje só tem essa tabela.
 
 - [x] **Redis opcional — Docker não instalado nesta máquina não bloqueia nada** — revisado em 16/09/2026: a decisão já estava implementada, só não tinha sido movida para cá. Se `REDIS_URL` não responder, o serviço loga um aviso e consulta o banco direto; nenhuma parte do MVP depende de Redis. Reabrir só se um dia quiserem ligar o cache de verdade — basta `docker compose up -d` com o Docker Desktop instalado.
 
