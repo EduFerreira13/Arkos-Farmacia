@@ -65,6 +65,18 @@ export const env = {
     tokenHomologacao: process.env.FOCUS_NFE_TOKEN_HOMOLOGACAO ?? "",
     urlBase: process.env.FOCUS_NFE_URL_BASE ?? "https://homologacao.focusnfe.com.br",
   },
+
+  // Envio de email da recuperação de senha (modulos/auth/email.js). Funciona
+  // com qualquer provedor que fale SMTP (Gmail, SendGrid, Resend, SES, SMTP da
+  // farmácia) — sem host configurado, o email não sai (fica só no log e, em
+  // desenvolvimento, na resposta) — ver docs/PENDENCIAS.md.
+  SMTP: {
+    host: process.env.SMTP_HOST ?? "",
+    port: Number(process.env.SMTP_PORT ?? 587),
+    usuario: process.env.SMTP_USER ?? "",
+    senha: process.env.SMTP_SENHA ?? "",
+    remetente: process.env.SMTP_REMETENTE ?? "Arkos <nao-responda@arkos.local>",
+  },
 };
 
 export function validarEnv() {

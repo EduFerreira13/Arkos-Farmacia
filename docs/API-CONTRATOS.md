@@ -13,7 +13,7 @@
 | POST | `/auth/login` | `{ email, senha }` → `{ token, usuario }` |
 | GET | `/auth/me` | Retorna dados do usuário autenticado |
 | GET | `/auth/perfis` | Lista os 4 perfis padrão |
-| POST | `/auth/recuperar-senha` | Gera código de redefinição válido por 30 minutos |
+| POST | `/auth/recuperar-senha` | Gera código de redefinição válido por 30 minutos e manda por email (SMTP) |
 | POST | `/auth/redefinir-senha` | Troca a senha usando o código (uso único) |
 | GET | `/auth/usuarios` | Lista usuários (admin) — `?busca=&perfil=&ativo=` |
 | GET | `/auth/relatorios/usuarios` | Planilha dos usuários, com os mesmos filtros (admin) |
@@ -42,6 +42,17 @@ não aceita simular dentro de simulação; enquanto durar, `GET /auth/me` respon
 com o perfil simulado. O token real fica num segundo cookie, só durante a
 simulação (`arkos_token_original`) — `POST /auth/encerrar-simulacao` lê esse
 cookie e devolve a sessão original; sem simulação em andamento, responde 422.
+
+**Recuperação de senha por email**: `POST /auth/recuperar-senha` manda o código
+por SMTP (`modulos/auth/email.js`) — funciona com qualquer provedor que fale
+SMTP (Gmail, SendGrid, Resend, SES, SMTP da própria farmácia; `SMTP_HOST` no
+`.env`). Sem `SMTP_HOST` configurado, o código simplesmente não sai (fica só
+no log) — nunca é isso que bloqueia a resposta da rota, que sempre volta 200
+com a mesma mensagem neutra (exista ou não o email, ativo ou não o usuário —
+por isso nunca vira um jeito de descobrir quem tem conta). Em
+`NODE_ENV=development`, a resposta também traz `token_de_desenvolvimento` (com
+ou sem SMTP configurado), para testar sem precisar checar uma caixa de
+entrada.
 
 ---
 

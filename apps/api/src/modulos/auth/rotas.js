@@ -11,6 +11,7 @@ import {
 } from "@arkos/auth-middleware";
 import { env } from "../../env.js";
 import { textoObrigatorio, validarCorpo, z } from "../../lib/validacao.js";
+import { enviarEmailRecuperacao } from "./email.js";
 import { formatarDataHora, gerarCsv, hojeNoFuso } from "./relatorios.js";
 import {
   atualizarUsuario,
@@ -202,9 +203,10 @@ export async function registrarRotas(app) {
    * Esqueci minha senha. Responde igual existindo ou não o email — senão a tela
    * viraria um jeito de descobrir quem tem conta.
    *
-   * No MVP não há serviço de email configurado: em desenvolvimento o link volta
-   * na resposta para dar para testar; em produção ele só sai pelo canal de envio
-   * (ver docs/PENDENCIAS.md).
+   * Manda o código por email (SMTP_HOST no .env — ver modulos/auth/email.js).
+   * Sem SMTP configurado, o código não sai pra ninguém; em desenvolvimento ele
+   * também volta na resposta, pra dar pra testar sem precisar de email de
+   * verdade (ver docs/PENDENCIAS.md).
    */
   app.post(
     "/recuperar-senha",
@@ -228,14 +230,24 @@ export async function registrarRotas(app) {
         minutosDeValidade: VALIDADE_RECUPERACAO_MIN,
       });
 
-      requisicao.log.info({ usuario: usuario.email }, "link de redefinicao de senha gerado");
+      const envio = await enviarEmailRecuperacao(
+        { para: usuario.email, token, minutosDeValidade: VALIDADE_RECUPERACAO_MIN },
+        { logger: requisicao.log }
+      );
+      requisicao.log.info(
+        { usuario: usuario.email, email_enviado: envio.enviado },
+        "link de redefinicao de senha gerado"
+      );
 
       if (env.NODE_ENV === "development") {
         return {
           ...respostaNeutra,
-          // Só em desenvolvimento: sem serviço de email, é assim que se testa.
+          // Só em desenvolvimento: mesmo com SMTP configurado, isso ajuda a
+          // testar sem precisar checar a caixa de entrada.
           token_de_desenvolvimento: token,
-          aviso: "Sem serviço de email no MVP: use este token para redefinir.",
+          aviso: envio.enviado
+            ? "Email enviado — este token também está aqui só para facilitar o teste."
+            : "SMTP não configurado: use este token para redefinir.",
         };
       }
 

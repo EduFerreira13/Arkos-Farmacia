@@ -158,6 +158,50 @@ const simularComoGerente = await req(`${S.auth}/auth/simular`, {
 });
 ok("gerente não simula perfil", simularComoGerente.status === 403);
 
+const usuarioParaRecuperacao = await req(`${S.auth}/auth/usuarios`, {
+  metodo: "POST", token: admin,
+  corpo: { nome: `Recuperacao ${sufixo}`, email: `recuperacao.${sufixo}@arkos.com`, senha: "arkos123", perfil: "operador_caixa" },
+});
+ok("cria usuário para o teste de recuperação de senha", usuarioParaRecuperacao.status === 201);
+
+const recuperacaoInexistente = await req(`${S.auth}/auth/recuperar-senha`, {
+  metodo: "POST", corpo: { email: `nao.existe.${sufixo}@arkos.com` },
+});
+ok(
+  "recuperação de senha não denuncia email inexistente",
+  recuperacaoInexistente.status === 200 && !recuperacaoInexistente.dados.token_de_desenvolvimento
+);
+
+const recuperacao = await req(`${S.auth}/auth/recuperar-senha`, {
+  metodo: "POST", corpo: { email: `recuperacao.${sufixo}@arkos.com` },
+});
+ok(
+  "gera código de recuperação (ambiente de dev devolve o token pra testar)",
+  recuperacao.status === 200 && Boolean(recuperacao.dados.token_de_desenvolvimento)
+);
+
+const redefinida = await req(`${S.auth}/auth/redefinir-senha`, {
+  metodo: "POST",
+  corpo: { token: recuperacao.dados.token_de_desenvolvimento, senha: "novaSenha456" },
+});
+ok("redefine a senha com o token", redefinida.status === 200);
+
+const loginComSenhaAntiga = await req(`${S.auth}/auth/login`, {
+  metodo: "POST", corpo: { email: `recuperacao.${sufixo}@arkos.com`, senha: "arkos123" },
+});
+ok("senha antiga não funciona mais depois da redefinição", loginComSenhaAntiga.status === 401);
+
+const loginComSenhaNova = await req(`${S.auth}/auth/login`, {
+  metodo: "POST", corpo: { email: `recuperacao.${sufixo}@arkos.com`, senha: "novaSenha456" },
+});
+ok("entra com a senha nova", loginComSenhaNova.status === 200);
+
+const tokenReusado = await req(`${S.auth}/auth/redefinir-senha`, {
+  metodo: "POST",
+  corpo: { token: recuperacao.dados.token_de_desenvolvimento, senha: "outraSenha789" },
+});
+ok("token de recuperação já usado não funciona de novo", tokenReusado.status === 422);
+
 secao("estoque-service");
 const categorias = await req(`${S.estoque}/categorias`, { token: gerente });
 ok("categorias padrão cadastradas", categorias.dados.categorias.length >= 3);
