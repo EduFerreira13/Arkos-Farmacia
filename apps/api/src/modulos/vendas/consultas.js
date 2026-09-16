@@ -58,7 +58,8 @@ export async function listarVendas({
       EXISTS (SELECT 1 FROM vendas.itens_venda i
                WHERE i.venda_id = v.id AND i.produto_nome ILIKE ${parametro})
       OR EXISTS (SELECT 1 FROM vendas.receitas r
-                  WHERE r.venda_id = v.id AND r.paciente_nome ILIKE ${parametro})
+                  WHERE r.venda_id = v.id
+                    AND pgp_sym_decrypt(r.paciente_nome, current_setting('app.crypto_key'))::text ILIKE ${parametro})
       OR c.nome ILIKE ${parametro}
     )`);
   }
@@ -77,7 +78,8 @@ export async function listarVendas({
                FROM vendas.pagamentos p WHERE p.venda_id = v.id) AS formas_pagamento,
             EXISTS (SELECT 1 FROM vendas.itens_venda i
                      WHERE i.venda_id = v.id AND i.tipo_controle <> 'livre') AS tem_controlado,
-            (SELECT r.paciente_nome FROM vendas.receitas r WHERE r.venda_id = v.id) AS paciente_nome
+            (SELECT pgp_sym_decrypt(r.paciente_nome, current_setting('app.crypto_key'))::text
+               FROM vendas.receitas r WHERE r.venda_id = v.id) AS paciente_nome
        FROM vendas.vendas v
        LEFT JOIN vendas.clientes c ON c.id = v.cliente_id
       WHERE ${condicoes.join(" AND ")}
@@ -105,7 +107,8 @@ export async function listarClientes({ busca, convenio, min_compras, min_valor, 
   if (busca) {
     valores.push(`%${busca}%`);
     condicoes.push(
-      `(cl.nome ILIKE $${valores.length} OR cl.cpf ILIKE $${valores.length}
+      `(cl.nome ILIKE $${valores.length}
+        OR pgp_sym_decrypt(cl.cpf, current_setting('app.crypto_key'))::text ILIKE $${valores.length}
         OR cl.convenio ILIKE $${valores.length} OR cl.telefone ILIKE $${valores.length}
         OR cl.email ILIKE $${valores.length})`
     );
@@ -139,7 +142,9 @@ export async function listarClientes({ busca, convenio, min_compras, min_valor, 
   };
 
   const { rows } = await consultar(
-    `SELECT cl.id, cl.nome, cl.cpf, cl.telefone, cl.email, cl.convenio, cl.observacao,
+    `SELECT cl.id, cl.nome,
+            pgp_sym_decrypt(cl.cpf, current_setting('app.crypto_key'))::text AS cpf,
+            cl.telefone, cl.email, cl.convenio, cl.observacao,
             cl.endereco, cl.ativo, cl.aceita_contato, cl.data_nascimento, cl.criado_em,
             compras.total_compras, compras.total_gasto, compras.ultima_compra
        FROM vendas.clientes cl
@@ -164,8 +169,9 @@ export async function inserirCliente(dados) {
     `INSERT INTO vendas.clientes
        (nome, cpf, telefone, email, convenio, observacao, endereco, data_nascimento,
         aceita_contato)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, true))
-     RETURNING id, nome, cpf, telefone, email, convenio, observacao, endereco, ativo,
+     VALUES ($1, pgp_sym_encrypt($2::text, current_setting('app.crypto_key')), $3, $4, $5, $6, $7, $8, COALESCE($9, true))
+     RETURNING id, nome, pgp_sym_decrypt(cpf, current_setting('app.crypto_key'))::text AS cpf,
+               telefone, email, convenio, observacao, endereco, ativo,
                aceita_contato, data_nascimento, criado_em`,
     [
       dados.nome,
@@ -202,7 +208,13 @@ export async function atualizarCliente(id, campos) {
   for (const campo of CAMPOS_CLIENTE) {
     if (campos[campo] === undefined) continue;
     valores.push(campos[campo]);
-    partes.push(`${campo} = $${valores.length}`);
+    // cpf é criptografado em repouso (pgcrypto, migration 0025) — encripta no
+    // próprio placeholder, sem mudar o resto do mecanismo genérico.
+    partes.push(
+      campo === "cpf"
+        ? `cpf = pgp_sym_encrypt($${valores.length}::text, current_setting('app.crypto_key'))`
+        : `${campo} = $${valores.length}`
+    );
   }
   if (!partes.length) return null;
 
@@ -210,7 +222,8 @@ export async function atualizarCliente(id, campos) {
   const { rows } = await consultar(
     `UPDATE vendas.clientes SET ${partes.join(", ")}
       WHERE id = $${valores.length}
-      RETURNING id, nome, cpf, telefone, email, convenio, observacao, endereco, ativo,
+      RETURNING id, nome, pgp_sym_decrypt(cpf, current_setting('app.crypto_key'))::text AS cpf,
+                telefone, email, convenio, observacao, endereco, ativo,
                 aceita_contato, data_nascimento, criado_em`,
     valores
   );
@@ -280,14 +293,19 @@ export async function listarReceitas({ de, ate, busca } = {}) {
     valores.push(`%${busca}%`);
     const parametro = `$${valores.length}`;
     condicoes.push(
-      `(r.paciente_nome ILIKE ${parametro} OR r.medico_nome ILIKE ${parametro}
-        OR r.medico_crm ILIKE ${parametro})`
+      `(pgp_sym_decrypt(r.paciente_nome, current_setting('app.crypto_key'))::text ILIKE ${parametro}
+        OR pgp_sym_decrypt(r.medico_nome, current_setting('app.crypto_key'))::text ILIKE ${parametro}
+        OR pgp_sym_decrypt(r.medico_crm, current_setting('app.crypto_key'))::text ILIKE ${parametro})`
     );
   }
 
   const onde = condicoes.length ? `WHERE ${condicoes.join(" AND ")}` : "";
   const { rows } = await consultar(
-    `SELECT r.id, r.venda_id, r.medico_nome, r.medico_crm, r.paciente_nome, r.data_emissao,
+    `SELECT r.id, r.venda_id,
+            pgp_sym_decrypt(r.medico_nome, current_setting('app.crypto_key'))::text AS medico_nome,
+            pgp_sym_decrypt(r.medico_crm, current_setting('app.crypto_key'))::text AS medico_crm,
+            pgp_sym_decrypt(r.paciente_nome, current_setting('app.crypto_key'))::text AS paciente_nome,
+            r.data_emissao,
             v.status AS status_venda, v.criado_em AS vendido_em, v.valor_total,
             (SELECT string_agg(i.produto_nome, ' | ' ORDER BY i.produto_nome)
                FROM vendas.itens_venda i

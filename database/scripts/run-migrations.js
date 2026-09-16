@@ -67,7 +67,12 @@ async function main() {
     return;
   }
 
-  const client = new Client({ connectionString: databaseUrl });
+  // migration 0025 (criptografia de CPF/receita) lê essa chave via
+  // current_setting('app.crypto_key') — nunca escrita em texto claro num
+  // arquivo de migration. Sem DB_CRYPTO_KEY, migrations que não mexem nesses
+  // campos continuam rodando normalmente.
+  const options = process.env.DB_CRYPTO_KEY ? `-c app.crypto_key=${process.env.DB_CRYPTO_KEY}` : undefined;
+  const client = new Client({ connectionString: databaseUrl, options });
   await client.connect();
 
   try {

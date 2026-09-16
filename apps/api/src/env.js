@@ -13,6 +13,9 @@ const BASE_URL = `http://localhost:${PORT}`;
 export const env = {
   NOME_SERVICO: "arkos-api",
   DATABASE_URL: process.env.DATABASE_URL,
+  // Criptografia em repouso de CPF e dados de receita (pgcrypto, migration
+  // 0025) — nunca a mesma chave do JWT, e nunca commitada. Ver docs/PENDENCIAS.md.
+  DB_CRYPTO_KEY: process.env.DB_CRYPTO_KEY,
   PORT,
   JWT_SECRET: process.env.JWT_SECRET,
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN ?? "8h",
@@ -68,6 +71,7 @@ export function validarEnv() {
   const faltando = [];
   if (!env.DATABASE_URL) faltando.push("DATABASE_URL");
   if (!env.JWT_SECRET) faltando.push("JWT_SECRET");
+  if (!env.DB_CRYPTO_KEY) faltando.push("DB_CRYPTO_KEY");
   if (faltando.length) {
     throw new Error(
       `Variáveis de ambiente ausentes (${faltando.join(", ")}). Confira o .env da raiz.`

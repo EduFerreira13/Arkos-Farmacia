@@ -90,14 +90,28 @@ function chaveAcessoSimulada(vendaId) {
 }
 
 /** Insere em blocos: 90 dias de movimento são milhares de linhas. */
-async function inserirEmLote(client, tabela, colunas, linhas, tamanhoBloco = 150) {
+/**
+ * `colunasCriptografadas`: nomes de coluna (de `colunas`) que viram
+ * `pgp_sym_encrypt` em vez de um placeholder cru — mesmas colunas que a
+ * migration 0025 mudou pra `bytea` (CPF e dados de receita, LGPD/criptografia
+ * em repouso, docs/PENDENCIAS.md). A chave é a mesma sessão do banco
+ * (`app.crypto_key`, setada na conexão — ver database/scripts/run-migrations.js).
+ */
+async function inserirEmLote(client, tabela, colunas, linhas, tamanhoBloco = 150, colunasCriptografadas = []) {
+  const indicesCriptografados = new Set(
+    colunas.map((coluna, indice) => (colunasCriptografadas.includes(coluna) ? indice : -1)).filter((i) => i >= 0)
+  );
+
   for (let inicio = 0; inicio < linhas.length; inicio += tamanhoBloco) {
     const bloco = linhas.slice(inicio, inicio + tamanhoBloco);
     const parametros = [];
     const marcadores = bloco.map((linha) => {
-      const posicoes = linha.map((valor) => {
+      const posicoes = linha.map((valor, indice) => {
         parametros.push(valor);
-        return `$${parametros.length}`;
+        const marcador = `$${parametros.length}`;
+        return indicesCriptografados.has(indice)
+          ? `pgp_sym_encrypt(${marcador}::text, current_setting('app.crypto_key'))`
+          : marcador;
       });
       return `(${posicoes.join(", ")})`;
     });
@@ -331,10 +345,14 @@ async function main() {
     console.error("DATABASE_URL não definida. Configure o .env antes de rodar.");
     process.exit(1);
   }
+  if (!process.env.DB_CRYPTO_KEY) {
+    console.error("DB_CRYPTO_KEY não definida. Configure o .env antes de rodar (CPF e dados de receita são criptografados — ver migration 0025).");
+    process.exit(1);
+  }
 
   const client = new Client({
     connectionString: process.env.DATABASE_URL,
-    options: `-c timezone=${FUSO}`,
+    options: `-c timezone=${FUSO} -c app.crypto_key=${process.env.DB_CRYPTO_KEY}`,
   });
   await client.connect();
 
@@ -489,7 +507,9 @@ async function main() {
           cliente.aceita_contato ?? true,
           instante(DIAS_DE_HISTORICO, 10, 0),
         ];
-      })
+      }),
+      150,
+      ["cpf"]
     );
 
     // --------------------------------------------------- geração das vendas
@@ -767,7 +787,9 @@ async function main() {
         venda.receita.medico.crm,
         venda.receita.paciente,
         paraISO(dataDeDiasAtras(venda.receita.emissaoDiasAtras)),
-      ])
+      ]),
+      150,
+      ["medico_nome", "medico_crm", "paciente_nome"]
     );
 
     // --------------------------------------------------------------- fiscal

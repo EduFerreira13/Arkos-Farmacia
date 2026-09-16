@@ -54,7 +54,11 @@ export async function listarPagamentos(vendaId) {
  */
 export async function buscarReceita(vendaId) {
   const { rows } = await consultar(
-    `SELECT id, venda_id, medico_nome, medico_crm, paciente_nome, data_emissao,
+    `SELECT id, venda_id,
+            pgp_sym_decrypt(medico_nome, current_setting('app.crypto_key'))::text AS medico_nome,
+            pgp_sym_decrypt(medico_crm, current_setting('app.crypto_key'))::text AS medico_crm,
+            pgp_sym_decrypt(paciente_nome, current_setting('app.crypto_key'))::text AS paciente_nome,
+            data_emissao,
             anexo_nome, anexo_tipo, anexo_enviado_em, (anexo IS NOT NULL) AS tem_anexo
        FROM vendas.receitas WHERE venda_id = $1`,
     [vendaId]
@@ -230,7 +234,11 @@ export async function salvarReceita({
     `INSERT INTO vendas.receitas
        (venda_id, medico_nome, medico_crm, paciente_nome, data_emissao,
         anexo, anexo_tipo, anexo_nome, anexo_enviado_em)
-          VALUES ($1, $2, $3, $4, $5, $6::bytea, $7, $8, CASE WHEN $6::bytea IS NULL THEN NULL ELSE now() END)
+          VALUES ($1,
+                  pgp_sym_encrypt($2::text, current_setting('app.crypto_key')),
+                  pgp_sym_encrypt($3::text, current_setting('app.crypto_key')),
+                  pgp_sym_encrypt($4::text, current_setting('app.crypto_key')),
+                  $5, $6::bytea, $7, $8, CASE WHEN $6::bytea IS NULL THEN NULL ELSE now() END)
      ON CONFLICT (venda_id) DO UPDATE
             SET medico_nome = EXCLUDED.medico_nome,
                 medico_crm = EXCLUDED.medico_crm,
@@ -241,7 +249,11 @@ export async function salvarReceita({
                 anexo_nome = COALESCE(EXCLUDED.anexo_nome, vendas.receitas.anexo_nome),
                 anexo_enviado_em = CASE WHEN EXCLUDED.anexo IS NOT NULL THEN now()
                                         ELSE vendas.receitas.anexo_enviado_em END
-       RETURNING id, venda_id, medico_nome, medico_crm, paciente_nome, data_emissao,
+       RETURNING id, venda_id,
+                 pgp_sym_decrypt(medico_nome, current_setting('app.crypto_key'))::text AS medico_nome,
+                 pgp_sym_decrypt(medico_crm, current_setting('app.crypto_key'))::text AS medico_crm,
+                 pgp_sym_decrypt(paciente_nome, current_setting('app.crypto_key'))::text AS paciente_nome,
+                 data_emissao,
                  anexo_nome, anexo_tipo, anexo_enviado_em, (anexo IS NOT NULL) AS tem_anexo`,
     [vendaId, medicoNome, medicoCrm, pacienteNome, dataEmissao, anexo, anexoTipo, anexoNome]
   );
@@ -353,8 +365,16 @@ export function sincronizarVendaOffline({
     if (receita) {
       const { rows } = await cliente.query(
         `INSERT INTO vendas.receitas (venda_id, medico_nome, medico_crm, paciente_nome, data_emissao)
-              VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, venda_id, medico_nome, medico_crm, paciente_nome, data_emissao`,
+              VALUES ($1,
+                      pgp_sym_encrypt($2::text, current_setting('app.crypto_key')),
+                      pgp_sym_encrypt($3::text, current_setting('app.crypto_key')),
+                      pgp_sym_encrypt($4::text, current_setting('app.crypto_key')),
+                      $5)
+         RETURNING id, venda_id,
+                   pgp_sym_decrypt(medico_nome, current_setting('app.crypto_key'))::text AS medico_nome,
+                   pgp_sym_decrypt(medico_crm, current_setting('app.crypto_key'))::text AS medico_crm,
+                   pgp_sym_decrypt(paciente_nome, current_setting('app.crypto_key'))::text AS paciente_nome,
+                   data_emissao`,
         [id, receita.medico_nome, receita.medico_crm, receita.paciente_nome, receita.data_emissao]
       );
       receitaInserida = rows[0];
@@ -464,7 +484,9 @@ export async function listarVendasNoPeriodo({ de, ate }) {
                FROM vendas.itens_venda i WHERE i.venda_id = v.id) AS produtos,
             EXISTS (SELECT 1 FROM vendas.itens_venda i
                      WHERE i.venda_id = v.id AND i.tipo_controle <> 'livre') AS tem_controlado,
-            r.paciente_nome, r.medico_nome, r.medico_crm
+            pgp_sym_decrypt(r.paciente_nome, current_setting('app.crypto_key'))::text AS paciente_nome,
+            pgp_sym_decrypt(r.medico_nome, current_setting('app.crypto_key'))::text AS medico_nome,
+            pgp_sym_decrypt(r.medico_crm, current_setting('app.crypto_key'))::text AS medico_crm
        FROM vendas.vendas v
        LEFT JOIN vendas.receitas r ON r.venda_id = v.id
        LEFT JOIN vendas.clientes cl ON cl.id = v.cliente_id

@@ -144,6 +144,13 @@ interno, nunca o CPF. No `PATCH` a exigência só vale para o campo que vier no
 corpo. A planilha de clientes leva dado pessoal (CPF, telefone, endereço) — a
 finalidade precisa justificar a extração (LGPD).
 
+`cpf` é criptografado em repouso (pgcrypto, `docs/MODELO-DADOS.md`), mas isso é
+transparente pra quem consome a API: manda e recebe o CPF em texto normal,
+tanto aqui quanto em `cpf_nota` (`POST /vendas/:id/finalizar`) e nos campos de
+receita (`medico_nome`, `medico_crm`, `paciente_nome`). A busca (`?busca=`)
+continua funcionando por CPF/nome do médico/paciente do mesmo jeito — decripta
+antes de comparar, só um pouco mais lento (sem índice na coluna criptografada).
+
 **Exclusão de dados (§5, LGPD)**: `POST /vendas/clientes/:id/excluir-dados` não
 apaga a linha — anonimiza (`nome` vira `"Cliente removido (LGPD)"`, `cpf`,
 `telefone`, `email`, `convenio`, `observacao`, `endereco` e `data_nascimento`

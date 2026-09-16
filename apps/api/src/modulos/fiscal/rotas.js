@@ -24,8 +24,13 @@ const SchemaEnviarSngpc = z.object({
   ids: z.array(z.string().min(1, "id inválido")).min(1, "Informe os ids dos registros a enviar."),
 });
 
+// cpf_nota é criptografado em repouso (pgcrypto, migration 0025,
+// docs/PENDENCIAS.md) — decripta aqui pra todo SELECT/RETURNING que usa esta
+// lista, sem precisar mexer em cada rota.
 const COLUNAS_NOTA = `id, venda_id, chave_acesso, status, numero, serie, url_consulta,
-       mensagem_erro, xml_url, cpf_nota, emitida_em`;
+       mensagem_erro, xml_url,
+       pgp_sym_decrypt(cpf_nota, current_setting('app.crypto_key'))::text AS cpf_nota,
+       emitida_em`;
 
 /** Erro vindo de outro serviço (vendas/estoque): preserva o código de negócio quando existir. */
 function responderErroServico(resposta, erro) {
@@ -63,7 +68,8 @@ async function gravarNota({
   const { rows } = await consultar(
     `INSERT INTO fiscal.notas_fiscais
           (venda_id, chave_acesso, status, numero, serie, url_consulta, mensagem_erro, retorno_focus, cpf_nota)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+               pgp_sym_encrypt($9::text, current_setting('app.crypto_key')))
      RETURNING ${COLUNAS_NOTA}`,
     [vendaId, chaveAcesso, status, numero, serie, urlConsulta, mensagemErro, retornoFocusJson, cpfNota]
   );

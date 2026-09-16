@@ -157,7 +157,9 @@ export async function analisarClientes({
          FROM vendas.contatos_cliente
         GROUP BY cliente_id
      )
-     SELECT cl.id, cl.nome, cl.cpf, cl.telefone, cl.email, cl.convenio,
+     SELECT cl.id, cl.nome,
+            pgp_sym_decrypt(cl.cpf, current_setting('app.crypto_key'))::text AS cpf,
+            cl.telefone, cl.email, cl.convenio,
             cl.aceita_contato, cl.ativo, cl.criado_em,
             COALESCE(c.total_compras, 0)  AS total_compras,
             COALESCE(c.valor_total, 0)    AS valor_total,

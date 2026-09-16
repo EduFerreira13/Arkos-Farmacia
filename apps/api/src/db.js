@@ -14,8 +14,11 @@ export const pool = new pg.Pool({
   connectionString: env.DATABASE_URL,
   // O dia do negócio é o dia local da farmácia, não o dia UTC do servidor: sem
   // isso, uma venda das 21h entraria no movimento do dia seguinte (current_date
-  // e criado_em::date são resolvidos no fuso da sessão).
-  options: `-c timezone=${env.TZ_NEGOCIO}`,
+  // e criado_em::date são resolvidos no fuso da sessão). `app.crypto_key` é a
+  // chave de criptografia de CPF/dados de receita (pgcrypto, migration 0025) —
+  // fica disponível pra qualquer query via current_setting('app.crypto_key'),
+  // sem precisar de um SET por requisição.
+  options: `-c timezone=${env.TZ_NEGOCIO} -c app.crypto_key=${env.DB_CRYPTO_KEY}`,
   max: 5,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 15_000,

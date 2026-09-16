@@ -181,9 +181,9 @@ erDiagram
   RECEITAS {
     uuid id PK
     uuid venda_id FK
-    string medico_nome
-    string medico_crm
-    string paciente_nome
+    bytea medico_nome
+    bytea medico_crm
+    bytea paciente_nome
     date data_emissao
     bytea anexo
     string anexo_tipo
@@ -193,7 +193,7 @@ erDiagram
   CLIENTES {
     uuid id PK
     string nome
-    string cpf
+    bytea cpf
     string telefone
     string email
     string convenio
@@ -231,7 +231,8 @@ erDiagram
 | `pagamentos` | 1 venda → N pagamentos | suporta pagamento misto (parte cartão, parte dinheiro) |
 | `receitas` | vinculada à venda | obrigatória se algum item for `tarja_vermelha`/`tarja_preta` — sem isso, venda bloqueada (§3) |
 | `receitas.anexo` | opcional | foto/scan da receita (retenção física exigida pela RDC 20/2011 para antibiótico) — `bytea`, servido por `GET /vendas/:id/receita/anexo`, nunca embutido no JSON do detalhe da venda |
-| `clientes.cpf`/`telefone`/`email`/`endereco`/`data_nascimento` | dados pessoais | sujeitos à LGPD (finalidade: identificação para venda/convênio e relacionamento) — coleta e uso devem se limitar a essa finalidade; `aceita_contato` é o registro de consentimento para o CRM de recompra, e deve ser respeitado antes de qualquer contato em `contatos_cliente` |
+| `clientes.cpf`/`telefone`/`email`/`endereco`/`data_nascimento` | dados pessoais | sujeitos à LGPD (finalidade: identificação para venda/convênio e relacionamento) — coleta e uso devem se limitar a essa finalidade; `aceita_contato` é o registro de consentimento para o CRM de recompra, e deve ser respeitado antes de qualquer contato em `contatos_cliente`. `cpf` é criptografado em repouso (ver nota de criptografia abaixo) — os demais não |
+| `receitas.medico_nome`/`medico_crm`/`paciente_nome` | dados pessoais, criptografados | mesmo tratamento de `clientes.cpf` — ver nota de criptografia abaixo |
 | `clientes.dados_excluidos_por`/`dados_excluidos_em` | direito de exclusão (LGPD) | preenchidos por `POST /vendas/clientes/:id/excluir-dados` ou pela retenção automática (`npm run retencao:clientes`, 2 anos sem compra) — quando não-nulos, os demais campos pessoais da linha já foram anonimizados, mas o `id` permanece para não quebrar `vendas`/`itens_venda`/`contatos_cliente` que referenciam esse cliente |
 | `contatos_cliente.resultado` | enum `resultado_contato` | `aguardando`, `interessado`, `sem_interesse`, `nao_atendeu`, `convertido` — fecha o ciclo do CRM de recompra |
 | `contatos_cliente.canal` | enum `canal_contato` | `telefone`, `whatsapp`, `email`, `presencial` |
@@ -308,7 +309,7 @@ erDiagram
     string status
     string numero
     string serie
-    string cpf_nota
+    bytea cpf_nota
     string url_consulta
     string mensagem_erro
     jsonb retorno_focus
@@ -329,7 +330,7 @@ erDiagram
 | Tabela | Campo-chave | Observação |
 |---|---|---|
 | `notas_fiscais` | `status` | `emitida` (autorizada pela SEFAZ) ou `erro` (rejeição/payload incompleto — motivo em `mensagem_erro`); `simulado` é o default histórico da coluna, de antes da integração real com a Focus NFe (§6) |
-| `notas_fiscais.cpf_nota` | dado pessoal | CPF do cliente na nota (quando informado na venda) — dado sensível sob a LGPD; finalidade é estritamente fiscal (emissão de NF-e), não deve ser reaproveitado para outro fim sem base legal própria |
+| `notas_fiscais.cpf_nota` | dado pessoal, criptografado | CPF do cliente na nota (quando informado na venda) — dado sensível sob a LGPD; finalidade é estritamente fiscal (emissão de NF-e), não deve ser reaproveitado para outro fim sem base legal própria. Criptografado em repouso (ver nota de criptografia abaixo) |
 | `controlados_sngpc` | `enviado_anvisa` | fica `false` no MVP — campo já existe para quando a integração real for feita; `enviado_em` registra o timestamp do envio quando acontecer |
 
 ---
@@ -406,3 +407,4 @@ erDiagram
 - Nenhuma FK cruza schemas de módulos diferentes — só dentro do mesmo módulo. Referências entre módulos são por ID, resolvidas via HTTP quando o dado do outro lado é necessário.
 - Campos monetários sempre `numeric(10,2)`, nunca float.
 - Colunas com dado pessoal (CPF, telefone, e-mail, endereço, data de nascimento) existem hoje em `vendas.clientes` e `fiscal.notas_fiscais.cpf_nota` — qualquer novo uso desses dados (relatório, exportação, integração) deve respeitar a finalidade original (venda/convênio/nota fiscal) e os princípios de minimização da LGPD, não presumir uso livre só porque o dado já está no banco.
+- **Criptografia em repouso** (`vendas.clientes.cpf`, `vendas.receitas.medico_nome`/`medico_crm`/`paciente_nome`, `fiscal.notas_fiscais.cpf_nota` — migration `0025_criptografia_dados_sensiveis.sql`, pgcrypto): protege contra vazamento de backup/dump do banco, não contra quem já tem acesso à sessão ativa da aplicação. As colunas são `bytea`; toda leitura passa por `pgp_sym_decrypt(coluna, current_setting('app.crypto_key'))::text` e toda escrita por `pgp_sym_encrypt($n::text, current_setting('app.crypto_key'))` — nunca comparar/buscar direto na coluna criptografada (`ILIKE` etc. têm que vir depois de decriptar). A chave vive em `DB_CRYPTO_KEY` (`.env`, nunca commitada) e é setada por conexão (`apps/api/src/db.js`, `database/scripts/run-migrations.js`, `database/scripts/seed-demo.js`) — sem ela, o app nem sobe (`validarEnv`). Trocar a chave depois de já ter dado gravado torna os dados antigos ilegíveis; não tem recuperação.
