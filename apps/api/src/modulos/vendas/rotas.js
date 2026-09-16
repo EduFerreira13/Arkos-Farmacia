@@ -3,6 +3,8 @@ import {
   ERROS,
   FORMA_PAGAMENTO_LISTA,
   STATUS_VENDA,
+  TAMANHO_MAXIMO_ANEXO_RECEITA_BYTES,
+  TIPO_ANEXO_RECEITA_LISTA,
   exigeReceita,
 } from "@arkos/shared-types";
 import { criarAutenticacao, tokenInterno } from "@arkos/auth-middleware";
@@ -51,6 +53,7 @@ import {
 import {
   alterarQuantidadeDoItem,
   atualizarLoteDoItem,
+  buscarAnexoReceita,
   buscarVenda,
   buscarVendaCompleta,
   criarVenda,
@@ -221,12 +224,42 @@ const SchemaDesconto = z.object({
     .optional(),
 });
 
-const SchemaReceita = z.object({
-  medico_nome: textoObrigatorio("Dados da receita ausentes: medico_nome."),
-  medico_crm: textoObrigatorio("Dados da receita ausentes: medico_crm."),
-  paciente_nome: textoObrigatorio("Dados da receita ausentes: paciente_nome."),
-  data_emissao: textoObrigatorio("Dados da receita ausentes: data_emissao."),
-});
+/**
+ * `anexo_base64` é opcional — retenção física da receita (RDC 20/2011, exigida
+ * pra antibiótico, aceita pra qualquer controlado). Quando vem, `anexo_tipo`
+ * é obrigatório junto e precisa ser um dos formatos aceitos; o tamanho é
+ * conferido pelo comprimento do base64 (~4/3 do arquivo original).
+ */
+const SchemaReceita = z
+  .object({
+    medico_nome: textoObrigatorio("Dados da receita ausentes: medico_nome."),
+    medico_crm: textoObrigatorio("Dados da receita ausentes: medico_crm."),
+    paciente_nome: textoObrigatorio("Dados da receita ausentes: paciente_nome."),
+    data_emissao: textoObrigatorio("Dados da receita ausentes: data_emissao."),
+    anexo_base64: textoOpcional(),
+    anexo_tipo: z.enum(TIPO_ANEXO_RECEITA_LISTA).optional().nullable(),
+    anexo_nome: textoOpcional(),
+  })
+  .superRefine((dados, contexto) => {
+    if (!dados.anexo_base64) return;
+
+    if (!dados.anexo_tipo) {
+      contexto.addIssue({
+        code: "custom",
+        path: ["anexo_tipo"],
+        message: `Informe anexo_tipo (${TIPO_ANEXO_RECEITA_LISTA.join(", ")}) junto do anexo.`,
+      });
+    }
+
+    const tamanhoEstimado = (dados.anexo_base64.length * 3) / 4;
+    if (tamanhoEstimado > TAMANHO_MAXIMO_ANEXO_RECEITA_BYTES) {
+      contexto.addIssue({
+        code: "custom",
+        path: ["anexo_base64"],
+        message: `Anexo maior que o limite de ${Math.floor(TAMANHO_MAXIMO_ANEXO_RECEITA_BYTES / (1024 * 1024))}MB.`,
+      });
+    }
+  });
 
 const SchemaPagamento = z.object({
   forma_pagamento: z.enum(FORMA_PAGAMENTO_LISTA, {
@@ -1131,7 +1164,8 @@ export async function registrarRotas(app) {
     const venda = await carregarVendaAberta(requisicao.params.id, resposta);
     if (!venda) return resposta;
 
-    const { medico_nome, medico_crm, paciente_nome, data_emissao } = requisicao.body;
+    const { medico_nome, medico_crm, paciente_nome, data_emissao, anexo_base64, anexo_tipo, anexo_nome } =
+      requisicao.body;
 
     const receita = await salvarReceita({
       vendaId: venda.id,
@@ -1139,9 +1173,36 @@ export async function registrarRotas(app) {
       medicoCrm: medico_crm,
       pacienteNome: paciente_nome,
       dataEmissao: data_emissao,
+      anexo: anexo_base64 ? Buffer.from(anexo_base64, "base64") : null,
+      anexoTipo: anexo_tipo ?? null,
+      anexoNome: anexo_nome ?? null,
     });
 
     return resposta.code(201).send({ receita });
+    }
+  );
+
+  /**
+   * Bytes do anexo da receita (foto/scan), servidos direto — não embutidos no
+   * JSON do detalhe da venda (`buscarReceita` só traz metadado).
+   */
+  app.get(
+    "/:id/receita/anexo",
+    { preHandler: auth.exigirPermissao("vender") },
+    async (requisicao, resposta) => {
+      const venda = await buscarVenda(requisicao.params.id);
+      if (!venda) return naoEncontrado(resposta, "Venda não encontrada.");
+
+      const anexo = await buscarAnexoReceita(venda.id);
+      if (!anexo) return naoEncontrado(resposta, "Esta receita não tem anexo.");
+
+      resposta.header("Content-Type", anexo.anexo_tipo);
+      if (anexo.anexo_nome) {
+        // Nome vem de texto livre do cadastro — nunca colar direto num header.
+        const nomeSeguro = anexo.anexo_nome.replace(/[^\w.\- ]/g, "_");
+        resposta.header("Content-Disposition", `inline; filename="${nomeSeguro}"`);
+      }
+      return resposta.send(anexo.anexo);
     }
   );
 

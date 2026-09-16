@@ -551,7 +551,62 @@ const receita = await req(`${S.vendas}/vendas/${vendaId}/receita`, {
   metodo: "POST", token: farmaceutico,
   corpo: { medico_nome: "Dra. Integracao", medico_crm: "CRM-SP 000000", paciente_nome: `Cliente Integracao ${sufixo}`, data_emissao: diasAtras(3) },
 });
-ok("registra receita", receita.status === 201);
+ok("registra receita", receita.status === 201 && receita.dados.receita.tem_anexo === false);
+
+// Retenção de receita (RDC 20/2011, docs/PENDENCIAS.md): anexo é opcional,
+// mas anexo_tipo é obrigatório junto quando vem anexo_base64.
+const PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+const anexoSemTipo = await req(`${S.vendas}/vendas/${vendaId}/receita`, {
+  metodo: "POST", token: farmaceutico,
+  corpo: {
+    medico_nome: "Dra. Integracao", medico_crm: "CRM-SP 000000",
+    paciente_nome: `Cliente Integracao ${sufixo}`, data_emissao: diasAtras(3),
+    anexo_base64: PNG_1X1,
+  },
+});
+ok("anexo sem anexo_tipo é recusado", anexoSemTipo.status === 400);
+
+const receitaComAnexo = await req(`${S.vendas}/vendas/${vendaId}/receita`, {
+  metodo: "POST", token: farmaceutico,
+  corpo: {
+    medico_nome: "Dra. Integracao", medico_crm: "CRM-SP 000000",
+    paciente_nome: `Cliente Integracao ${sufixo}`, data_emissao: diasAtras(3),
+    anexo_base64: PNG_1X1, anexo_tipo: "image/png", anexo_nome: "receita.png",
+  },
+});
+ok(
+  "anexa foto da receita",
+  receitaComAnexo.status === 201 && receitaComAnexo.dados.receita.tem_anexo === true
+);
+
+// `req()` lê o corpo como texto (corromperia bytes binários) — busca direto
+// pra conferir o content-type e o tamanho exato do arquivo devolvido.
+const anexoBaixado = await fetch(`${S.vendas}/vendas/${vendaId}/receita/anexo`, {
+  headers: { Authorization: `Bearer ${farmaceutico}` },
+});
+const anexoBytes = Buffer.from(await anexoBaixado.arrayBuffer());
+ok(
+  "baixa o anexo da receita com o content-type e o tamanho certos",
+  anexoBaixado.status === 200 &&
+    anexoBaixado.headers.get("content-type") === "image/png" &&
+    anexoBytes.length === Buffer.from(PNG_1X1, "base64").length
+);
+
+// Atualizar só o texto (sem reenviar o anexo) não apaga o anexo já salvo.
+const receitaSemMexerNoAnexo = await req(`${S.vendas}/vendas/${vendaId}/receita`, {
+  metodo: "POST", token: farmaceutico,
+  corpo: { medico_nome: "Dra. Integracao 2", medico_crm: "CRM-SP 000000", paciente_nome: `Cliente Integracao ${sufixo}`, data_emissao: diasAtras(3) },
+});
+ok(
+  "atualizar a receita sem reenviar o anexo mantém o anexo salvo",
+  receitaSemMexerNoAnexo.status === 201 && receitaSemMexerNoAnexo.dados.receita.tem_anexo === true
+);
+
+const anexoDeVendaInexistente = await req(`${S.vendas}/vendas/00000000-0000-0000-0000-000000000000/receita/anexo`, {
+  token: farmaceutico, cru: true,
+});
+ok("anexo de venda inexistente devolve 404", anexoDeVendaInexistente.status === 404);
 
 // Receita trocada ou digitada errada: da para desfazer enquanto a venda esta aberta.
 const receitaRemovida = await req(`${S.vendas}/vendas/${vendaId}/receita`, {

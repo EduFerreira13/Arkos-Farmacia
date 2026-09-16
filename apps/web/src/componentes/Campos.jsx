@@ -113,6 +113,25 @@ export function CampoSelect({ rotulo, erro, ajuda, opcoes = [], className, ...re
   );
 }
 
+/** Upload de arquivo (ex: anexo de receita) — mesmo visual dos outros campos. */
+export function CampoArquivo({ rotulo, erro, ajuda, className, ...resto }) {
+  const id = useId();
+  return (
+    <Envolvente id={id} rotulo={rotulo} erro={erro} ajuda={ajuda} className={className}>
+      <input
+        id={id}
+        type="file"
+        className={
+          "w-full text-corpo text-texto file:mr-3 file:rounded-botao file:border file:border-borda " +
+          "file:bg-card file:px-3 file:py-1.5 file:text-rotulo file:text-texto"
+        }
+        aria-invalid={erro ? "true" : undefined}
+        {...resto}
+      />
+    </Envolvente>
+  );
+}
+
 export function CampoTextoLongo({ rotulo, erro, ajuda, className, linhas = 3, ...resto }) {
   const id = useId();
   return (

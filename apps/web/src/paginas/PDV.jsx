@@ -5,6 +5,7 @@ import {
   CreditCard,
   Megaphone,
   Minus,
+  Paperclip,
   Plus,
   ScanBarcode,
   Search,
@@ -19,9 +20,11 @@ import {
   FORMA_PAGAMENTO,
   FORMA_PAGAMENTO_LABEL,
   FORMA_PAGAMENTO_LISTA,
+  TAMANHO_MAXIMO_ANEXO_RECEITA_BYTES,
+  TIPO_ANEXO_RECEITA_LISTA,
   exigeReceita,
 } from "@arkos/shared-types";
-import { api } from "../lib/api.js";
+import { api, baixarArquivo } from "../lib/api.js";
 import { usarBusca } from "../lib/usarBusca.js";
 import { usarLeitorCodigoBarras } from "../lib/usarLeitorCodigoBarras.js";
 import { formatarData, formatarDataHora, formatarMoeda, formatarNumero, hojeISO } from "../lib/formato.js";
@@ -51,7 +54,7 @@ import {
 } from "../lib/carrinhoOffline.js";
 import { usarAtualizacaoDeCatalogo, usarSincronizadorAutomatico } from "../lib/sincronizacaoOffline.js";
 import { Botao, BotaoIcone } from "../componentes/Botao.jsx";
-import { CampoCheckbox, CampoSelect, CampoTexto } from "../componentes/Campos.jsx";
+import { CampoArquivo, CampoCheckbox, CampoSelect, CampoTexto } from "../componentes/Campos.jsx";
 import { Modal } from "../componentes/Modal.jsx";
 import {
   Aviso,
@@ -72,6 +75,16 @@ const RECEITA_VAZIA = {
 
 const numeroDaVenda = (venda) =>
   venda?.numero ? `#${String(venda.numero).padStart(4, "0")}` : venda?.id?.slice(0, 8) ?? "";
+
+/** Lê o arquivo e devolve só o base64 (sem o prefixo `data:.../...;base64,`). */
+function arquivoParaBase64(arquivo) {
+  return new Promise((resolver, rejeitar) => {
+    const leitor = new FileReader();
+    leitor.onload = () => resolver(String(leitor.result).split(",")[1] ?? "");
+    leitor.onerror = () => rejeitar(leitor.error);
+    leitor.readAsDataURL(arquivo);
+  });
+}
 
 /** Só os dígitos, para comparar CPF digitado com e sem pontuação. */
 const somenteDigitos = (texto) => String(texto ?? "").replace(/\D/g, "");
@@ -495,6 +508,8 @@ export function PDV() {
   const [ocupado, definirOcupado] = useState(false);
   const [receita, definirReceita] = useState(RECEITA_VAZIA);
   const [receitaAberta, definirReceitaAberta] = useState(false);
+  const [anexoReceita, definirAnexoReceita] = useState(null);
+  const [erroAnexoReceita, definirErroAnexoReceita] = useState(null);
   const [desconto, definirDesconto] = useState("");
   const [tipoDesconto, definirTipoDesconto] = useState("reais");
   const [formaPagamento, definirFormaPagamento] = useState(FORMA_PAGAMENTO.DINHEIRO);
@@ -814,20 +829,45 @@ export function PDV() {
 
   async function vincularReceita(evento) {
     evento.preventDefault();
+    definirErroAnexoReceita(null);
+
+    if (anexoReceita && anexoReceita.size > TAMANHO_MAXIMO_ANEXO_RECEITA_BYTES) {
+      definirErroAnexoReceita(
+        `Anexo maior que o limite de ${Math.floor(TAMANHO_MAXIMO_ANEXO_RECEITA_BYTES / (1024 * 1024))}MB.`
+      );
+      return;
+    }
+
     await executar(async () => {
       const atual = await garantirVenda();
       if (atual.origem_local) {
+        // Anexo (foto/scan) não é suportado offline — a receita fica só com
+        // os dados de texto; anexar depois exige a venda com o servidor.
         const atualizada = vincularReceitaLocal(atual, receita);
         definirVenda(atualizada);
         await salvarVendaEmAndamento(atualizada);
         definirReceitaAberta(false);
         return;
       }
-      await api.vendas.post(`/${atual.id}/receita`, receita);
+
+      const corpo = { ...receita };
+      if (anexoReceita) {
+        corpo.anexo_base64 = await arquivoParaBase64(anexoReceita);
+        corpo.anexo_tipo = anexoReceita.type;
+        corpo.anexo_nome = anexoReceita.name;
+      }
+
+      await api.vendas.post(`/${atual.id}/receita`, corpo);
       const atualizada = await api.vendas.get(`/${atual.id}`);
       definirVenda(atualizada.venda);
       definirReceitaAberta(false);
+      definirAnexoReceita(null);
     });
+  }
+
+  /** Baixa (visualiza) a foto/scan da receita anexada à venda. */
+  async function verAnexoReceita() {
+    await executar(() => baixarArquivo("vendas", `/${venda.id}/receita/anexo`, "receita"));
   }
 
   /** Desfaz a receita vinculada — receita trocada, dados digitados errados. */
@@ -1079,15 +1119,28 @@ export function PDV() {
                         {formatarData(venda.receita.data_emissao)}
                       </p>
                     </div>
-                    <Botao
-                      tamanho="pequeno"
-                      variante="secundario"
-                      icone={X}
-                      disabled={ocupado}
-                      onClick={cancelarReceita}
-                    >
-                      Cancelar inclusão
-                    </Botao>
+                    <div className="flex shrink-0 gap-2">
+                      {venda.receita.tem_anexo ? (
+                        <Botao
+                          tamanho="pequeno"
+                          variante="secundario"
+                          icone={Paperclip}
+                          disabled={ocupado}
+                          onClick={verAnexoReceita}
+                        >
+                          Ver anexo
+                        </Botao>
+                      ) : null}
+                      <Botao
+                        tamanho="pequeno"
+                        variante="secundario"
+                        icone={X}
+                        disabled={ocupado}
+                        onClick={cancelarReceita}
+                      >
+                        Cancelar inclusão
+                      </Botao>
+                    </div>
                   </div>
                 ) : (
                   <form onSubmit={vincularReceita} className="grid grid-cols-2 gap-4">
@@ -1125,6 +1178,23 @@ export function PDV() {
                         definirReceita({ ...receita, data_emissao: evento.target.value })
                       }
                     />
+                    {!venda?.origem_local ? (
+                      <CampoArquivo
+                        className="col-span-2"
+                        rotulo="Foto ou scan da receita (opcional — retenção física de antibiótico/controlado)"
+                        accept={TIPO_ANEXO_RECEITA_LISTA.join(",")}
+                        erro={erroAnexoReceita}
+                        onChange={(evento) => {
+                          definirErroAnexoReceita(null);
+                          definirAnexoReceita(evento.target.files?.[0] ?? null);
+                        }}
+                      />
+                    ) : (
+                      <p className="col-span-2 text-rotulo text-secundario">
+                        Venda offline: anexo da receita não é suportado sem rede — só os dados de
+                        texto ficam salvos.
+                      </p>
+                    )}
                     <div className="col-span-2">
                       <Botao type="submit" disabled={ocupado}>
                         Vincular receita à venda

@@ -116,7 +116,8 @@ com `saldo_negativo: true`, para conferência do gerente (ver REGRAS-NEGOCIO.md 
 |---|---|---|
 | POST | `/vendas` | Abre uma venda (status `aberta`) |
 | POST | `/vendas/:id/itens` | Adiciona item (chama o módulo `estoque` para validar disponibilidade) |
-| POST | `/vendas/:id/receita` | Registra dados da receita (obrigatório se algum item for controlado) |
+| POST | `/vendas/:id/receita` | Registra dados da receita (obrigatório se algum item for controlado), com anexo opcional |
+| GET | `/vendas/:id/receita/anexo` | Bytes da foto/scan da receita (retenção física, RDC 20/2011) |
 | POST | `/vendas/:id/pagamentos` | Adiciona forma de pagamento (suporta múltiplos, ex: pagamento misto) |
 | POST | `/vendas/:id/finalizar` | Fecha a venda: valida receita se necessário, chama o módulo `estoque` (saída FEFO) e o módulo `financeiro` (lançamento no caixa) |
 | POST | `/vendas/:id/cancelar` | Cancela — exige perfil gerente/admin e `categoria` da lista fechada |
@@ -243,6 +244,17 @@ qualquer forma. O front mostra um aviso ao operador quando `impresso` é
 `false`, mas a venda já está salva de qualquer forma.
 
 **Regra crítica (§3)**: `POST /vendas/:id/finalizar` **bloqueia** (HTTP 422) se houver item com `tipo_controle` diferente de `livre` e nenhuma receita vinculada. Essa validação é feita no módulo `vendas`, consultando o módulo `estoque` para saber o `tipo_controle` de cada item.
+
+**Anexo da receita (§3, retenção física — RDC 20/2011)**: `POST /vendas/:id/receita`
+aceita `anexo_base64` opcional (arquivo em base64, sem o prefixo `data:...;base64,`)
+junto de `anexo_tipo` (obrigatório quando vem anexo — `image/jpeg`, `image/png` ou
+`application/pdf`) e `anexo_nome` opcional. Limite de 5MB pelo tamanho do
+base64 decodificado; acima disso, 400. Atualizar a receita sem reenviar
+`anexo_base64` **não apaga** o anexo já salvo. O detalhe da venda
+(`GET /vendas/:id`) só traz metadado (`anexo_nome`, `anexo_tipo`,
+`anexo_enviado_em`, `tem_anexo`) — os bytes vêm só de
+`GET /vendas/:id/receita/anexo` (mesma permissão `vender`), que responde com o
+`Content-Type` do arquivo, ou 404 se não houver anexo.
 
 **CPF na nota (§5, LGPD).** `POST /vendas/:id/finalizar` aceita `cpf_nota`
 opcional no corpo — só para constar na nota fiscal emitida, a pedido do

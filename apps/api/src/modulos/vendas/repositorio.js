@@ -47,10 +47,25 @@ export async function listarPagamentos(vendaId) {
   return rows;
 }
 
+/**
+ * Não traz o `anexo` (bytea) — só metadado. O detalhe da venda não precisa
+ * carregar a imagem/PDF inteiro; quem quiser ver busca em
+ * `GET /:id/receita/anexo` (buscarAnexoReceita, abaixo).
+ */
 export async function buscarReceita(vendaId) {
   const { rows } = await consultar(
-    `SELECT id, venda_id, medico_nome, medico_crm, paciente_nome, data_emissao
+    `SELECT id, venda_id, medico_nome, medico_crm, paciente_nome, data_emissao,
+            anexo_nome, anexo_tipo, anexo_enviado_em, (anexo IS NOT NULL) AS tem_anexo
        FROM vendas.receitas WHERE venda_id = $1`,
+    [vendaId]
+  );
+  return rows[0] ?? null;
+}
+
+export async function buscarAnexoReceita(vendaId) {
+  const { rows } = await consultar(
+    `SELECT anexo, anexo_tipo, anexo_nome
+       FROM vendas.receitas WHERE venda_id = $1 AND anexo IS NOT NULL`,
     [vendaId]
   );
   return rows[0] ?? null;
@@ -196,17 +211,39 @@ export function definirDesconto({ vendaId, desconto }) {
   });
 }
 
-export async function salvarReceita({ vendaId, medicoNome, medicoCrm, pacienteNome, dataEmissao }) {
+/**
+ * `anexo` é opcional (retenção física da receita — RDC 20/2011, antibiótico).
+ * Atualizar os campos de texto sem reenviar o anexo não apaga o anexo já
+ * salvo — por isso o COALESCE contra o valor que já está na linha.
+ */
+export async function salvarReceita({
+  vendaId,
+  medicoNome,
+  medicoCrm,
+  pacienteNome,
+  dataEmissao,
+  anexo = null,
+  anexoTipo = null,
+  anexoNome = null,
+}) {
   const { rows } = await consultar(
-    `INSERT INTO vendas.receitas (venda_id, medico_nome, medico_crm, paciente_nome, data_emissao)
-          VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO vendas.receitas
+       (venda_id, medico_nome, medico_crm, paciente_nome, data_emissao,
+        anexo, anexo_tipo, anexo_nome, anexo_enviado_em)
+          VALUES ($1, $2, $3, $4, $5, $6::bytea, $7, $8, CASE WHEN $6::bytea IS NULL THEN NULL ELSE now() END)
      ON CONFLICT (venda_id) DO UPDATE
             SET medico_nome = EXCLUDED.medico_nome,
                 medico_crm = EXCLUDED.medico_crm,
                 paciente_nome = EXCLUDED.paciente_nome,
-                data_emissao = EXCLUDED.data_emissao
-       RETURNING id, venda_id, medico_nome, medico_crm, paciente_nome, data_emissao`,
-    [vendaId, medicoNome, medicoCrm, pacienteNome, dataEmissao]
+                data_emissao = EXCLUDED.data_emissao,
+                anexo = COALESCE(EXCLUDED.anexo, vendas.receitas.anexo),
+                anexo_tipo = COALESCE(EXCLUDED.anexo_tipo, vendas.receitas.anexo_tipo),
+                anexo_nome = COALESCE(EXCLUDED.anexo_nome, vendas.receitas.anexo_nome),
+                anexo_enviado_em = CASE WHEN EXCLUDED.anexo IS NOT NULL THEN now()
+                                        ELSE vendas.receitas.anexo_enviado_em END
+       RETURNING id, venda_id, medico_nome, medico_crm, paciente_nome, data_emissao,
+                 anexo_nome, anexo_tipo, anexo_enviado_em, (anexo IS NOT NULL) AS tem_anexo`,
+    [vendaId, medicoNome, medicoCrm, pacienteNome, dataEmissao, anexo, anexoTipo, anexoNome]
   );
   return rows[0];
 }

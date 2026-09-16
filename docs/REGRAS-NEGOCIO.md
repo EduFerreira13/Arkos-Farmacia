@@ -32,7 +32,7 @@
 
 - Toda venda gera um registro com: itens, quantidade, preço unitário, desconto aplicado, forma de pagamento, vendedor/operador, data/hora.
 - **Medicamento controlado** (`tarja_preta` ou `tarja_vermelha` — inclui psicotrópicos e antibióticos): venda só é concluída com o registro da receita (nome do médico, CRM, nome do paciente, data de emissão — tabela `vendas.receitas`). Sistema não deixa finalizar a venda sem esses dados.
-  - **Nota:** o MVP usa esse único registro para os dois casos. Não existe campo separado de "retenção física da receita" (anexo/scan) nem número de receita próprio — pendência registrada em `docs/PENDENCIAS.md` para decidir se isso é necessário além do registro digital.
+  - **Retenção física (antibiótico, RDC 20/2011):** o mesmo registro aceita um anexo opcional — foto ou scan da receita (`POST /vendas/:id/receita`, campo `anexo_base64`; recuperado em `GET /vendas/:id/receita/anexo`). Continua sendo um único mecanismo para tarja preta e tarja vermelha, mas agora com um jeito de reter a cópia física quando for preciso, não só os dados digitados. Não é obrigatório — quem decide se anexa é quem está no balcão.
 - Desconto: só aplicável dentro de um limite percentual configurável por perfil de usuário (ex: operador de caixa até 5%, gerente até 15%).
 - Cancelamento de venda (ou item) exige autorização de um perfil superior (ex: gerente) — nunca livre para o operador de caixa.
 - Formas de pagamento no MVP: dinheiro, cartão (débito/crédito), Pix. Cada forma gera lançamento correspondente no financeiro.

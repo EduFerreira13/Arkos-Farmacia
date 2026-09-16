@@ -63,6 +63,10 @@ function registrarTratamentoDeErro(app) {
 export function construirApp() {
   const app = Fastify({
     logger: { level: env.NODE_ENV === "development" ? "info" : "warn" },
+    // Padrão do Fastify é 1MB — pequeno demais pro anexo de receita em base64
+    // (POST /vendas/:id/receita, retenção de receita de antibiótico/controlado
+    // via docs/REGRAS-NEGOCIO.md §3). 8MB cobre uma foto/scan de uma página.
+    bodyLimit: 8 * 1024 * 1024,
   });
 
   // Antes de tudo: o token agora viaja em cookie httpOnly (packages/auth-middleware),

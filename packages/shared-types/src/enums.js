@@ -38,6 +38,15 @@ export const TIPO_CONTROLE_LABEL = {
 };
 
 /**
+ * Tipos de arquivo aceitos no anexo da receita (retenção física exigida pela
+ * RDC 20/2011 para antibiótico — docs/REGRAS-NEGOCIO.md §3).
+ */
+export const TIPO_ANEXO_RECEITA_LISTA = ["image/jpeg", "image/png", "application/pdf"];
+
+/** Tamanho máximo do arquivo original do anexo (antes de virar base64). */
+export const TAMANHO_MAXIMO_ANEXO_RECEITA_BYTES = 5 * 1024 * 1024;
+
+/**
  * Regra dura (docs/REGRAS-NEGOCIO.md §3 e §8): item com tipo_controle
  * diferente de `livre` só pode ser vendido com receita vinculada.
  * @param {string} tipoControle

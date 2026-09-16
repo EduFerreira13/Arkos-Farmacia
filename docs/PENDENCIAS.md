@@ -8,7 +8,6 @@
 
 ### Decisões de negócio / jurídico
 
-- [ ] **"Retenção de receita" de antibiótico não tem mecanismo próprio** — `docs/REGRAS-NEGOCIO.md` §3 descrevia dois fluxos (tarja preta = registro da receita; antibiótico/tarja vermelha = retenção física, com anexo/scan). O que existe é um único mecanismo (`vendas.receitas`: médico, CRM, paciente, data) para os dois casos. Decidir se a retenção física é necessária além do registro digital.
 - [ ] **CPF e dados de receita (médico, paciente, CRM) ficam em texto puro no banco** — sem criptografia em repouso. A minimização de dados já foi feita (ver Resolvido); falta decidir, com quem cuida do jurídico, se vale o custo de criptografar em repouso frente ao risco de exposição em vazamento.
 
 ### Configuração fixa no código (sem tela de parâmetros)
@@ -38,6 +37,8 @@ Mesma causa raiz nos seis itens: não existe uma tela de parâmetros ainda, ent�
 ## Resolvido
 
 <!-- Mover itens para cá conforme forem decididos, com a data e a decisão tomada -->
+
+- [x] **"Retenção de receita" de antibiótico ganhou mecanismo próprio** — decidido e implementado em 16/09/2026. A RDC 20/2011 da Anvisa exige reter cópia física/digitalizada da receita de antibiótico, não só anotar os dados — o que existia (`vendas.receitas`: médico, CRM, paciente, data) cobria só o registro digital, igual para tarja preta e tarja vermelha. Adicionado anexo opcional (foto/scan, imagem ou PDF, até 5MB) na mesma linha: migration `0024_vendas_receita_anexo.sql` (colunas `anexo` bytea, `anexo_tipo`, `anexo_nome`, `anexo_enviado_em`), `POST /vendas/:id/receita` aceita `anexo_base64`/`anexo_tipo`/`anexo_nome`, `GET /vendas/:id/receita/anexo` devolve os bytes (nunca embutidos no detalhe da venda — só metadado). Atualizar a receita sem reenviar o anexo não apaga o que já foi salvo (`COALESCE` contra a linha existente). Frontend: campo de upload no formulário de receita do PDV (`CampoArquivo` novo em `componentes/Campos.jsx`) e botão "Ver anexo" quando já existe um — sem suporte a anexo no modo offline (só os dados de texto, mesmo limite de outras funcionalidades do PDV offline). Não é obrigatório — decisão de negócio equivalente ficaria pra criar um bloqueio duro por tipo de controle, o que não foi pedido aqui. `npm run test:integracao` (5 verificações novas: anexo sem tipo recusado, anexa, baixa com content-type e tamanho certos, atualização preserva o anexo, 404) e `npm run test:telas` passando inteiros — achado e corrigido no caminho: `$6` (o anexo) sem cast explícito pra `bytea` fazia o Postgres recusar com "could not determine data type of parameter" quando vinha `null`.
 
 - [x] **Consentimento e retenção de dados do CRM (LGPD) — as três decisões tomadas em 16/09/2026**:
   - **Consentimento no cadastro**: revisado o checkbox pré-marcado ("Aceita receber contato...", opt-out) em `PDV.jsx` — decisão: **manter como está**. Assumido que o contexto (farmácia com relacionamento contínuo, cliente já presente no balcão) justifica opt-out; não é opt-in.
