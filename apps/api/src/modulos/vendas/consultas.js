@@ -217,6 +217,34 @@ export async function atualizarCliente(id, campos) {
   return rows[0] ?? null;
 }
 
+/**
+ * Direito de exclusão de dados (LGPD): anonimiza o cadastro do cliente sem
+ * apagar a linha — vendas, itens e contatos já registrados continuam
+ * apontando para o mesmo `id`, só o dado pessoal por trás vira anônimo.
+ * `nome` não pode ser null (schema), por isso o placeholder.
+ */
+export async function anonimizarCliente(id, { usuarioId }) {
+  const { rows } = await consultar(
+    `UPDATE vendas.clientes
+        SET nome = 'Cliente removido (LGPD)',
+            cpf = NULL,
+            telefone = NULL,
+            email = NULL,
+            convenio = NULL,
+            observacao = NULL,
+            endereco = NULL,
+            data_nascimento = NULL,
+            aceita_contato = false,
+            ativo = false,
+            dados_excluidos_por = $2,
+            dados_excluidos_em = now()
+      WHERE id = $1
+      RETURNING id, nome, ativo, aceita_contato, dados_excluidos_por, dados_excluidos_em`,
+    [id, usuarioId]
+  );
+  return rows[0] ?? null;
+}
+
 export async function vincularCliente({ vendaId, clienteId }) {
   const { rows } = await consultar(
     `UPDATE vendas.vendas SET cliente_id = $2 WHERE id = $1 RETURNING id, cliente_id`,

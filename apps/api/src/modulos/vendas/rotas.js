@@ -39,6 +39,7 @@ import {
 } from "./crm.js";
 import {
   analisarVendas,
+  anonimizarCliente,
   atualizarCliente,
   inserirCliente,
   listarClientes,
@@ -675,6 +676,26 @@ export async function registrarRotas(app) {
         }
         throw erro;
       }
+    }
+  );
+
+  /**
+   * Direito de exclusão de dados (LGPD, docs/PENDENCIAS.md): anonimiza o
+   * cadastro do cliente a pedido dele. Ação de gerente/admin (mesmo nível de
+   * `cancelar_venda`) — não é o operador de caixa que decide isso sozinho. As
+   * vendas já registradas não são apagadas nem desvinculadas: só o cliente por
+   * trás vira anônimo (mesmo princípio do cancelamento, que também é
+   * irreversível e fica registrado com quem fez).
+   */
+  app.post(
+    "/clientes/:id/excluir-dados",
+    { preHandler: auth.exigirPermissao("cancelar_venda") },
+    async (requisicao, resposta) => {
+      const cliente = await anonimizarCliente(requisicao.params.id, {
+        usuarioId: requisicao.usuario.id,
+      });
+      if (!cliente) return naoEncontrado(resposta, "Cliente não encontrado.");
+      return { cliente };
     }
   );
 

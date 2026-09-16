@@ -8,7 +8,6 @@
 
 ### Decisões de negócio / jurídico
 
-- [ ] **Consentimento e retenção de dados do CRM (LGPD)** — confirmado em 16/09/2026, nada mudou. O sistema respeita `aceita_contato` e registra quem foi contatado, mas falta: momento/forma de coletar consentimento no cadastro, prazo de retenção do histórico de compra, e caminho para o cliente pedir exclusão. Decisão de negócio/jurídica antes de usar a lista para campanha.
 - [ ] **"Retenção de receita" de antibiótico não tem mecanismo próprio** — `docs/REGRAS-NEGOCIO.md` §3 descrevia dois fluxos (tarja preta = registro da receita; antibiótico/tarja vermelha = retenção física, com anexo/scan). O que existe é um único mecanismo (`vendas.receitas`: médico, CRM, paciente, data) para os dois casos. Decidir se a retenção física é necessária além do registro digital.
 - [ ] **CPF e dados de receita (médico, paciente, CRM) ficam em texto puro no banco** — sem criptografia em repouso. A minimização de dados já foi feita (ver Resolvido); falta decidir, com quem cuida do jurídico, se vale o custo de criptografar em repouso frente ao risco de exposição em vazamento.
 
@@ -39,6 +38,12 @@ Mesma causa raiz nos seis itens: não existe uma tela de parâmetros ainda, ent�
 ## Resolvido
 
 <!-- Mover itens para cá conforme forem decididos, com a data e a decisão tomada -->
+
+- [x] **Consentimento e retenção de dados do CRM (LGPD) — as três decisões tomadas em 16/09/2026**:
+  - **Consentimento no cadastro**: revisado o checkbox pré-marcado ("Aceita receber contato...", opt-out) em `PDV.jsx` — decisão: **manter como está**. Assumido que o contexto (farmácia com relacionamento contínuo, cliente já presente no balcão) justifica opt-out; não é opt-in.
+  - **Prazo de retenção**: **2 anos sem nenhuma compra** (ou cadastrado há mais de 2 anos e nunca comprou). Implementado em `database/scripts/retencao-clientes.js` (`npm run retencao:clientes`) — lista quem é elegível por padrão (dry-run) e só anonimiza de fato com `--aplicar`. Sem agendamento automático (sem infraestrutura de cron no projeto); rodar manualmente ou agendar via cron do SO.
+  - **Caminho de exclusão a pedido do cliente**: `POST /vendas/clientes/:id/excluir-dados` (migration `0023_vendas_exclusao_dados_cliente.sql`, `anonimizarCliente` em `apps/api/src/modulos/vendas/consultas.js`). Anonimiza nome/CPF/telefone/email/convênio/observação/endereço/data de nascimento, desliga `aceita_contato` e `ativo`, mantém o `id` (histórico de vendas intacto) e grava quem/quando em `dados_excluidos_por`/`dados_excluidos_em`. Exige perfil gerente/admin (mesma permissão de `cancelar_venda`) — ação sensível e irreversível, não é o operador de caixa que decide sozinho. Reaproveitado pelo script de retenção acima (mesma lógica de anonimização).
+  - Documentado em `docs/REGRAS-NEGOCIO.md` §5, `docs/API-CONTRATOS.md` e `docs/MODELO-DADOS.md`. 5 verificações novas em `npm run test:integracao` (permissão, anonimização, busca não acha mais pelo nome antigo, 404) — `npm run test:integracao` (176 verificações) e `npm run test:fluxo` passando inteiros.
 
 - [x] **Schema `public` do banco — projeto legado (Prisma) apagado** — decidido e executado em 16/09/2026. As 57 tabelas de um backoffice de clínica (`tenants`, `pacientes`, `prontuarios`, `agendamentos`, `_prisma_migrations`, etc.) não tinham referência em nenhuma rota/query do Arkos (código sempre qualifica schema, ex. `auth.usuarios`) e não tinham atividade havia mais de 3 meses (toda a carga de dados foi criada em rajadas entre 27/05 e 07/06/2026 — cara de teste/onboarding abandonado, não uso corrente). Apagadas via `DROP TABLE ... CASCADE`, uma a uma, dentro de uma transação. `public.arkos_migrations` foi preservada — é a tabela de controle de migration do próprio Arkos (`database/scripts/run-migrations.js`), não fazia parte do legado. `public` hoje só tem essa tabela.
 

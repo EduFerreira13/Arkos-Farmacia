@@ -135,12 +135,24 @@ com `saldo_negativo: true`, para conferência do gerente (ver REGRAS-NEGOCIO.md 
 | GET | `/vendas/relatorios/clientes` | Planilha dos clientes, com os mesmos filtros |
 | GET | `/vendas/crm/retornos` | Retornos combinados e ainda não atendidos |
 | PATCH | `/vendas/clientes/:id` | Atualiza cliente |
+| POST | `/vendas/clientes/:id/excluir-dados` | Direito de exclusão (LGPD) — anonimiza o cadastro, exige perfil gerente/admin |
 
 **Obrigatórios do cliente (§5)**: `nome` e `telefone`. `cpf` é opcional
 (minimização de dados, LGPD) — o identificador do cliente é sempre o `id`
 interno, nunca o CPF. No `PATCH` a exigência só vale para o campo que vier no
 corpo. A planilha de clientes leva dado pessoal (CPF, telefone, endereço) — a
 finalidade precisa justificar a extração (LGPD).
+
+**Exclusão de dados (§5, LGPD)**: `POST /vendas/clientes/:id/excluir-dados` não
+apaga a linha — anonimiza (`nome` vira `"Cliente removido (LGPD)"`, `cpf`,
+`telefone`, `email`, `convenio`, `observacao`, `endereco` e `data_nascimento`
+viram `null`, `aceita_contato` e `ativo` viram `false`) e grava quem e quando em
+`dados_excluidos_por`/`dados_excluidos_em`. As vendas, itens e contatos já
+registrados continuam apontando pro mesmo `id` — só o cliente por trás fica
+anônimo. Exige a mesma permissão de `cancelar_venda` (gerente/admin), pelo
+mesmo motivo: ação sensível e irreversível. Também roda por prazo de retenção
+(2 anos sem compra), via `npm run retencao:clientes` (dry-run por padrão,
+`--aplicar` para executar de fato) — ver `docs/PENDENCIAS.md`.
 | POST | `/vendas/:id/cliente` | Vincula (ou desvincula) o cliente da venda |
 | DELETE | `/vendas/:id/pagamentos/:pagamentoId` | Remove forma de pagamento antes de finalizar |
 

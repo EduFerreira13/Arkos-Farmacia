@@ -53,6 +53,8 @@
 
 - Cadastro de cliente exige **nome e telefone** — o telefone é o que permite o retorno do relacionamento. **CPF é opcional** (minimização de dados, LGPD): o identificador do cliente no sistema é o `id` interno, nunca o CPF. Email, data de nascimento, convênio, endereço e observações também são opcionais.
 - Na finalização da venda, o operador pode informar um **CPF só para constar na nota fiscal**, independente de haver cliente vinculado — não é obrigatório para concluir a venda, e não cria nem exige cadastro de cliente.
+- **Direito de exclusão (LGPD)**: o cliente pode pedir para apagar seus dados. `POST /vendas/clientes/:id/excluir-dados` (perfil gerente/admin) anonimiza o cadastro — nome vira um rótulo genérico, CPF/telefone/email/convênio/observação/endereço/data de nascimento somem, consentimento de contato é desligado — sem apagar a linha, para não quebrar o histórico de vendas já registrado. Fica gravado quem e quando pediu.
+- **Retenção do histórico de compra (LGPD)**: cliente sem nenhuma compra há mais de **2 anos** (ou cadastrado há mais de 2 anos e nunca comprou) é elegível para a mesma anonimização, agora por prazo em vez de pedido — rodar `npm run retencao:clientes` (lista por padrão; `--aplicar` executa de fato).
 - Contas a pagar: vinculadas a fornecedores e compras.
 - Contas a receber: geradas automaticamente por vendas a prazo (se houver) ou por convênios.
 - Fluxo de caixa diário: soma automática das vendas do PDV (por forma de pagamento) + lançamentos manuais.

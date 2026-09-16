@@ -386,6 +386,45 @@ const clienteSemTelefone = await req(`${S.vendas}/vendas/clientes`, {
 });
 ok("cliente sem telefone é recusado", clienteSemTelefone.status === 400);
 
+// Exclusão de dados (LGPD, docs/PENDENCIAS.md): ação de gerente, não do caixa.
+// Cliente próprio para este teste — não reaproveita `clienteId`, que os testes
+// de CRM mais adiante ainda usam ativo e com contato aceito.
+const clienteParaExcluir = await req(`${S.vendas}/vendas/clientes`, {
+  metodo: "POST", token: caixa,
+  corpo: { nome: `Excluir Integracao ${sufixo}`, telefone: "(11) 90000-0002" },
+});
+ok("cadastra cliente para o teste de exclusão", clienteParaExcluir.status === 201);
+const clienteExcluirId = clienteParaExcluir.dados.cliente.id;
+
+const exclusaoSemPermissao = await req(`${S.vendas}/vendas/clientes/${clienteExcluirId}/excluir-dados`, {
+  metodo: "POST", token: caixa,
+});
+ok("caixa não pode excluir dados de cliente", exclusaoSemPermissao.status === 403);
+
+const exclusaoCliente = await req(`${S.vendas}/vendas/clientes/${clienteExcluirId}/excluir-dados`, {
+  metodo: "POST", token: gerente,
+});
+ok(
+  "gerente anonimiza dados do cliente",
+  exclusaoCliente.status === 200 &&
+    exclusaoCliente.dados.cliente.ativo === false &&
+    exclusaoCliente.dados.cliente.aceita_contato === false &&
+    exclusaoCliente.dados.cliente.dados_excluidos_em
+);
+
+const clienteAnonimizado = await req(`${S.vendas}/vendas/clientes?busca=${encodeURIComponent(`Excluir Integracao ${sufixo}`)}`, {
+  token: caixa,
+});
+ok(
+  "cliente anonimizado some da busca pelo nome antigo",
+  clienteAnonimizado.status === 200 && clienteAnonimizado.dados.clientes.length === 0
+);
+
+const exclusaoInexistente = await req(`${S.vendas}/vendas/clientes/00000000-0000-0000-0000-000000000000/excluir-dados`, {
+  metodo: "POST", token: gerente,
+});
+ok("excluir dados de cliente inexistente devolve 404", exclusaoInexistente.status === 404);
+
 const clientesPorValor = await req(`${S.vendas}/vendas/clientes?min_valor=999999`, { token: caixa });
 ok("filtro de valor gasto reduz a lista", clientesPorValor.status === 200 && clientesPorValor.dados.clientes.length === 0);
 

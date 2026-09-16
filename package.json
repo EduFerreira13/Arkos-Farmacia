@@ -10,6 +10,7 @@
   "scripts": {
     "sync:schema": "node database/scripts/sync-schema.js",
     "migrate": "node database/scripts/run-migrations.js",
+    "retencao:clientes": "node database/scripts/retencao-clientes.js",
     "seed": "node database/scripts/seed.js",
     "seed:demo": "node database/scripts/seed-demo.js",
     "dev:api": "npm run dev --workspace=apps/api",

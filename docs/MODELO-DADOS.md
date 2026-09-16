@@ -198,6 +198,8 @@ erDiagram
     boolean aceita_contato
     date data_nascimento
     text endereco
+    uuid dados_excluidos_por
+    timestamp dados_excluidos_em
     timestamp criado_em
   }
   CONTATOS_CLIENTE {
@@ -225,6 +227,7 @@ erDiagram
 | `pagamentos` | 1 venda → N pagamentos | suporta pagamento misto (parte cartão, parte dinheiro) |
 | `receitas` | vinculada à venda | obrigatória se algum item for `tarja_vermelha`/`tarja_preta` — sem isso, venda bloqueada (§3) |
 | `clientes.cpf`/`telefone`/`email`/`endereco`/`data_nascimento` | dados pessoais | sujeitos à LGPD (finalidade: identificação para venda/convênio e relacionamento) — coleta e uso devem se limitar a essa finalidade; `aceita_contato` é o registro de consentimento para o CRM de recompra, e deve ser respeitado antes de qualquer contato em `contatos_cliente` |
+| `clientes.dados_excluidos_por`/`dados_excluidos_em` | direito de exclusão (LGPD) | preenchidos por `POST /vendas/clientes/:id/excluir-dados` ou pela retenção automática (`npm run retencao:clientes`, 2 anos sem compra) — quando não-nulos, os demais campos pessoais da linha já foram anonimizados, mas o `id` permanece para não quebrar `vendas`/`itens_venda`/`contatos_cliente` que referenciam esse cliente |
 | `contatos_cliente.resultado` | enum `resultado_contato` | `aguardando`, `interessado`, `sem_interesse`, `nao_atendeu`, `convertido` — fecha o ciclo do CRM de recompra |
 | `contatos_cliente.canal` | enum `canal_contato` | `telefone`, `whatsapp`, `email`, `presencial` |
 
