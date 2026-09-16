@@ -18,6 +18,8 @@
 | aceita_contato | boolean | NO | true |
 | data_nascimento | date | YES | - |
 | endereco | text | YES | - |
+| dados_excluidos_por | uuid | YES | - |
+| dados_excluidos_em | timestamp with time zone | YES | - |
 
 ## contatos_cliente
 
