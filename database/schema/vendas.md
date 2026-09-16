@@ -8,7 +8,7 @@
 |---|---|---|---|
 | id | uuid | NO | gen_random_uuid() |
 | nome | character varying | NO | - |
-| cpf | character varying | YES | - |
+| cpf | bytea | YES | - |
 | telefone | character varying | YES | - |
 | email | character varying | YES | - |
 | convenio | character varying | YES | - |
@@ -68,9 +68,9 @@
 |---|---|---|---|
 | id | uuid | NO | gen_random_uuid() |
 | venda_id | uuid | NO | - |
-| medico_nome | character varying | NO | - |
-| medico_crm | character varying | NO | - |
-| paciente_nome | character varying | NO | - |
+| medico_nome | bytea | NO | - |
+| medico_crm | bytea | NO | - |
+| paciente_nome | bytea | NO | - |
 | data_emissao | date | NO | - |
 | anexo | bytea | YES | - |
 | anexo_tipo | character varying | YES | - |
