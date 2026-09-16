@@ -21,7 +21,6 @@ Mesma causa raiz nos seis itens: não existe uma tela de parâmetros ainda, ent�
 
 - [ ] **Envio de email da recuperação de senha ainda sem provedor real configurado** — o código (`modulos/auth/email.js`, SMTP via nodemailer) está pronto e testado (composição da mensagem e envio real conferidos com uma conta de teste Ethereal); falta só preencher `SMTP_HOST`/`SMTP_USER`/`SMTP_SENHA` no `.env` com um provedor de verdade (SMTP da farmácia, SendGrid, Resend, SES — qualquer um serve, todos falam SMTP) antes de subir pra produção. Sem isso preenchido, o fluxo continua funcionando (o token é gerado e a rota nunca quebra), só que ninguém recebe o código fora do ambiente de desenvolvimento.
 - [ ] **Dados da farmácia no `.env` ainda incompletos para produção** — `FARMACIA_CNPJ` já tem um valor real (ver Resolvido), mas falta confirmar que é o mesmo cadastrado no token de homologação da Focus NFe e rodar o teste de emissão de ponta a ponta. `FARMACIA_NOME` continua com o valor genérico "Farmácia Arkos", e `FARMACIA_ENDERECO`/`FARMACIA_TELEFONE` seguem vazios — o PDF da ordem de compra sai sem esses dados reais.
-- [ ] **`react-router` com vulnerabilidade moderada em produção** — reconfirmado em 16/09/2026 (`npm audit --omit=dev`: 2 moderadas, CI segue verde porque só falha em alta/crítica). Corrigir é `npm audit fix --force` → `react-router-dom@7.18.4` (breaking change, precisa conferir telas de roteamento antes de aceitar).
 - [ ] Domínio/hospedagem definitivos para deploy (fora do escopo do MVP local).
 
 ### Melhorias técnicas futuras (não bloqueiam o MVP)
@@ -32,6 +31,8 @@ Mesma causa raiz nos seis itens: não existe uma tela de parâmetros ainda, ent�
 ## Resolvido
 
 <!-- Mover itens para cá conforme forem decididos, com a data e a decisão tomada -->
+
+- [x] **`react-router` atualizado — vulnerabilidade moderada corrigida** — 16/09/2026. `apps/web` estava em `react-router-dom@6.28` (CVE de redirect aberto e injeção via `deserializeErrors()`, faixa 6.0.0–7.17.0). Subiu para `^7.18.4` (`npm install --workspace=apps/web`). Breaking change nominal do npm, mas o app usa só a API declarativa clássica (`BrowserRouter`, `Routes`, `Route`, `Navigate`, `Link`, `NavLink`, `Outlet`, `useNavigate`/`useLocation`/`useSearchParams`) — sem `createBrowserRouter`/loaders/actions e sem rota splat com path relativo, então nada do que quebra na v7 se aplicava aqui. **Nenhuma mudança de código foi necessária** — só o `package.json`/lockfile. Conferido: `npm run build` limpo, `npm audit --omit=dev` com 0 vulnerabilidades, `npm run test:telas` (rotas por perfil, navegação, menus) e `npm run test:offline` (40) passando inteiros.
 
 - [x] **Consulta de CNPJ continua na BrasilAPI — risco aceito** — decidido em 16/09/2026. Gratuita e sem contrato/SLA, mas funciona e já foi conferida com CNPJ real. Decisão: manter por ora; trocar de provedor no futuro é só `CNPJ_API_URL` no `.env` + o mapeamento em `apps/api/src/modulos/estoque/cnpj.js`, sem mexer no resto do código.
 
