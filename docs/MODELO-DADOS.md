@@ -1,16 +1,17 @@
 # Arkos — Modelagem de Dados
 
-> Cada serviço tem seu próprio schema lógico no PostgreSQL (ver `docs/ARQUITETURA.md`). Referências entre serviços (ex: `produto_id` dentro de `vendas`) são **por ID apenas — sem FK real entre schemas**, porque um serviço nunca acessa a tabela de outro diretamente, só via API.
+> Cada módulo tem seu próprio schema lógico no PostgreSQL, mesmo rodando no mesmo processo (ver `docs/ARQUITETURA.md`). Referências entre módulos (ex: `produto_id` dentro de `vendas`) são **por ID apenas — sem FK real entre schemas**, porque um módulo nunca acessa a tabela de outro diretamente, só via API.
 >
-> Esta modelagem é o ponto de partida para as migrations. `database/schema/` (gerado por `sync-schema.js`) será a fonte de verdade depois que o banco existir de fato.
+> `database/schema/*.md` (gerado por `sync-schema.js`, nunca editado à mão) é a fonte de verdade para a lista exata de colunas, tipos, nulabilidade e defaults de cada tabela — sempre reflete o banco real. Este documento não repete isso: ele mostra os **relacionamentos** (ERD) e o **significado de negócio** de cada tabela/enum, coisa que o schema gerado não carrega. Se algo aqui divergir do schema gerado, o schema gerado está certo.
 
 ---
 
-## `auth` (auth-service)
+## `auth`
 
 ```mermaid
 erDiagram
   PERFIS ||--o{ USUARIOS : possui
+  USUARIOS ||--o{ TOKENS_RECUPERACAO : solicita
   PERFIS {
     uuid id PK
     string nome
@@ -25,16 +26,25 @@ erDiagram
     boolean ativo
     timestamp criado_em
   }
+  TOKENS_RECUPERACAO {
+    uuid id PK
+    uuid usuario_id FK
+    text token_hash
+    timestamp expira_em
+    timestamp usado_em
+    timestamp criado_em
+  }
 ```
 
 | Tabela | Campo-chave | Observação |
 |---|---|---|
 | `perfis` | `nome` | operador_caixa, farmaceutico, gerente, administrador (ver `REGRAS-NEGOCIO.md` §7) |
 | `usuarios` | `email` (único) | `senha_hash` nunca em texto plano |
+| `tokens_recuperacao` | `token_hash` | hash do token de redefinição de senha (nunca o token em texto puro); `expira_em` controla validade do link, `usado_em` impede reuso |
 
 ---
 
-## `estoque` (estoque-service)
+## `estoque`
 
 ```mermaid
 erDiagram
@@ -42,6 +52,7 @@ erDiagram
   FORNECEDORES ||--o{ PRODUTOS : fornece
   PRODUTOS ||--o{ LOTES : possui
   PRODUTOS ||--o{ MOVIMENTACOES_ESTOQUE : gera
+  PRODUTOS ||--o{ HISTORICO_PRECOS : audita
   LOTES ||--o{ MOVIMENTACOES_ESTOQUE : origem
 
   CATEGORIAS {
@@ -59,13 +70,22 @@ erDiagram
     uuid id PK
     uuid categoria_id FK
     uuid fornecedor_id FK
+    string codigo
     string nome
     string principio_ativo
     string codigo_barras
     string tipo_controle
+    string fabricante
+    string classe_terapeutica
+    string unidade_venda
+    string ncm
+    string cfop
+    boolean venda_sob_encomenda
+    int dias_de_uso
     numeric preco_custo
     numeric preco_venda
     int estoque_minimo
+    timestamp criado_em
   }
   LOTES {
     uuid id PK
@@ -85,30 +105,59 @@ erDiagram
     uuid usuario_id
     timestamp criado_em
   }
+  HISTORICO_PRECOS {
+    uuid id PK
+    uuid produto_id FK
+    string campo
+    numeric valor_anterior
+    numeric valor_novo
+    uuid usuario_id
+    timestamp criado_em
+  }
 ```
 
 | Tabela | Campo-chave | Observação |
 |---|---|---|
 | `produtos.tipo_controle` | enum | `livre`, `tarja_vermelha`, `tarja_preta` — define se exige receita (§1) |
+| `produtos.dias_de_uso` | opcional | sugestão de duração do tratamento, usada pelo CRM de recompra (`vendas.contatos_cliente`) |
 | `lotes` | `data_validade` | base da regra **FEFO** — saída sempre pelo lote que vence primeiro (§2) |
 | `movimentacoes_estoque.tipo` | enum | `entrada`, `saida`, `ajuste`, `perda`, `devolucao` — toda movimentação é auditada (§2) |
+| `historico_precos` | 1 produto → N registros | grava toda alteração de `preco_custo`/`preco_venda`/outros campos monetários, com quem alterou |
+
+**Views** (derivadas, sem PK — só leitura):
+
+| View | Uso |
+|---|---|
+| `vw_estoque_baixo` | produtos com saldo atual abaixo do `estoque_minimo`, para o dashboard de alertas |
+| `vw_produtos_a_vencer` | lotes com `dias_para_vencer` calculado, para o dashboard de alertas de validade |
 
 ---
 
-## `vendas` (vendas-service)
+## `vendas`
 
 ```mermaid
 erDiagram
   VENDAS ||--o{ ITENS_VENDA : contem
   VENDAS ||--o{ PAGAMENTOS : recebe
   VENDAS ||--o| RECEITAS : referencia
+  VENDAS }o--o| CLIENTES : identifica
+  CLIENTES ||--o{ CONTATOS_CLIENTE : recebe
 
   VENDAS {
     uuid id PK
     uuid usuario_id
+    uuid cliente_id FK
+    bigint numero
     string status
+    string origem_sincronizacao
     numeric valor_total
     numeric desconto
+    text motivo_cancelamento
+    string categoria_cancelamento
+    boolean estoque_conferencia_pendente
+    uuid conferencia_resolvida_por
+    timestamp conferencia_resolvida_em
+    timestamp finalizado_em
     timestamp criado_em
   }
   ITENS_VENDA {
@@ -116,8 +165,12 @@ erDiagram
     uuid venda_id FK
     uuid produto_id
     uuid lote_id
+    string produto_nome
+    string tipo_controle
     int quantidade
     numeric preco_unitario
+    numeric desconto
+    int dias_de_uso
   }
   PAGAMENTOS {
     uuid id PK
@@ -133,17 +186,57 @@ erDiagram
     string paciente_nome
     date data_emissao
   }
+  CLIENTES {
+    uuid id PK
+    string nome
+    string cpf
+    string telefone
+    string email
+    string convenio
+    text observacao
+    boolean ativo
+    boolean aceita_contato
+    date data_nascimento
+    text endereco
+    timestamp criado_em
+  }
+  CONTATOS_CLIENTE {
+    uuid id PK
+    uuid cliente_id FK
+    uuid usuario_id
+    uuid venda_id
+    string canal
+    string motivo
+    string oferta
+    text observacao
+    string resultado
+    date proximo_contato_em
+    numeric desconto_pct
+    timestamp criado_em
+  }
 ```
 
 | Tabela | Campo-chave | Observação |
 |---|---|---|
-| `vendas.status` | enum | `aberta`, `finalizada`, `cancelada` — cancelamento sempre com motivo (§3) |
+| `vendas.status` | enum `status_venda` | `aberta`, `finalizada`, `cancelada` — cancelamento sempre com `motivo_cancelamento` + `categoria_cancelamento` (§3) |
+| `vendas.origem_sincronizacao` | enum `origem_venda` | `online` (PDV com conexão) ou `offline` (venda feita no PDV offline e sincronizada depois) |
+| `vendas.estoque_conferencia_pendente` | flag | marcada quando uma venda `offline` sincronizada deixou saldo de lote negativo — fica pendente até um gerente conferir (`conferencia_resolvida_por`/`_em`); ver nota de saldo negativo em `REGRAS-NEGOCIO.md` §2 |
+| `itens_venda.tipo_controle` | cópia do produto | snapshot do `tipo_controle` do produto no momento da venda (histórico não muda se o cadastro do produto mudar depois) |
 | `pagamentos` | 1 venda → N pagamentos | suporta pagamento misto (parte cartão, parte dinheiro) |
 | `receitas` | vinculada à venda | obrigatória se algum item for `tarja_vermelha`/`tarja_preta` — sem isso, venda bloqueada (§3) |
+| `clientes.cpf`/`telefone`/`email`/`endereco`/`data_nascimento` | dados pessoais | sujeitos à LGPD (finalidade: identificação para venda/convênio e relacionamento) — coleta e uso devem se limitar a essa finalidade; `aceita_contato` é o registro de consentimento para o CRM de recompra, e deve ser respeitado antes de qualquer contato em `contatos_cliente` |
+| `contatos_cliente.resultado` | enum `resultado_contato` | `aguardando`, `interessado`, `sem_interesse`, `nao_atendeu`, `convertido` — fecha o ciclo do CRM de recompra |
+| `contatos_cliente.canal` | enum `canal_contato` | `telefone`, `whatsapp`, `email`, `presencial` |
+
+**Views**:
+
+| View | Uso |
+|---|---|
+| `vw_vendas_hoje` | `total_vendas`, `valor_total_dia`, `ticket_medio` do dia local (`TZ_NEGOCIO`) — alimenta o dashboard |
 
 ---
 
-## `financeiro` (financeiro-service)
+## `financeiro`
 
 ```mermaid
 erDiagram
@@ -179,9 +272,11 @@ erDiagram
   MOVIMENTACOES_CAIXA {
     uuid id PK
     uuid caixa_id FK
+    uuid venda_id
     string tipo
     numeric valor
     string origem
+    string descricao
     timestamp criado_em
   }
 ```
@@ -189,11 +284,12 @@ erDiagram
 | Tabela | Campo-chave | Observação |
 |---|---|---|
 | `caixa` | abertura/fechamento | fechamento sempre confere esperado x contado (§5) |
-| `movimentacoes_caixa` | gerada automaticamente | toda venda finalizada gera lançamento — nunca manual (§5) |
+| `movimentacoes_caixa` | gerada automaticamente | toda venda finalizada gera lançamento — nunca manual (§5); `venda_id` referencia a venda de origem por ID (sem FK real — `financeiro` não acessa o schema `vendas` diretamente) |
+| `contas_pagar` | `fornecedor_id` | referencia `estoque.fornecedores` por ID; ligado ao fluxo de compras (`compras.pedidos` gera conta a pagar no recebimento) |
 
 ---
 
-## `fiscal` (fiscal-service)
+## `fiscal`
 
 ```mermaid
 erDiagram
@@ -204,6 +300,7 @@ erDiagram
     string status
     string numero
     string serie
+    string cpf_nota
     string url_consulta
     string mensagem_erro
     jsonb retorno_focus
@@ -216,20 +313,88 @@ erDiagram
     uuid produto_id
     uuid receita_id
     boolean enviado_anvisa
+    timestamp enviado_em
     timestamp criado_em
   }
 ```
 
 | Tabela | Campo-chave | Observação |
 |---|---|---|
-| `notas_fiscais` | `status` | `emitida` (autorizada pela SEFAZ) ou `erro` (rejeição/payload incompleto — motivo em `mensagem_erro`); `simulado` só existe em notas antigas, de antes da integração real com a Focus NFe (§6) |
-| `controlados_sngpc` | `enviado_anvisa` | fica `false` no MVP — campo já existe para quando a integração real for feita |
+| `notas_fiscais` | `status` | `emitida` (autorizada pela SEFAZ) ou `erro` (rejeição/payload incompleto — motivo em `mensagem_erro`); `simulado` é o default histórico da coluna, de antes da integração real com a Focus NFe (§6) |
+| `notas_fiscais.cpf_nota` | dado pessoal | CPF do cliente na nota (quando informado na venda) — dado sensível sob a LGPD; finalidade é estritamente fiscal (emissão de NF-e), não deve ser reaproveitado para outro fim sem base legal própria |
+| `controlados_sngpc` | `enviado_anvisa` | fica `false` no MVP — campo já existe para quando a integração real for feita; `enviado_em` registra o timestamp do envio quando acontecer |
+
+---
+
+## `compras`
+
+```mermaid
+erDiagram
+  PEDIDOS ||--o{ ITENS_PEDIDO : contem
+  PEDIDOS ||--o{ RECEBIMENTOS : gera
+  RECEBIMENTOS ||--o{ ITENS_RECEBIMENTO : contem
+
+  PEDIDOS {
+    uuid id PK
+    uuid fornecedor_id
+    string fornecedor_nome
+    string numero
+    string status
+    text observacao
+    text motivo_cancelamento
+    string forma_pagamento
+    numeric valor_total
+    numeric frete
+    numeric desconto
+    uuid usuario_id
+    timestamp criado_em
+    timestamp enviado_em
+    timestamp recebido_em
+    date entregue_em
+  }
+  ITENS_PEDIDO {
+    uuid id PK
+    uuid pedido_id FK
+    uuid produto_id
+    string produto_nome
+    int quantidade
+    numeric preco_unitario
+  }
+  RECEBIMENTOS {
+    uuid id PK
+    uuid pedido_id FK
+    uuid usuario_id
+    text observacao
+    boolean tem_divergencia
+    timestamp recebido_em
+  }
+  ITENS_RECEBIMENTO {
+    uuid id PK
+    uuid recebimento_id FK
+    uuid item_pedido_id FK
+    uuid produto_id
+    string produto_nome
+    int quantidade_pedida
+    int quantidade_recebida
+    string numero_lote
+    date data_validade
+    int divergencia
+  }
+```
+
+| Tabela | Campo-chave | Observação |
+|---|---|---|
+| `pedidos.status` | enum `status_pedido` | `rascunho`, `enviado`, `recebido`, `cancelado` |
+| `pedidos.numero` | gerado | formato `PC-<ano>-<sequencial>` (sequência própria por schema) |
+| `pedidos.fornecedor_id` | referencia | `estoque.fornecedores` por ID (sem FK real entre schemas) |
+| `itens_recebimento.divergencia` | calculado | `quantidade_recebida - quantidade_pedida`; `recebimentos.tem_divergencia` sinaliza se algum item do recebimento divergiu — conferência manual antes de dar entrada no estoque (o recebimento gera `estoque.movimentacoes_estoque` e `financeiro.contas_pagar` por HTTP) |
 
 ---
 
 ## Convenções gerais
 
-- Toda tabela usa `uuid` como chave primária (evita conflito ao gerar IDs em serviços diferentes sem coordenação central).
+- Toda tabela usa `uuid` como chave primária (evita conflito ao gerar IDs em módulos diferentes sem coordenação central).
 - Datas de auditoria (`criado_em`, etc.) em `timestamp with time zone`.
-- Nenhuma FK cruza schemas de serviços diferentes — só dentro do mesmo serviço.
+- Nenhuma FK cruza schemas de módulos diferentes — só dentro do mesmo módulo. Referências entre módulos são por ID, resolvidas via HTTP quando o dado do outro lado é necessário.
 - Campos monetários sempre `numeric(10,2)`, nunca float.
+- Colunas com dado pessoal (CPF, telefone, e-mail, endereço, data de nascimento) existem hoje em `vendas.clientes` e `fiscal.notas_fiscais.cpf_nota` — qualquer novo uso desses dados (relatório, exportação, integração) deve respeitar a finalidade original (venda/convênio/nota fiscal) e os princípios de minimização da LGPD, não presumir uso livre só porque o dado já está no banco.
