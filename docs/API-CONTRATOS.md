@@ -2,7 +2,7 @@
 
 > O backend é um processo só (`apps/api`), mas cada módulo expõe sua própria API REST no seu prefixo. Comunicação entre módulos é sempre via HTTP — nunca acesso direto a schema de outro módulo (ver `docs/ARQUITETURA.md`).
 >
-> Autenticação: o módulo `auth` emite o JWT no login. Os demais **validam o token localmente** (mesmo `JWT_SECRET`) — não fazem uma chamada de rede ao módulo `auth` a cada requisição, por performance. Toda rota autenticada espera `Authorization: Bearer <token>`.
+> Autenticação: o módulo `auth` emite o JWT no login e grava num cookie `httpOnly` (`arkos_token`) — é isso que o navegador manda em toda chamada (`credentials: "include"`), sem o front tocar no token. O corpo de `POST /auth/login` ainda devolve `token` por compatibilidade (chamada servidor-a-servidor, script de teste), mas o cookie é o mecanismo real. Os demais módulos **validam o token localmente** (mesmo `JWT_SECRET`, cookie primeiro, header `Authorization: Bearer <token>` como fallback) — não fazem uma chamada de rede ao módulo `auth` a cada requisição, por performance.
 
 ---
 
@@ -18,6 +18,8 @@
 | GET | `/auth/usuarios` | Lista usuários (admin) — `?busca=&perfil=&ativo=` |
 | GET | `/auth/relatorios/usuarios` | Planilha dos usuários, com os mesmos filtros (admin) |
 | POST | `/auth/simular` | `{ perfil }` → token valendo com o perfil escolhido (só administrador) |
+| POST | `/auth/encerrar-simulacao` | Devolve a sessão original a partir do cookie `arkos_token_original` guardado por `/simular` |
+| POST | `/auth/logout` | Limpa os cookies de sessão no servidor (`arkos_token` e `arkos_token_original`, se houver) |
 | POST | `/auth/usuarios` | Cria usuário (admin) |
 | PATCH | `/auth/usuarios/:id` | Ativa/desativa, troca perfil |
 
@@ -37,8 +39,9 @@
 perfil pedido (e com os limites dele, como desconto máximo), guardando o perfil
 real em `perfil_real` — a ação continua rastreável a quem operou. Vale 1 hora e
 não aceita simular dentro de simulação; enquanto durar, `GET /auth/me` responde
-com o perfil simulado. Encerrar é do lado do cliente: ele volta a usar o token
-original que guardou.
+com o perfil simulado. O token real fica num segundo cookie, só durante a
+simulação (`arkos_token_original`) — `POST /auth/encerrar-simulacao` lê esse
+cookie e devolve a sessão original; sem simulação em andamento, responde 422.
 
 ---
 
@@ -92,6 +95,13 @@ quem ainda não tem histórico.
 
 **Regra crítica**: `POST /movimentacoes` do tipo `saida` deve escolher automaticamente o lote pela regra **FEFO** (menor `data_validade` com `quantidade > 0`) — não deixar o chamador escolher o lote manualmente, exceto em ajuste/perda.
 
+`POST /movimentacoes` aceita um campo interno opcional, `permitir_saldo_negativo`
+(default `false`) — usado só pela sincronização da venda offline do PDV
+(`POST /vendas/sincronizar-offline`), nunca por uma chamada comum do front. Com
+`true`, uma saída sem saldo suficiente não é recusada: o excedente vira débito
+no lote mais recente do produto (mesmo vencido) e a movimentação sai marcada
+com `saldo_negativo: true`, para conferência do gerente (ver REGRAS-NEGOCIO.md §2).
+
 **Exemplo — saída de estoque:**
 ```json
 // POST /movimentacoes
@@ -105,10 +115,10 @@ quem ainda não tem histórico.
 | Método | Rota | Descrição |
 |---|---|---|
 | POST | `/vendas` | Abre uma venda (status `aberta`) |
-| POST | `/vendas/:id/itens` | Adiciona item (chama `estoque-service` para validar disponibilidade) |
+| POST | `/vendas/:id/itens` | Adiciona item (chama o módulo `estoque` para validar disponibilidade) |
 | POST | `/vendas/:id/receita` | Registra dados da receita (obrigatório se algum item for controlado) |
 | POST | `/vendas/:id/pagamentos` | Adiciona forma de pagamento (suporta múltiplos, ex: pagamento misto) |
-| POST | `/vendas/:id/finalizar` | Fecha a venda: valida receita se necessário, chama `estoque-service` (saída FEFO) e `financeiro-service` (lançamento no caixa) |
+| POST | `/vendas/:id/finalizar` | Fecha a venda: valida receita se necessário, chama o módulo `estoque` (saída FEFO) e o módulo `financeiro` (lançamento no caixa) |
 | POST | `/vendas/:id/cancelar` | Cancela — exige perfil gerente/admin e `categoria` da lista fechada |
 | DELETE | `/vendas/:id/receita` | Desvincula a receita enquanto a venda está aberta |
 | GET | `/vendas/:id` | Detalhe completo |
@@ -211,7 +221,7 @@ pagamentos abaixo do total (`pagamento_insuficiente`) e item acima do estoque
 disponível. Cancelamento de venda **já finalizada** não está no MVP (estorno de
 estoque e caixa) — ver `docs/PENDENCIAS.md`.
 
-**Recibo térmico.** Depois da venda finalizada, o `vendas-service` tenta
+**Recibo térmico.** Depois da venda finalizada, o módulo `vendas` tenta
 imprimir o recibo (ESC/POS, endereço em `PRINTER_URL`). Isso nunca bloqueia
 nem desfaz a venda: a resposta de `POST /vendas/:id/finalizar` traz
 `recibo: { impresso: boolean, motivo: string | null, texto: string }` — `texto`
@@ -220,12 +230,12 @@ nem desfaz a venda: a resposta de `POST /vendas/:id/finalizar` traz
 qualquer forma. O front mostra um aviso ao operador quando `impresso` é
 `false`, mas a venda já está salva de qualquer forma.
 
-**Regra crítica (§3)**: `POST /vendas/:id/finalizar` **bloqueia** (HTTP 422) se houver item com `tipo_controle` diferente de `livre` e nenhuma receita vinculada. Essa validação é feita no `vendas-service`, consultando o `estoque-service` para saber o `tipo_controle` de cada item.
+**Regra crítica (§3)**: `POST /vendas/:id/finalizar` **bloqueia** (HTTP 422) se houver item com `tipo_controle` diferente de `livre` e nenhuma receita vinculada. Essa validação é feita no módulo `vendas`, consultando o módulo `estoque` para saber o `tipo_controle` de cada item.
 
 **CPF na nota (§5, LGPD).** `POST /vendas/:id/finalizar` aceita `cpf_nota`
 opcional no corpo — só para constar na nota fiscal emitida, a pedido do
 cliente. Não exige cliente cadastrado nem vinculado à venda, e não bloqueia a
-finalização se vier vazio. O valor é repassado ao `fiscal-service`
+finalização se vier vazio. O valor é repassado ao módulo `fiscal`
 (`POST /notas-fiscais`, campo `cpf_nota`) e volta em
 `nota_fiscal.cpf_nota` na resposta.
 
@@ -359,7 +369,7 @@ acima resolve o caso básico sem precisar da contingência formal.
 | GET | `/relatorios/caixa` | Planilha do movimento de caixa — `?de=&ate=` |
 | GET | `/relatorios/contas` | Planilha de contas por vencimento — `?tipo=pagar\|receber&de=&ate=` |
 | GET | `/visao-geral` | Correlação entre pagar e receber por faixa de vencimento, saldo projetado e curva de caixa |
-| GET | `/fluxo-caixa/hoje` | Junta o caixa aberto do operador com o resumo do dia buscado no vendas-service |
+| GET | `/fluxo-caixa/hoje` | Junta o caixa aberto do operador com o resumo do dia buscado no módulo `vendas` |
 
 Sem caixa aberto, `POST /caixa/movimentacoes` recusa com 422 `caixa_fechado` —
 por consequência, a venda não finaliza antes de o operador abrir o caixa (§5).
@@ -426,8 +436,8 @@ mesmo número.
 recebida com a pedida, item a item. Divergência **não bloqueia** a entrada — é
 gravada em `compras.itens_recebimento.divergencia` e devolvida em
 `alerta_divergencia` para o gestor ver. Cada item recebido entra como lote no
-`estoque-service` e o valor **efetivamente recebido** (não o do pedido) vira
-conta a pagar no `financeiro-service` — com frete e desconto do pedido entrando
+módulo `estoque` e o valor **efetivamente recebido** (não o do pedido) vira
+conta a pagar no módulo `financeiro` — com frete e desconto do pedido entrando
 proporcionalmente ao que chegou.
 
 **Exemplo — recebimento com falta:**
@@ -460,10 +470,11 @@ chegou de verdade): a resposta traz `aviso_conta` pedindo o lançamento manual.
 | GET | `/vendas/crm/contatos` | Contatos registrados (`?de=&ate=&resultado=`) |
 | POST | `/vendas/crm/contatos` | Registra contato (`cliente_id`, `canal`, `motivo`, `oferta`) |
 | PATCH | `/vendas/crm/contatos/:id` | Atualiza o resultado do contato |
+| GET | `/vendas/crm/relatorio` | Planilha do CRM — `?tipo=contatos` para os contatos registrados, `?formato=xlsx` para Excel (ver nota abaixo) |
 
-A análise sai só do schema `vendas` — nenhum outro serviço é consultado. O preço
+A análise sai só do schema `vendas` — nenhum outro módulo é consultado. O preço
 e o saldo atual do produto sugerido são cruzados por quem monta a tela, pelo
-`estoque-service`: não faz sentido oferecer o que não há para entregar.
+módulo `estoque`: não faz sentido oferecer o que não há para entregar.
 
 **Como a situação de cada cliente é decidida:**
 
@@ -503,29 +514,30 @@ de hoje.
 
 O dia da farmácia (dashboard, `vw_vendas_hoje`, fechamento de caixa, janelas de
 validade, período padrão dos relatórios) é o dia local, definido por
-`TZ_NEGOCIO` no `.env` (`America/Sao_Paulo`). Cada serviço abre a conexão com o
+`TZ_NEGOCIO` no `.env` (`America/Sao_Paulo`). O backend abre a conexão com o
 Postgres já nesse fuso — sem isso `current_date` viraria à meia-noite UTC e a
 venda das 21h cairia no movimento do dia seguinte.
 
 ## Fluxo entre módulos — exemplo completo (finalizar uma venda)
 
-1. Front chama `POST /vendas/:id/finalizar` no `vendas-service`.
-2. `vendas-service` consulta `estoque-service` (`GET /produtos/:id`) para conferir `tipo_controle` de cada item.
+1. Front chama `POST /vendas/:id/finalizar` no módulo `vendas`.
+2. O módulo `vendas` consulta o módulo `estoque` (`GET /produtos/:id`) para conferir `tipo_controle` de cada item.
 3. Se houver controlado sem receita → bloqueia (422), fim do fluxo.
-4. Caso contrário, `vendas-service` chama `estoque-service` (`POST /movimentacoes`, tipo `saida`) para cada item.
-5. `vendas-service` chama `financeiro-service` (`POST /caixa/movimentacoes`) para lançar o valor recebido.
-6. `vendas-service` chama `fiscal-service` (`POST /notas-fiscais`) para emitir a nota de verdade (Focus NFe).
-7. `vendas-service` marca a venda como `finalizada` e retorna 200 ao front.
+4. Caso contrário, o módulo `vendas` chama o módulo `estoque` (`POST /movimentacoes`, tipo `saida`) para cada item.
+5. O módulo `vendas` chama o módulo `financeiro` (`POST /caixa/movimentacoes`) para lançar o valor recebido.
+6. O módulo `vendas` chama o módulo `fiscal` (`POST /notas-fiscais`) para emitir a nota de verdade (Focus NFe).
+7. O módulo `vendas` marca a venda como `finalizada` e retorna 200 ao front.
 
 Se qualquer chamada de 4 a 5 falhar, a venda **não** é marcada como finalizada:
-o `vendas-service` estorna o que já tinha efeito (devolução dos lotes baixados e
-saída do valor lançado no caixa), devolve o erro do serviço que falhou e deixa a
+o módulo `vendas` estorna o que já tinha efeito (devolução dos lotes baixados e
+saída do valor lançado no caixa), devolve o erro do módulo que falhou e deixa a
 venda em `aberta` para nova tentativa. Falha no próprio estorno vira log de erro
 com o ID da venda, para conferência manual.
 
 O passo 6 é diferente: rejeição da SEFAZ ou payload incompleto (NCM/CFOP
-faltando) **não** conta como falha da chamada — `fiscal-service` sempre
+faltando) **não** conta como falha da chamada — o módulo `fiscal` sempre
 responde 200/201 com a nota (`status: "emitida"` ou `"erro"`, com o motivo em
 `mensagem_erro`), então a venda finaliza normalmente mesmo com a nota rejeitada
-(ver seção `fiscal` acima). Só uma falha de transporte de verdade (fiscal-service
-fora do ar, por exemplo) devolveria erro nesse passo.
+(ver seção `fiscal` acima). Só uma falha de transporte de verdade (módulo
+`fiscal` fora do ar, por exemplo — o que não deveria acontecer, já que roda no
+mesmo processo) devolveria erro nesse passo.
