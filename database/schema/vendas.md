@@ -72,6 +72,10 @@
 | medico_crm | character varying | NO | - |
 | paciente_nome | character varying | NO | - |
 | data_emissao | date | NO | - |
+| anexo | bytea | YES | - |
+| anexo_tipo | character varying | YES | - |
+| anexo_nome | character varying | YES | - |
+| anexo_enviado_em | timestamp with time zone | YES | - |
 
 ## vendas
 
