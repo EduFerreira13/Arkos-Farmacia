@@ -10,7 +10,7 @@ Arkos é um sistema fullstack para farmácia cobrindo vendas (PDV), estoque, fin
 
 Antes de mexer em qualquer coisa, leia (nessa ordem):
 
-1. [`docs/ARQUITETURA.md`](./docs/ARQUITETURA.md) — como o projeto é estruturado, serviços, banco de dados
+1. [`docs/ARQUITETURA.md`](./docs/ARQUITETURA.md) — como o projeto é estruturado, módulos, banco de dados
 2. [`docs/REGRAS-NEGOCIO.md`](./docs/REGRAS-NEGOCIO.md) — regras de negócio da farmácia (estoque, vendas, controlados, etc.)
 3. [`docs/REGRAS-VISUAIS.md`](./docs/REGRAS-VISUAIS.md) — design system (cores, tipografia, componentes)
 4. [`CONTRIBUTING.md`](./CONTRIBUTING.md) — como trabalhamos em dupla: branches, commits, PRs
@@ -35,7 +35,9 @@ arkos/
 │   └── scripts/
 │       └── sync-schema.js       # Comando que sincroniza database/schema/ com o banco real
 ├── packages/
-│   └── shared-types/            # Único código compartilhado entre serviços
+│   ├── shared-types/             # Tipos e contratos de API — frontend e módulos
+│   ├── auth-middleware/          # Autenticação/token — compartilhado entre módulos do backend
+│   └── vendas-core/               # Regras de venda (validação, desconto) — apps/web e apps/api
 ├── docs/
 └── .github/
 ```
@@ -59,7 +61,7 @@ O PostgreSQL é remoto (a `DATABASE_URL` já vem no `.env`). O Redis do
 # 1. Dependências de todos os workspaces
 npm install
 
-# 2. Estrutura do banco (recria os 5 schemas do Arkos) e usuários de acesso
+# 2. Estrutura do banco (recria os 6 schemas do Arkos) e usuários de acesso
 npm run migrate
 npm run seed
 

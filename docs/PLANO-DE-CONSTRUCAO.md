@@ -45,7 +45,7 @@
 ## Fase 6 — Dashboard e Relatórios
 
 - [x] Tela inicial pós-login: 4 cards de indicadores (vendas do dia, produtos a vencer, estoque baixo, ticket médio) + área de comunicados/atualizações.
-- [ ] Relatórios básicos (mais vendidos, margem) se houver tempo — não bloqueia o MVP. — não implementados.
+- [x] Relatórios básicos (mais vendidos, margem, curva ABC por faturamento/frequência, análise por dia e por produto) — `apps/web/src/paginas/Relatorios.jsx`, ampliado além do previsto aqui.
 
 ## Fase 7 — Revisão final
 

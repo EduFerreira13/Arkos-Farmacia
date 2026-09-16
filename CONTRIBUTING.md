@@ -1,14 +1,28 @@
 # Contribuindo com o Arkos
 
-Guia rápido para trabalharmos em dupla sem pisar no trabalho um do outro.
+Guia rápido para não pisar no próprio trabalho (hoje, um dev só) e para
+trabalhar em dupla sem pisar no do outro, quando isso voltar a acontecer.
 
-## Branches
+## Branches e commits (hoje)
+
+Hoje o Arkos tem um desenvolvedor só — commit direto na `main`, sem branch de
+feature nem Pull Request. Isso é intencional (branch de feature sem revisor do
+outro lado só cria passo de merge a mais), não um desvio do processo.
+
+O que continua valendo mesmo sem PR: um módulo por commit (regra de ouro
+abaixo), Conventional Commits, e rodar as suítes de teste antes de commitar —
+ver "Antes de commitar, confirme" no fim deste documento.
+
+### Se um segundo desenvolvedor entrar ativamente no projeto
+
+Aí branch + PR + revisão cruzada voltam a fazer sentido, para não pisar no
+trabalho um do outro:
 
 - `main` — sempre estável, o que está aqui funciona.
 - `feature/<nome-curto>` — nova funcionalidade (ex: `feature/pdv-desconto`)
 - `fix/<nome-curto>` — correção de bug (ex: `fix/estoque-validade`)
-
-Nunca commitar direto na `main`. Toda mudança entra por Pull Request.
+- PR obrigatório, pelo menos um dos dois revisa antes do merge, merge por
+  **squash** (um commit por feature na `main`).
 
 ## Commits
 
@@ -24,21 +38,13 @@ docs(database): sync schema        ← gerado automaticamente pelo sync-schema.j
 
 Tipos principais: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`.
 
-## Pull Requests
-
-1. Abrir a branch a partir da `main` atualizada.
-2. Trabalhar apenas dentro do módulo relacionado à tarefa — evita PRs gigantes mexendo em vários módulos ao mesmo tempo.
-3. Abrir o PR (pode ser como *draft* se ainda estiver em andamento, pra o outro acompanhar).
-4. Pelo menos **um dos dois revisa antes do merge** — mesmo sendo só dois devs, isso evita bug bobo passar direto.
-5. Merge por **squash** — mantém o histórico da `main` limpo (um commit por feature).
-
 ## Regra de ouro dos módulos
 
-Se sua tarefa está no módulo de estoque, não mexa no de vendas no mesmo PR — mesmo que pareça mais rápido. O backend é um processo só, mas cada módulo é independente por design (ver [`docs/ARQUITETURA.md`](./docs/ARQUITETURA.md)); misturar mudanças de módulos diferentes num PR só quebra esse isolamento.
+Se sua tarefa está no módulo de estoque, não mexa no de vendas no mesmo commit — mesmo que pareça mais rápido. O backend é um processo só, mas cada módulo é independente por design (ver [`docs/ARQUITETURA.md`](./docs/ARQUITETURA.md)); misturar mudanças de módulos diferentes num commit só quebra esse isolamento.
 
 ## Banco de dados
 
-Nunca editar `database/schema/` manualmente — esses arquivos são gerados pelo `npm run sync:schema`. Se você alterou uma tabela, rode o comando antes de abrir o PR, e deixe o commit automático de sync junto (ou em PR separado, tanto faz).
+Nunca editar `database/schema/` manualmente — esses arquivos são gerados pelo `npm run sync:schema`. Se você alterou uma tabela, rode o comando antes de commitar, e deixe o commit automático de sync junto (ou em commit separado, tanto faz).
 
 ## Testes
 
@@ -63,10 +69,10 @@ com a mudança — é lá que fica registrado o que o sistema promete não deixa
 acontecer (venda de controlado sem receita, saída acima do saldo, desconto acima
 do limite do perfil).
 
-## Antes de abrir o PR, confirme
+## Antes de commitar, confirme
 
 - [ ] Rodei `npm run sync:schema` se mexi em alguma tabela
 - [ ] Rodei as quatro suítes de teste e todas passaram
 - [ ] Segui as regras de negócio em `docs/REGRAS-NEGOCIO.md`
 - [ ] Segui o design system em `docs/REGRAS-VISUAIS.md` (se mexi em UI)
-- [ ] Não misturei mudanças de mais de um módulo no mesmo PR
+- [ ] Não misturei mudanças de mais de um módulo no mesmo commit

@@ -89,9 +89,15 @@ npm run sync:schema
 
 Pré-requisito: variável de ambiente `DATABASE_URL` apontando para o banco local ou de desenvolvimento.
 
-## Pacotes compartilhados (`packages/shared-types`)
+## Pacotes compartilhados (`packages/`)
 
-O único lugar com código compartilhado entre frontend e serviços — tipos de dados e contratos de API (ex: o formato de um "Produto" ou "Venda"). Evita duplicar a mesma interface em 5 lugares diferentes, sem criar acoplamento de lógica de negócio entre os serviços.
+Três pacotes concentram o que é compartilhado entre frontend e módulos, sem criar acoplamento de lógica de negócio entre os módulos:
+
+| Pacote | Compartilha entre | O que tem |
+|---|---|---|
+| `shared-types` | frontend e todos os módulos | tipos de dados e contratos de API (ex: o formato de um "Produto" ou "Venda") — evita duplicar a mesma interface em vários lugares |
+| `auth-middleware` | módulos do backend | emissão/verificação de token, leitura do cookie `httpOnly`, token interno de vida curta para chamada módulo-a-módulo |
+| `vendas-core` | frontend (PDV offline) e módulo `vendas` | regras de venda que precisam rodar dos dois lados — validação de carrinho, teto de desconto, bloqueio de controlado sem receita — para o PDV validar localmente sem rede e o backend validar de novo ao sincronizar |
 
 ## Porta e prefixos
 
