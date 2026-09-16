@@ -11,14 +11,7 @@
 - [ ] **Schema `public` do banco ainda tem o projeto legado (Prisma)** — confirmado em 16/09/2026: 58 tabelas de um backoffice de clínica (`tenants`, `pacientes`, `prontuarios`, `agendamentos`, `_prisma_migrations`, etc.) continuam lá. Não faz parte desta modelagem e não foi apagado (`0000_drop_legacy.sql` só limpa os 6 schemas do Arkos). Decidir: apagar de vez ou conviver com o legado em `public`.
 - [ ] **Consentimento e retenção de dados do CRM (LGPD)** — confirmado em 16/09/2026, nada mudou. O sistema respeita `aceita_contato` e registra quem foi contatado, mas falta: momento/forma de coletar consentimento no cadastro, prazo de retenção do histórico de compra, e caminho para o cliente pedir exclusão. Decisão de negócio/jurídica antes de usar a lista para campanha.
 - [ ] **"Retenção de receita" de antibiótico não tem mecanismo próprio** — `docs/REGRAS-NEGOCIO.md` §3 descrevia dois fluxos (tarja preta = registro da receita; antibiótico/tarja vermelha = retenção física, com anexo/scan). O que existe é um único mecanismo (`vendas.receitas`: médico, CRM, paciente, data) para os dois casos. Decidir se a retenção física é necessária além do registro digital.
-- [ ] **Estorno de venda já finalizada** — o cancelamento só funciona com a venda em `aberta`; a API responde 422 explicando. Cancelar venda finalizada exigiria devolver o estoque dos lotes exatos e lançar a saída no caixa, com regra de quem autoriza. Fora do MVP; decidir se entra depois.
 - [ ] **CPF e dados de receita (médico, paciente, CRM) ficam em texto puro no banco** — sem criptografia em repouso. A minimização de dados já foi feita (ver Resolvido); falta decidir, com quem cuida do jurídico, se vale o custo de criptografar em repouso frente ao risco de exposição em vazamento.
-
-### Funcionalidades que saíram da interface (a rota/regra continua no ar)
-
-- [ ] **Entrada de lote e saída avulsa** — a tela virou "Perdas e avarias"; entrada só acontece pelo recebimento de compra, e saídas que não são venda (uso interno, amostra, transferência) não têm mais onde ser lançadas. `POST /lotes` e `POST /movimentacoes` seguem no ar (confirmado em 16/09/2026). Decidir se voltam a algum lugar da interface.
-- [ ] **Sugestão automática de compra** — tela e item de menu removidos; `GET /compras/sugestao` segue no ar e testado, sem nada chamando (confirmado em 16/09/2026). Decidir quando volta, ou remover a rota se a decisão for não ter a funcionalidade.
-- [ ] **Bloco de produtos a vencer nos Alertas** — saída temporária confirmada em 16/09/2026 (`apps/web/src/paginas/Alertas.jsx` ainda documenta a remoção no comentário do arquivo). A regra continua valendo (`GET /alertas/vencimento`, card do dashboard, bloqueio de vencido na venda); só o bloco na tela de Alertas está fora. Definir quando volta.
 
 ### Configuração fixa no código (sem tela de parâmetros)
 
@@ -31,17 +24,10 @@ Mesma causa raiz nos seis itens: não existe uma tela de parâmetros ainda, ent�
 - Motivos de perda/avaria — lista fechada + "Outro" (`apps/web/src/paginas/Perdas.jsx`).
 - Passos do tour de onboarding (`apps/web/src/componentes/Tour.jsx`).
 
-### PDV offline — limitações aceitas para o MVP
-
-- Cliente não pode ser vinculado a uma venda feita sem rede (`bancoOffline.js` não cacheia cadastro de clientes) — venda entra como balcão, igual a hoje quando ninguém identifica o cliente.
-- Venda que começa **online** e perde conexão no meio não migra sozinha para o modo offline — só falha e pede pro operador descartar e recomeçar (aí sim entra offline). Avaliado e descartado nesta fase (risco de reconciliação maior que o problema resolve).
-- Sessão cacheada para sobreviver a reload sem rede expira junto com o cookie (8h, `arkos_token`) — sem refresh token hoje, queda mais longa que isso desloga o operador sem como recuperar sem rede.
-- Erro de sincronização na tela de conferência gerencial só aparece no navegador/terminal onde a venda travou (fila mora no IndexedDB local) — com um caixa só (piloto) não é problema; com um segundo terminal, o gerente precisaria olhar cada máquina.
-
 ### Operação / deploy
 
 - [ ] **Não há envio de email para a recuperação de senha** — confirmado em 16/09/2026, nenhum provedor configurado. O fluxo está inteiro (token de 30 min, uso único); em produção, sem provedor, o código é gerado e ninguém recebe. Definir provedor (SMTP da farmácia, SendGrid, Resend) antes de subir.
-- [ ] **Dados da farmácia no `.env` — parcialmente preenchidos.** `FARMACIA_CNPJ` já tem um CNPJ real (confirmado em 16/09/2026) — falta só confirmar que é o mesmo cadastrado no token de homologação da Focus NFe e rodar um teste de emissão de ponta a ponta (hoje, sem isso confirmado, toda emissão pode voltar com "CNPJ do emitente não autorizado"). `FARMACIA_NOME` continua com o valor genérico "Farmácia Arkos", e `FARMACIA_ENDERECO`/`FARMACIA_TELEFONE` seguem vazios — o PDF da ordem de compra sai sem esses dados reais.
+- [ ] **Dados da farmácia no `.env` ainda incompletos para produção** — `FARMACIA_CNPJ` já tem um valor real (ver Resolvido), mas falta confirmar que é o mesmo cadastrado no token de homologação da Focus NFe e rodar o teste de emissão de ponta a ponta. `FARMACIA_NOME` continua com o valor genérico "Farmácia Arkos", e `FARMACIA_ENDERECO`/`FARMACIA_TELEFONE` seguem vazios — o PDF da ordem de compra sai sem esses dados reais.
 - [ ] **Consulta de CNPJ depende da BrasilAPI (gratuita, sem contrato)** — confirmado em 16/09/2026, `apps/api/src/env.js` ainda aponta pro padrão público. Funciona, mas sem SLA. Trocar de provedor é só `CNPJ_API_URL` no `.env` + mapeamento em `apps/api/src/modulos/estoque/cnpj.js`.
 - [ ] **`react-router` com vulnerabilidade moderada em produção** — reconfirmado em 16/09/2026 (`npm audit --omit=dev`: 2 moderadas, CI segue verde porque só falha em alta/crítica). Corrigir é `npm audit fix --force` → `react-router-dom@7.18.4` (breaking change, precisa conferir telas de roteamento antes de aceitar).
 - [ ] Domínio/hospedagem definitivos para deploy (fora do escopo do MVP local).
@@ -56,6 +42,25 @@ Mesma causa raiz nos seis itens: não existe uma tela de parâmetros ainda, ent�
 <!-- Mover itens para cá conforme forem decididos, com a data e a decisão tomada -->
 
 - [x] **Redis opcional — Docker não instalado nesta máquina não bloqueia nada** — revisado em 16/09/2026: a decisão já estava implementada, só não tinha sido movida para cá. Se `REDIS_URL` não responder, o serviço loga um aviso e consulta o banco direto; nenhuma parte do MVP depende de Redis. Reabrir só se um dia quiserem ligar o cache de verdade — basta `docker compose up -d` com o Docker Desktop instalado.
+
+- [x] **Estorno de venda já finalizada — decisão: fora do MVP** — revisado em 16/09/2026 (decisão já estava tomada e implementada, só não migrada para cá). O cancelamento só funciona com a venda em `aberta`; cancelar uma já finalizada devolve 422 explicando o motivo. Reabrir só se decidirem suportar isso de fato — exigiria devolver o estoque dos lotes exatos e lançar a saída no caixa, com regra de quem autoriza.
+
+- [x] **Três funcionalidades saíram da interface a pedido da operação — decisão tomada, rotas mantidas no ar** — revisado em 16/09/2026 (decisões já tomadas, só não migradas para cá):
+  - **Entrada de lote e saída avulsa**: a tela virou "Perdas e avarias"; entrada só acontece pelo recebimento de compra. `POST /lotes` e `POST /movimentacoes` seguem no ar, cobertos por teste, para o dia em que uma saída que não é venda (uso interno, amostra, transferência) precisar de um lugar de novo.
+  - **Sugestão automática de compra**: retirada em 01/09/2026 ("ainda não é hora dessa funcionalidade"). `GET /compras/sugestao` segue no ar e testado, sem nada chamando.
+  - **Bloco de produtos a vencer nos Alertas**: saída temporária a pedido. A regra (bloqueio de vencido, `GET /alertas/vencimento`, card do dashboard) continua ativa — só o bloco na tela some.
+
+  Nenhuma das três tem prazo pra voltar; a API já está pronta para quando fizer sentido reativar a tela.
+
+- [x] **PDV offline — quatro limitações aceitas para o piloto (um caixa só)** — revisado em 16/09/2026 (decisões já tomadas durante as Fases 4–6, só não migradas para cá):
+  - Cliente não pode ser vinculado a uma venda feita sem rede (venda entra como balcão, igual a hoje quando ninguém identifica o cliente).
+  - Venda que começa online e perde conexão no meio não migra sozinha para o modo offline (operador descarta e recomeça).
+  - Sessão cacheada expira junto com o cookie (8h) — sem refresh token, uma queda mais longa desloga o operador sem como recuperar sem rede.
+  - Erro de sincronização na tela de conferência gerencial só aparece no navegador/terminal onde a venda travou (fila mora no IndexedDB local).
+
+  Nenhuma tem solução técnica pendente hoje — são recortes de escopo conscientes, para reavaliar se a farmácia ganhar um segundo terminal de PDV ou a operação crescer.
+
+- [x] **`FARMACIA_CNPJ` do `.env` preenchido com um CNPJ real** — confirmado em 16/09/2026. Habilita testar a emissão real de NFC-e em homologação (Focus NFe). Falta só confirmar que é o mesmo CNPJ cadastrado no token de homologação e rodar o teste de ponta a ponta — ver item em Aberto sobre os dados da farmácia (nome/endereço/telefone ainda pendentes).
 
 - [x] **Teste de fumaça do frontend (`npm run testar:telas`) falhava em "Login :: renderizou vazio"** — resolvido em 15/09/2026. Era bug do harness de teste (`apps/web/testes/smoke-telas.jsx`), não de produção: a fixture de `/api/auth/me` sempre respondia com sucesso e um usuário válido, sem nenhuma forma de simular "deslogado" no mock. `montar()` tentava contornar isso removendo `localStorage.arkos.token` só no caso "Login", mas esse valor não é lido em lugar nenhum do app desde que o JWT passou a viver em cookie `httpOnly` (item "JWT movido de `localStorage` para cookie `httpOnly`", abaixo) — era código morto. Resultado: `Login.jsx` sempre recebia `autenticado: true` do provedor e redirecionava sem renderizar nada ("vazio"). Corrigido com uma flag module-level (`autenticadoNaFixture`, mesmo padrão já usado por `perfilAtual` para trocar fixture por perfil): quando `false`, a fixture de `/auth/me` devolve um 401 de verdade (`{ erro: "nao_autenticado", ... }`, mesmo formato de `packages/auth-middleware`) em vez do usuário — `montar()` liga essa flag só para o caso "Login" e a reseta no `finally`, para não vazar "deslogado" para as telas seguintes do loop. O fluxo real de logout/401 já funcionava (`autenticacao.jsx` distingue `ErroApi` de falha de rede desde a Fase 5) — não havia nada a corrigir em código de produção. `npm run testar:telas` passa por inteiro agora (Login mostra o formulário de verdade), sem regressão nas demais telas; `npm run test:offline`, os testes do `vendas-core`, `npm run test:integracao` e `npm run test:fluxo` continuam passando inteiros.
 
