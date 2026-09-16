@@ -1,7 +1,7 @@
 # Arkos — Regras de Negócio (MVP)
 
 > Baseado em padrão de mercado para sistemas de gestão farmacêutica no Brasil.
-> Última atualização: 01/09/2026
+> Última atualização: 16/09/2026
 
 ---
 
@@ -22,6 +22,7 @@
   - Estoque abaixo do mínimo definido por produto.
   - Produtos a vencer em 90 / 60 / 30 dias (janelas configuráveis).
   - Produto vencido: bloqueado automaticamente para venda.
+- Saída sem saldo suficiente é sempre recusada, com uma exceção: a sincronização de uma venda feita no PDV **offline**, quando outro caixa vendeu o mesmo produto enquanto o primeiro estava sem rede. Nesse caso o sistema não desfaz a venda que já aconteceu — deixa o saldo do lote ficar negativo e marca a venda para conferência do gerente (`vendas.estoque_conferencia_pendente`) em vez de recusar a baixa.
 - Toda movimentação de estoque (entrada, saída, ajuste, perda, devolução) gera um **registro de auditoria** (quem, quando, motivo) — obrigatório para rastreabilidade, especialmente em controlados.
 - Inventário: permite contagem física e ajuste com justificativa obrigatória para divergências. A folha de contagem traz só produto **com saldo** — o que entrou por compra e ainda não saiu por venda nem por perda.
 - **Perda e avaria** têm tela própria, com motivo em lista fechada (avaria no transporte, embalagem danificada, produto vencido, quebra, furto, recolhimento) mais um detalhe livre. A baixa é sempre de um lote específico.
@@ -30,8 +31,8 @@
 ## 3. Vendas (PDV)
 
 - Toda venda gera um registro com: itens, quantidade, preço unitário, desconto aplicado, forma de pagamento, vendedor/operador, data/hora.
-- **Medicamento controlado** (tarja preta, psicotrópicos): venda só é concluída com registro da receita (número, CRM do médico, nome do paciente). Sistema não deixa finalizar a venda sem esses dados.
-- **Antibióticos**: exigem retenção de receita (a receita fica retida no estabelecimento) — sistema deve permitir registrar isso mesmo sem integração completa com SNGPC no MVP (campo textual/anexo por enquanto).
+- **Medicamento controlado** (`tarja_preta` ou `tarja_vermelha` — inclui psicotrópicos e antibióticos): venda só é concluída com o registro da receita (nome do médico, CRM, nome do paciente, data de emissão — tabela `vendas.receitas`). Sistema não deixa finalizar a venda sem esses dados.
+  - **Nota:** o MVP usa esse único registro para os dois casos. Não existe campo separado de "retenção física da receita" (anexo/scan) nem número de receita próprio — pendência registrada em `docs/PENDENCIAS.md` para decidir se isso é necessário além do registro digital.
 - Desconto: só aplicável dentro de um limite percentual configurável por perfil de usuário (ex: operador de caixa até 5%, gerente até 15%).
 - Cancelamento de venda (ou item) exige autorização de um perfil superior (ex: gerente) — nunca livre para o operador de caixa.
 - Formas de pagamento no MVP: dinheiro, cartão (débito/crédito), Pix. Cada forma gera lançamento correspondente no financeiro.
@@ -81,6 +82,16 @@
 - Nenhum produto vencido pode ser vendido (bloqueio duro).
 - Toda alteração de preço de produto fica registrada com histórico (quem mudou, de quanto para quanto, quando).
 - Todo usuário deve ter perfil definido — não existe usuário "sem permissão" no sistema (mínimo é operador de caixa).
+
+## 9. Fora do escopo do MVP
+
+- Sugestão automática de pedido de compra a partir do estoque baixo — a regra e a rota existem (§4), mas não há tela.
+- Estorno/cancelamento de venda já finalizada — só funciona com a venda em `aberta` (ver `docs/PENDENCIAS.md`).
+- Integração real com o SNGPC (Anvisa) — a estrutura de dados já existe (`fiscal.controlados_sngpc`), o envio real não (§7).
+- Emissão de NFC-e em produção — o MVP roda só em homologação da SEFAZ via Focus NFe (§7).
+- Relatórios fiscais ou gerenciais além dos já existentes em `Relatorios.jsx` (curva ABC, análise por dia/produto/margem).
+- Multi-filial: o modelo de dados inteiro assume uma farmácia só — não há conceito de filial/unidade em nenhum schema.
+- Telas de parâmetro para valores hoje fixos no código (metas de faturamento, janelas de silêncio do CRM, motivos de perda, textos do tour) — lista completa em `docs/PENDENCIAS.md`.
 
 ---
 
