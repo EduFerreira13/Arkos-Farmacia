@@ -9,13 +9,13 @@ Isso significa: comece pela Fase 0 de `docs/PLANO-DE-CONSTRUCAO.md` e siga, em o
 ## Ordem de leitura obrigatória antes de escrever a primeira linha de código
 
 1. `README.md` — visão geral e stack
-2. `docs/ARQUITETURA.md` — estrutura de pastas e como os serviços se isolam
+2. `docs/ARQUITETURA.md` — estrutura de pastas e como os módulos se isolam
 3. `docs/REGRAS-NEGOCIO.md` — regras da farmácia (o que cada tela/rota precisa respeitar)
 4. `docs/REGRAS-VISUAIS.md` — design system (cores, tipografia, componentes) — **seguir à risca**
 5. `docs/MODELO-DADOS.md` — ERD e dicionário de dados
-6. `docs/API-CONTRATOS.md` — contratos exatos de endpoint entre serviços
+6. `docs/API-CONTRATOS.md` — contratos exatos de endpoint entre módulos
 7. `docs/PLANO-DE-CONSTRUCAO.md` — ordem de execução, fase por fase
-8. `CONTRIBUTING.md` — convenção de commits e a regra de nunca misturar serviços no mesmo commit/PR
+8. `CONTRIBUTING.md` — convenção de commits e a regra de nunca misturar módulos no mesmo commit/PR
 
 ## Banco de dados
 
@@ -26,8 +26,8 @@ Isso significa: comece pela Fase 0 de `docs/PLANO-DE-CONSTRUCAO.md` e siga, em o
 
 ## Regras não negociáveis durante a construção
 
-- **Nunca** um monolito — cada serviço em `services/*` é independente, com seu próprio `package.json` e processo. Comunicação entre serviços é só via HTTP (ver `docs/API-CONTRATOS.md`).
-- **Nunca** misturar mudanças de mais de um serviço no mesmo commit.
+- **Backend é um monolito modular**: um processo Fastify só (`apps/api`), um módulo por domínio em `src/modulos/*` (`auth`, `estoque`, `vendas`, `financeiro`, `fiscal`, `compras`). Um módulo nunca acessa o schema de outro diretamente — a comunicação entre módulos é sempre via HTTP, mesmo rodando no mesmo processo (ver `docs/ARQUITETURA.md` e `docs/API-CONTRATOS.md`).
+- **Nunca** misturar mudanças de mais de um módulo no mesmo commit/PR.
 - **Nunca** editar `database/schema/` manualmente — só via `sync-schema.js`.
 - **Nunca** usar emoji em nenhuma parte da interface.
 - **Nunca** usar barra lateral decorativa em cards/boxes (accent bar). Destaque vem de cor de fundo, ícone ou tipografia.
@@ -39,10 +39,10 @@ Isso significa: comece pela Fase 0 de `docs/PLANO-DE-CONSTRUCAO.md` e siga, em o
 
 O MVP está pronto quando o fluxo abaixo funciona ponta a ponta, localmente:
 
-1. Login com um dos 4 perfis (`auth-service`).
-2. Cadastro de produto e entrada de lote (`estoque-service`).
-3. Venda completa no PDV — incluindo o caso de item controlado exigindo receita, e o caso de bloqueio quando a receita não é informada (`vendas-service`).
-4. Fechamento de caixa refletindo a venda (`financeiro-service`).
+1. Login com um dos 4 perfis (módulo `auth`).
+2. Cadastro de produto e entrada de lote (módulo `estoque`).
+3. Venda completa no PDV — incluindo o caso de item controlado exigindo receita, e o caso de bloqueio quando a receita não é informada (módulo `vendas`).
+4. Fechamento de caixa refletindo a venda (módulo `financeiro`).
 5. Dashboard pós-login mostrando os 4 indicadores atualizados com dados reais do banco.
 
 Quando isso estiver rodando de ponta a ponta, o MVP está entregue — funcionalidades fora disso (relatórios avançados, fiscal real, multi-filial) ficam para depois, conforme já registrado em `docs/REGRAS-NEGOCIO.md` na seção "Fora do escopo do MVP".
