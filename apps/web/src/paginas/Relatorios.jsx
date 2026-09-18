@@ -196,6 +196,25 @@ export function Relatorios() {
       <TituloPagina titulo="Relatórios" />
 
       <Card className="mb-4 shrink-0">
+        <div className="flex flex-wrap gap-1 border-b border-borda px-3 pt-3">
+          {ABAS.map(({ chave, rotulo, icone: Icone }) => (
+            <button
+              key={chave}
+              type="button"
+              onClick={() => definirAba(chave)}
+              className={[
+                "flex items-center gap-2 rounded-t-botao px-4 pb-2.5 pt-2 text-corpo transition-colors",
+                aba === chave
+                  ? "border-b-2 border-primario text-texto"
+                  : "border-b-2 border-transparent text-secundario hover:text-texto",
+              ].join(" ")}
+            >
+              <Icone size={16} strokeWidth={2} aria-hidden="true" />
+              {rotulo}
+            </button>
+          ))}
+        </div>
+
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-3">
             <CampoTexto
@@ -267,23 +286,6 @@ export function Relatorios() {
 
       {analise.dados && catalogo.dados ? (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="mb-4 flex shrink-0 gap-1">
-            {ABAS.map(({ chave, rotulo, icone: Icone }) => (
-              <button
-                key={chave}
-                type="button"
-                onClick={() => definirAba(chave)}
-                className={[
-                  "flex items-center gap-2 rounded-botao px-4 py-2 text-corpo transition-colors",
-                  aba === chave ? "bg-primario text-white" : "text-secundario hover:bg-borda/60",
-                ].join(" ")}
-              >
-                <Icone size={16} strokeWidth={2} aria-hidden="true" />
-                {rotulo}
-              </button>
-            ))}
-          </div>
-
           <div className="min-h-0 flex-1 overflow-y-auto">
             {aba === "visao-geral" ? (
               <div className="space-y-4">
