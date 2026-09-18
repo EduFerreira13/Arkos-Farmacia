@@ -14,7 +14,7 @@ export function Tabela({ colunas, linhas, chave, aoClicarLinha, vazio, totais })
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-corpo">
-        <thead>
+        <thead className="sticky top-0 z-10 bg-card">
           <tr className="border-b border-borda text-left">
             {colunas.map((coluna) => (
               <th
