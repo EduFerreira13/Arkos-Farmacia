@@ -46,6 +46,7 @@ export function ExportarRelatorio({
   periodoInicial,
   modelo,
   rotulo = "Exportar",
+  variante = "secundario",
 }) {
   const [aberto, definirAberto] = useState(false);
   const [de, definirDe] = useState(periodoInicial?.de ?? inicioDoMes());
@@ -96,7 +97,7 @@ export function ExportarRelatorio({
 
   return (
     <>
-      <Botao variante="secundario" icone={FileSpreadsheet} onClick={() => definirAberto(true)}>
+      <Botao variante={variante} icone={FileSpreadsheet} onClick={() => definirAberto(true)}>
         {rotulo}
       </Botao>
 

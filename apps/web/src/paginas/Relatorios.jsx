@@ -235,7 +235,7 @@ export function Relatorios() {
               max={hojeISO()}
               onChange={(evento) => definirPeriodo({ ...periodo, ate: evento.target.value })}
             />
-            <div className="flex h-10 items-center gap-1 rounded-botao border border-borda p-1">
+            <div className="flex items-center gap-1">
               {ATALHOS_PERIODO.map((atalho) => {
                 const de = diasAtras(atalho.dias);
                 const ativo = periodo.de === de && periodo.ate === hojeISO();
@@ -245,7 +245,7 @@ export function Relatorios() {
                     type="button"
                     onClick={() => definirPeriodo({ de, ate: hojeISO() })}
                     className={[
-                      "h-full rounded-botao px-3 text-rotulo transition-colors",
+                      "h-9 rounded-botao px-3 text-rotulo transition-colors",
                       ativo ? "bg-primario text-white" : "text-secundario hover:bg-borda/60",
                     ].join(" ")}
                   >
@@ -256,8 +256,9 @@ export function Relatorios() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <ExportarRelatorio
+              variante="fantasma"
               servico="vendas"
               caminho="/relatorio"
               titulo="Exportar vendas"
@@ -271,6 +272,7 @@ export function Relatorios() {
               }}
             />
             <ExportarRelatorio
+              variante="fantasma"
               servico="estoque"
               caminho="/relatorios/estoque"
               titulo="Exportar posição de estoque"
