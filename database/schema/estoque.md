@@ -78,6 +78,10 @@
 | venda_sob_encomenda | boolean | NO | false |
 | dias_de_uso | integer | YES | - |
 | codigo | character varying | YES | - |
+| cst_pis | character varying | YES | - |
+| cst_cofins | character varying | YES | - |
+| aliquota_pis | numeric | YES | - |
+| aliquota_cofins | numeric | YES | - |
 
 ## vw_estoque_baixo
 
