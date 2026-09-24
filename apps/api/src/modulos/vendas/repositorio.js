@@ -514,3 +514,28 @@ export async function listarItensNoPeriodo({ de, ate }) {
   );
   return rows;
 }
+
+/**
+ * Itens vendidos no período, agrupados por `produto_id` — usado pelo
+ * fiscal-service para montar o relatório de vendas PIS/COFINS (que precisa
+ * do NCM/classificação fiscal do produto, dado que só o estoque-service tem).
+ * Diferente de `listarItensNoPeriodo` (agrupado por nome, sem `produto_id` e
+ * sem descontar o desconto do item), aqui o valor já sai líquido de desconto,
+ * que é o "valor contábil" que entra na base de cálculo do relatório.
+ */
+export async function listarItensFiscalNoPeriodo({ de, ate }) {
+  const { rows } = await consultar(
+    `SELECT i.produto_id,
+            SUM(i.quantidade)::int AS unidades,
+            SUM(i.quantidade * i.preco_unitario - COALESCE(i.desconto, 0)) AS valor_contabil
+       FROM vendas.itens_venda i
+       JOIN vendas.vendas v ON v.id = i.venda_id
+      WHERE v.status = 'finalizada'
+        AND v.criado_em::date BETWEEN $1::date AND $2::date
+        AND i.produto_id IS NOT NULL
+      GROUP BY i.produto_id
+      ORDER BY valor_contabil DESC`,
+    [de, ate]
+  );
+  return rows;
+}

@@ -62,6 +62,7 @@ import {
   inserirPagamento,
   listarItens,
   listarItensNoPeriodo,
+  listarItensFiscalNoPeriodo,
   listarVendasNoPeriodo,
   definirDescontoDoItem,
   marcarCancelada,
@@ -779,6 +780,20 @@ export async function registrarRotas(app) {
       .header("Content-Type", "text/csv; charset=utf-8")
       .header("Content-Disposition", `attachment; filename="clientes_${hojeNoFuso()}.csv"`)
       .send(csv);
+  });
+
+  /**
+   * Itens vendidos no período, por produto — consumido pelo fiscal-service
+   * para montar o relatório de vendas PIS/COFINS (docs/API-CONTRATOS.md).
+   * Não é para uso direto na tela: sem paginação nem formatação, só o dado
+   * cru que o outro módulo precisa para juntar com a classificação fiscal.
+   */
+  app.get("/itens-fiscais", async (requisicao, resposta) => {
+    const intervalo = periodo(requisicao.query);
+    if (intervalo.erro) {
+      return resposta.code(400).send({ erro: ERROS.DADOS_INVALIDOS, mensagem: intervalo.erro });
+    }
+    return { itens: await listarItensFiscalNoPeriodo(intervalo) };
   });
 
   app.get("/relatorio", async (requisicao, resposta) => {
