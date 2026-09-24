@@ -11,6 +11,7 @@ import { consultar, emTransacao } from "../../db.js";
 const SELECT_PRODUTO = `
   SELECT p.id, p.codigo, p.nome, p.principio_ativo, p.fabricante, p.classe_terapeutica,
          p.codigo_barras, p.tipo_controle, p.unidade_venda, p.ncm, p.cfop,
+         p.cst_pis, p.cst_cofins, p.aliquota_pis, p.aliquota_cofins,
          p.preco_custo, p.preco_venda, p.estoque_minimo, p.venda_sob_encomenda,
          p.dias_de_uso,
          p.categoria_id, c.nome AS categoria_nome,
@@ -94,9 +95,10 @@ export async function inserirProduto(dados) {
   const { rows } = await consultar(
     `INSERT INTO estoque.produtos
        (codigo, nome, principio_ativo, fabricante, classe_terapeutica, codigo_barras,
-        tipo_controle, unidade_venda, ncm, cfop, preco_custo, preco_venda,
-        estoque_minimo, venda_sob_encomenda, categoria_id, fornecedor_id, dias_de_uso)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+        tipo_controle, unidade_venda, ncm, cfop, cst_pis, cst_cofins, aliquota_pis, aliquota_cofins,
+        preco_custo, preco_venda, estoque_minimo, venda_sob_encomenda, categoria_id, fornecedor_id,
+        dias_de_uso)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
      RETURNING id`,
     [
       dados.codigo,
@@ -109,6 +111,10 @@ export async function inserirProduto(dados) {
       dados.unidade_venda,
       dados.ncm ?? null,
       dados.cfop ?? null,
+      dados.cst_pis ?? null,
+      dados.cst_cofins ?? null,
+      dados.aliquota_pis ?? null,
+      dados.aliquota_cofins ?? null,
       dados.preco_custo,
       dados.preco_venda,
       dados.estoque_minimo,
@@ -132,6 +138,10 @@ const CAMPOS_ATUALIZAVEIS = [
   "unidade_venda",
   "ncm",
   "cfop",
+  "cst_pis",
+  "cst_cofins",
+  "aliquota_pis",
+  "aliquota_cofins",
   "preco_custo",
   "preco_venda",
   "estoque_minimo",

@@ -23,6 +23,10 @@ const INICIAL = {
   dias_de_uso: "",
   ncm: "",
   cfop: "",
+  cst_pis: "",
+  cst_cofins: "",
+  aliquota_pis: "",
+  aliquota_cofins: "",
   venda_sob_encomenda: false,
 };
 
@@ -53,6 +57,8 @@ export function FormularioProduto({ produto, aoFechar, aoSalvar }) {
           preco_venda: String(produto.preco_venda ?? ""),
           estoque_minimo: String(produto.estoque_minimo ?? "0"),
           dias_de_uso: produto.dias_de_uso ? String(produto.dias_de_uso) : "",
+          aliquota_pis: produto.aliquota_pis != null ? String(produto.aliquota_pis) : "",
+          aliquota_cofins: produto.aliquota_cofins != null ? String(produto.aliquota_cofins) : "",
           venda_sob_encomenda: Boolean(produto.venda_sob_encomenda),
         }
       : INICIAL
@@ -104,11 +110,15 @@ export function FormularioProduto({ produto, aoFechar, aoSalvar }) {
         classe_terapeutica: campos.classe_terapeutica || null,
         ncm: campos.ncm || null,
         cfop: campos.cfop || null,
+        cst_pis: campos.cst_pis || null,
+        cst_cofins: campos.cst_cofins || null,
         preco_custo: Number(campos.preco_custo || 0),
         preco_venda: Number(campos.preco_venda || 0),
         estoque_minimo: Number(campos.estoque_minimo || 0),
         // Vazio significa "não se aplica", e vai como null — não como zero.
         dias_de_uso: campos.dias_de_uso === "" ? null : Number(campos.dias_de_uso),
+        aliquota_pis: campos.aliquota_pis === "" ? null : Number(campos.aliquota_pis),
+        aliquota_cofins: campos.aliquota_cofins === "" ? null : Number(campos.aliquota_cofins),
       };
 
       if (edicao) await api.estoque.patch(`/produtos/${produto.id}`, corpo);
@@ -262,6 +272,36 @@ export function FormularioProduto({ produto, aoFechar, aoSalvar }) {
               ajuda="Código Fiscal de Operações e Prestações"
               value={campos.cfop}
               onChange={atualizar("cfop")}
+            />
+            <CampoTexto
+              rotulo="CST PIS"
+              ajuda="Código de Situação Tributária do PIS — usado no relatório fiscal de vendas"
+              value={campos.cst_pis}
+              onChange={atualizar("cst_pis")}
+            />
+            <CampoTexto
+              rotulo="Alíquota PIS (%)"
+              type="number"
+              step="0.01"
+              min="0"
+              max="100"
+              value={campos.aliquota_pis}
+              onChange={atualizar("aliquota_pis")}
+            />
+            <CampoTexto
+              rotulo="CST COFINS"
+              ajuda="Código de Situação Tributária da COFINS"
+              value={campos.cst_cofins}
+              onChange={atualizar("cst_cofins")}
+            />
+            <CampoTexto
+              rotulo="Alíquota COFINS (%)"
+              type="number"
+              step="0.01"
+              min="0"
+              max="100"
+              value={campos.aliquota_cofins}
+              onChange={atualizar("aliquota_cofins")}
             />
           </div>
 

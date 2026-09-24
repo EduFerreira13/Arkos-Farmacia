@@ -70,6 +70,16 @@ function numeroPositivo(valor) {
   return Number.isFinite(numero) && numero > 0 ? numero : null;
 }
 
+/** Alíquota em percentual (0 a 100): opcional, `null` enquanto o produto não tiver classificação. */
+const percentualOpcional = (mensagem) =>
+  z
+    .number({ error: mensagem })
+    .min(0, mensagem)
+    .max(100, mensagem)
+    .optional()
+    .nullable()
+    .transform((valor) => (valor === undefined || valor === null ? null : Number(valor.toFixed(2))));
+
 /**
  * Mesmos 16 campos do cadastro em `estoque.repositorio.js`
  * (CAMPOS_ATUALIZAVEIS) — a única lista que decide o que é aceito, criando ou
@@ -91,6 +101,10 @@ const CamposProduto = {
   unidade_venda: textoObrigatorio("Informe a unidade_venda."),
   ncm: textoOpcional(),
   cfop: textoOpcional(),
+  cst_pis: textoOpcional(),
+  cst_cofins: textoOpcional(),
+  aliquota_pis: percentualOpcional("aliquota_pis precisa estar entre 0 e 100."),
+  aliquota_cofins: percentualOpcional("aliquota_cofins precisa estar entre 0 e 100."),
   preco_custo: valorNaoNegativo("preco_custo inválido."),
   preco_venda: valorMonetario("preco_venda precisa ser maior que zero."),
   estoque_minimo: z
