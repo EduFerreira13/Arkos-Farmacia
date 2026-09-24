@@ -44,3 +44,19 @@ export async function buscarProdutoParaNota(produtoId, token) {
   const dados = await chamar("estoque", `${env.ESTOQUE_URL}/produtos/${produtoId}`, token);
   return dados?.produto ?? null;
 }
+
+/** Itens vendidos no período, por produto — base do relatório de vendas PIS/COFINS. */
+export async function buscarItensVendidosNoPeriodo(de, ate, token) {
+  const dados = await chamar(
+    "vendas",
+    `${env.VENDAS_URL}/vendas/itens-fiscais?de=${encodeURIComponent(de)}&ate=${encodeURIComponent(ate)}`,
+    token
+  );
+  return dados?.itens ?? [];
+}
+
+/** Catálogo de produtos com a classificação fiscal (NCM/CST/alíquota) — mesmo relatório. */
+export async function listarProdutosParaRelatorio(token) {
+  const dados = await chamar("estoque", `${env.ESTOQUE_URL}/produtos`, token);
+  return dados?.produtos ?? [];
+}

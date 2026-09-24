@@ -279,6 +279,14 @@ export function Relatorios() {
               comPeriodo={false}
               rotulo="Exportar estoque"
             />
+            <ExportarRelatorio
+              variante="fantasma"
+              servico="fiscal"
+              caminho="/relatorios/vendas-pis-cofins"
+              titulo="Exportar vendas PIS/COFINS"
+              descricao="Vendas do período por NCM/CST, com base de cálculo e valor de PIS e COFINS — o relatório que a contabilidade pede todo mês."
+              rotulo="Exportar PIS/COFINS"
+            />
           </div>
         </div>
       </Card>

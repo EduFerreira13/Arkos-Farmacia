@@ -5,7 +5,17 @@ import { consultar } from "../../db.js";
 import { textoObrigatorio, textoOpcional, validarCorpo, z } from "../../lib/validacao.js";
 import { emitirNfce, ErroFocusNfe } from "./focusnfe.js";
 import { montarPayloadNfce } from "./nfce.js";
-import { buscarVendaParaNota, buscarProdutoParaNota, ErroServico } from "./servicos.js";
+import {
+  buscarVendaParaNota,
+  buscarProdutoParaNota,
+  buscarItensVendidosNoPeriodo,
+  listarProdutosParaRelatorio,
+  ErroServico,
+} from "./servicos.js";
+import { gerarCsv, nomeArquivo, periodo } from "./relatorios.js";
+
+/** Sem classificação cadastrada no produto: cai aqui, nunca "inventa" alíquota. */
+const CST_PADRAO = "49";
 
 const auth = criarAutenticacao({ secret: env.JWT_SECRET });
 
@@ -234,6 +244,92 @@ export async function registrarRotas(app) {
         .send({ erro: ERROS.NAO_ENCONTRADO, mensagem: "Nenhuma nota para esta venda." });
     }
     return { nota: rows[0] };
+  });
+
+  /**
+   * Vendas do período agrupadas por NCM/CST de PIS e COFINS, com base de
+   * cálculo e valor de cada tributo — o mesmo recorte do relatório mensal que
+   * a contabilidade pede (docs/PENDENCIAS.md). Junta o item vendido (vendas-
+   * service) com a classificação fiscal do produto (estoque-service): nenhum
+   * dos dois módulos guarda os dois lados, então a junção é feita aqui.
+   *
+   * Produto sem CST/alíquota cadastrada entra no grupo "49" com alíquota
+   * zero — a mesma cautela do cadastro (§ migration 0026): melhor aparecer
+   * como pendente de classificar do que sair um valor de imposto inventado.
+   */
+  app.get("/relatorios/vendas-pis-cofins", async (requisicao, resposta) => {
+    const intervalo = periodo(requisicao.query);
+    if (intervalo.erro) {
+      return resposta.code(400).send({ erro: ERROS.DADOS_INVALIDOS, mensagem: intervalo.erro });
+    }
+
+    const token = tokenInterno(requisicao.usuario, { secret: env.JWT_SECRET });
+    let itensVendidos;
+    let produtos;
+    try {
+      [itensVendidos, produtos] = await Promise.all([
+        buscarItensVendidosNoPeriodo(intervalo.de, intervalo.ate, token),
+        listarProdutosParaRelatorio(token),
+      ]);
+    } catch (erro) {
+      if (erro instanceof ErroServico) return responderErroServico(resposta, erro);
+      throw erro;
+    }
+
+    const produtoPorId = new Map(produtos.map((produto) => [produto.id, produto]));
+
+    const linhas = itensVendidos.map((item) => {
+      const produto = produtoPorId.get(item.produto_id);
+      const valorContabil = Number(item.valor_contabil);
+      const aliquotaPis = Number(produto?.aliquota_pis ?? 0);
+      const aliquotaCofins = Number(produto?.aliquota_cofins ?? 0);
+      return {
+        ncm: produto?.ncm ?? "(sem NCM)",
+        cst_pis: produto?.cst_pis ?? CST_PADRAO,
+        cst_cofins: produto?.cst_cofins ?? CST_PADRAO,
+        valor_contabil: valorContabil,
+        aliquota_pis: aliquotaPis,
+        valor_pis: Number(((valorContabil * aliquotaPis) / 100).toFixed(2)),
+        aliquota_cofins: aliquotaCofins,
+        valor_cofins: Number(((valorContabil * aliquotaCofins) / 100).toFixed(2)),
+      };
+    });
+    linhas.sort((a, b) => a.cst_pis.localeCompare(b.cst_pis) || a.ncm.localeCompare(b.ncm));
+
+    const totais = [
+      {
+        titulo: "Valor contabil (R$)",
+        valor: linhas.reduce((total, linha) => total + linha.valor_contabil, 0),
+      },
+      { titulo: "Valor PIS (R$)", valor: linhas.reduce((total, linha) => total + linha.valor_pis, 0) },
+      {
+        titulo: "Valor COFINS (R$)",
+        valor: linhas.reduce((total, linha) => total + linha.valor_cofins, 0),
+      },
+    ];
+
+    const csv = gerarCsv(
+      [
+        { titulo: "CST PIS", valor: (l) => l.cst_pis },
+        { titulo: "CST COFINS", valor: (l) => l.cst_cofins },
+        { titulo: "NCM", valor: (l) => l.ncm },
+        { titulo: "Valor contabil (R$)", valor: (l) => l.valor_contabil },
+        { titulo: "Aliquota PIS (%)", valor: (l) => l.aliquota_pis },
+        { titulo: "Valor PIS (R$)", valor: (l) => l.valor_pis },
+        { titulo: "Aliquota COFINS (%)", valor: (l) => l.aliquota_cofins },
+        { titulo: "Valor COFINS (R$)", valor: (l) => l.valor_cofins },
+      ],
+      linhas,
+      totais
+    );
+
+    return resposta
+      .header("Content-Type", "text/csv; charset=utf-8")
+      .header(
+        "Content-Disposition",
+        `attachment; filename="${nomeArquivo("vendas_pis_cofins", intervalo.de, intervalo.ate)}"`
+      )
+      .send(csv);
   });
 
   /**

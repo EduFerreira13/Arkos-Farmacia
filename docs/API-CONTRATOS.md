@@ -206,6 +206,13 @@ que permite agrupar no relatório.
 planilha sai com os dados numa aba e o resumo em outra. Sem o parâmetro, sai o
 CSV de sempre, com o resumo no rodapé do arquivo — CSV não tem aba.
 
+`GET /vendas/itens-fiscais` (`de`, `ate`) devolve os itens vendidos no período
+agrupados por `produto_id`, com unidades e valor contábil (já líquido de
+desconto). Não é para a tela: é consumido pelo `fiscal-service`
+(`GET /fiscal/relatorios/vendas-pis-cofins`), que junta esse dado com a
+classificação fiscal (NCM, CST e alíquota de PIS/COFINS) que mora no cadastro
+do produto, no `estoque-service`.
+
 `GET /vendas/crm/contatos` filtra por `de`, `ate`, `resultado`, `canal` e `busca`
 (nome do cliente, motivo ou oferta). `GET /vendas/crm/relatorio?tipo=contatos`
 aceita os mesmos parâmetros, para a planilha sair igual ao que está na tela.
@@ -428,6 +435,7 @@ por consequência, a venda não finaliza antes de o operador abrir o caixa (§5)
 | GET | `/notas-fiscais` | Lista notas do período — `?de=&ate=` |
 | GET | `/controlados-sngpc` | Lista registros — `?venda_id=&de=&ate=&pendentes=sim` |
 | POST | `/controlados-sngpc/enviar` | Marca registros como enviados — **simulado**, só grava a data |
+| GET | `/relatorios/vendas-pis-cofins` | Vendas do período por NCM/CST, com base de cálculo e valor de PIS/COFINS — `?de=&ate=`, CSV |
 
 `POST /notas-fiscais` chama a Focus NFe de verdade (`apps/api/src/modulos/fiscal/focusnfe.js`,
 ambiente de homologação — `FOCUS_NFE_URL_BASE`/`FOCUS_NFE_TOKEN_HOMOLOGACAO` no `.env`).
@@ -450,6 +458,13 @@ Nota emitida com sucesso grava `numero`, `serie`, `chave_acesso` (`chave_nfe`
 da resposta) e `url_consulta` (link da SEFAZ para o consumidor). O corpo bruto
 da resposta da Focus NFe fica em `retorno_focus` (só no `GET /notas-fiscais/:venda_id`,
 não na listagem), para auditoria de rejeição.
+
+`GET /relatorios/vendas-pis-cofins` chama `GET /vendas/itens-fiscais` e
+`GET /estoque/produtos` e junta os dois lados: item vendido de um, NCM/CST/
+alíquota de PIS e COFINS do outro (campos do produto, migration 0026). Produto
+sem essa classificação cadastrada entra no grupo `49` com alíquota zero — o
+relatório nunca calcula uma alíquota sozinho, só usa o que já foi digitado no
+cadastro do produto (mesma cautela do NCM/CFOP, que também são texto livre).
 
 ---
 
